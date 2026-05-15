@@ -24,3 +24,10 @@ def test_db_path_property_resolves_correctly(tmp_path: Path) -> None:
 
     assert settings.db_path == tmp_path / "data" / "atenas.sqlite"
 
+
+def test_single_numeric_telegram_user_id_is_accepted() -> None:
+    """A single numeric Telegram ID should be normalized to a list."""
+
+    settings = Settings(_env_file=None, telegram_allowed_user_ids=8552559127)
+
+    assert settings.telegram_allowed_user_ids == [8552559127]

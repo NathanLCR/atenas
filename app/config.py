@@ -70,6 +70,8 @@ class Settings(BaseSettings):
 
         if value is None or value == "":
             return []
+        if isinstance(value, int):
+            return [value]
         if isinstance(value, str):
             return [int(item.strip()) for item in value.split(",") if item.strip()]
         return value
@@ -104,4 +106,3 @@ def get_settings() -> Settings:
     """Return the process-wide settings singleton."""
 
     return Settings()
-
