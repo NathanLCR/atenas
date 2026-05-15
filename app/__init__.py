@@ -1,0 +1,2 @@
+"""Atenas FastAPI application package."""
+
