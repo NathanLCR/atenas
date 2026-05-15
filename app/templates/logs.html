@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}LLM Call Logs{% endblock %}
+
+{% block main %}
+<h1>LLM Call Logs</h1>
+{% if records %}
+<table>
+  <thead>
+    <tr>
+      <th scope="col">id</th>
+      <th scope="col">task_type</th>
+      <th scope="col">model_used</th>
+      <th scope="col">called_at</th>
+      <th scope="col">duration_ms</th>
+      <th scope="col">success</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for record in records %}
+    <tr>
+      <td>{{ record.id }}</td>
+      <td>{{ record.task_type }}</td>
+      <td>{{ record.model_used }}</td>
+      <td>{{ record.called_at }}</td>
+      <td>{{ record.duration_ms }}</td>
+      <td>{{ record.success }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No LLM calls recorded yet.</p>
+{% endif %}
+{% endblock %}
