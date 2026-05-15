@@ -1,0 +1,15 @@
+services:
+  atenas:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./memory:/app/memory
+      - ./inbox:/app/inbox
+      - ./output:/app/output
+    env_file:
+      - .env
+    restart: unless-stopped
+

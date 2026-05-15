@@ -1,0 +1,49 @@
+"""FastAPI application factory and lifespan setup for Atenas Core."""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+
+from app.api import router as api_router
+from app.config import Settings, get_settings
+from core.db import init_db
+from core.skill_registry import SkillRegistry, get_registry
+from core.utils import setup_logging
+from skills.status.handler import register_status_skill
+
+logger = logging.getLogger(__name__)
+
+
+def create_app(settings: Settings | None = None, registry: SkillRegistry | None = None) -> FastAPI:
+    """Create and configure the FastAPI app."""
+
+    runtime_settings = settings or get_settings()
+    runtime_registry = registry or get_registry()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        setup_logging(runtime_settings.logs_dir, runtime_settings.log_level)
+        init_db(runtime_settings.db_path)
+        register_status_skill(runtime_registry, runtime_settings.db_path)
+        app.state.settings = runtime_settings
+        app.state.registry = runtime_registry
+        logger.info(
+            "application_started",
+            extra={"event_type": "application_started", "app_name": runtime_settings.app_name},
+        )
+        try:
+            yield
+        finally:
+            logger.info("application_shutdown", extra={"event_type": "application_shutdown"})
+
+    app = FastAPI(title=runtime_settings.app_name, lifespan=lifespan)
+    app.include_router(api_router)
+    return app
+
+
+app = create_app()
+
