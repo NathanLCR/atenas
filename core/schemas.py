@@ -188,10 +188,10 @@ class LiteratureMatrixEntry(StrictModel):
     paper_id: str
     research_question: str
     methodology: str
-    sample: str
+    sample: str | None
     key_findings: str
     limitations: str
-    relevance_to_topic: str
+    relevance_to_topic: str | None
     confidence: float = Field(ge=0.0, le=1.0)
 
 
@@ -252,7 +252,7 @@ class Task(StrictModel):
     assignment_id: str | None = None
     status: TaskStatus = TaskStatus.TODO
     priority: Priority = Priority.MEDIUM
-    estimated_minutes: int | None = Field(default=None, ge=0)
+    estimated_minutes: int | None = Field(default=None, ge=1)
     due_date: str | None = None
     created_at: str = Field(default_factory=utc_now)
     updated_at: str = Field(default_factory=utc_now)

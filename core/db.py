@@ -192,14 +192,13 @@ def get_connection(db_path: Path | str) -> sqlite3.Connection:
 
 
 def init_db(db_path: Path | str) -> None:
-    """Create the SQLite schema if needed."""
-
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with get_connection(path) as connection:
-        connection.executescript(SCHEMA_SQL)
-    logger.info(
-        "database_initialized",
-        extra={"event_type": "database_initialized", "db_path": str(path)},
-    )
+    conn = get_connection(path)
+    try:
+        conn.executescript(SCHEMA_SQL)
+        conn.commit()
+    finally:
+        conn.close()
+    logger.info("database_initialized", extra={"event_type": "database_initialized", "db_path": str(path)})
 
