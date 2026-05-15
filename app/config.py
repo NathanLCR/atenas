@@ -19,6 +19,7 @@ class Settings(BaseSettings):
 
     app_env: str = "development"
     app_name: str = "Atenas"
+    app_version: str = "0.1.0"
 
     telegram_bot_token: str | None = None
     telegram_allowed_user_ids: list[int] = Field(default_factory=list)
@@ -99,6 +100,30 @@ class Settings(BaseSettings):
         """Path to the structured error JSONL log."""
 
         return self.logs_dir / "errors.jsonl"
+
+    @property
+    def APP_NAME(self) -> str:
+        """Compatibility alias for brief-style uppercase settings access."""
+
+        return self.app_name
+
+    @property
+    def APP_VERSION(self) -> str:
+        """Compatibility alias for brief-style uppercase settings access."""
+
+        return self.app_version
+
+    @property
+    def TELEGRAM_BOT_TOKEN(self) -> str | None:
+        """Compatibility alias for brief-style uppercase settings access."""
+
+        return self.telegram_bot_token
+
+    @property
+    def TELEGRAM_ALLOWED_USER_IDS(self) -> list[int]:
+        """Compatibility alias for brief-style uppercase settings access."""
+
+        return self.telegram_allowed_user_ids
 
 
 @lru_cache
