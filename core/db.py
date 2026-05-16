@@ -200,6 +200,57 @@ CREATE INDEX IF NOT EXISTS idx_memory_items_domain ON memory_items(domain);
 CREATE INDEX IF NOT EXISTS idx_memory_items_topic ON memory_items(topic);
 CREATE INDEX IF NOT EXISTS idx_llm_calls_task_type ON llm_calls(task_type);
 CREATE INDEX IF NOT EXISTS idx_llm_calls_provider ON llm_calls(provider);
+
+-- Phase 6: Knowledge layer tables
+CREATE TABLE IF NOT EXISTS notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    module_id TEXT NULL,
+    assignment_id TEXT NULL,
+    source_type TEXT NOT NULL DEFAULT 'manual',
+    tags TEXT NULL,
+    archived INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (module_id) REFERENCES study_modules(id),
+    FOREIGN KEY (assignment_id) REFERENCES assignments(id)
+);
+
+CREATE TABLE IF NOT EXISTS files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    path TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    title TEXT NULL,
+    description TEXT NULL,
+    module_id TEXT NULL,
+    assignment_id TEXT NULL,
+    file_type TEXT NULL,
+    mime_type TEXT NULL,
+    size_bytes INTEGER NULL,
+    sha256 TEXT NULL,
+    tags TEXT NULL,
+    archived INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (module_id) REFERENCES study_modules(id),
+    FOREIGN KEY (assignment_id) REFERENCES assignments(id)
+);
+
+CREATE TABLE IF NOT EXISTS note_file_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    note_id INTEGER NOT NULL,
+    file_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(note_id, file_id),
+    FOREIGN KEY (note_id) REFERENCES notes(id),
+    FOREIGN KEY (file_id) REFERENCES files(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_notes_archived ON notes(archived);
+CREATE INDEX IF NOT EXISTS idx_notes_module ON notes(module_id);
+CREATE INDEX IF NOT EXISTS idx_files_archived ON files(archived);
+CREATE INDEX IF NOT EXISTS idx_files_module ON files(module_id);
 """
 
 
@@ -220,6 +271,12 @@ def get_connection(db_path: Path | str) -> sqlite3.Connection:
 
 
 def init_db(db_path: Path | str) -> None:
+    """Create tables and apply backward-compatible migrations.
+
+    Runs SCHEMA_SQL (CREATE TABLE IF NOT EXISTS) and then applies
+    Phase 3 column migrations for databases created by earlier phases.
+    Safe to call multiple times.
+    """
     conn = get_connection(db_path)
     try:
         conn.executescript(SCHEMA_SQL)
@@ -263,6 +320,7 @@ VALID_TABLE_NAMES = frozenset({
     "documents", "chunks", "nodes", "edges", "tasks",
     "study_modules", "assignments", "work_shifts",
     "class_sessions", "study_blocks", "memory_items", "llm_calls",
+    "notes", "files", "note_file_links",
 })
 
 

@@ -5,8 +5,10 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 
 from app.api import router as api_router
 from app.bot import build_application, start_bot, stop_bot
@@ -64,6 +66,9 @@ def create_app(settings: Settings | None = None, registry: SkillRegistry | None 
     app = FastAPI(title=runtime_settings.app_name, lifespan=lifespan)
     app.include_router(api_router)
     app.include_router(dashboard_router)
+    static_dir = Path(__file__).parent / "static"
+    if static_dir.exists():
+        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
     return app
 
 

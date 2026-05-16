@@ -1,48 +1,63 @@
 {% extends "base.html" %}
 
-{% block title %}Data — Atenas{% endblock %}
+{% block page_title %}Data{% endblock %}
 
 {% block main %}
-<h1>Data Management</h1>
-
-<section>
-  <h2>Overview</h2>
-  <ul>
-    <li>Modules: {{ modules|length }}</li>
-    <li>Class sessions: {{ class_count }}</li>
-    <li>Work shifts: {{ shift_count }}</li>
-    <li>Open assignments: {{ assignment_count }}</li>
-  </ul>
-</section>
+<div class="summary-grid">
+  <div class="summary-card">
+    <div class="label">Modules</div>
+    <div class="value">{{ modules|length }}</div>
+  </div>
+  <div class="summary-card">
+    <div class="label">Classes</div>
+    <div class="value">{{ class_count }}</div>
+  </div>
+  <div class="summary-card">
+    <div class="label">Work shifts</div>
+    <div class="value">{{ shift_count }}</div>
+  </div>
+  <div class="summary-card">
+    <div class="label">Assignments</div>
+    <div class="value">{{ assignment_count }}</div>
+  </div>
+</div>
 
 {% if modules %}
-<section>
+<div class="section">
   <h2>Modules</h2>
-  <ul>
+  <div class="grid">
     {% for m in modules %}
-    <li>
-      <strong>{{ m.name }}</strong>
-      {% if m.code %}({{ m.code }}){% endif %}
-      {% if m.lecturer %} — {{ m.lecturer }}{% endif %}
-    </li>
+    <div class="card" style="padding:16px 20px;">
+      <h3>{{ m.name }}{% if m.code %} <span class="badge">{{ m.code }}</span>{% endif %}</h3>
+      {% if m.lecturer %}<p class="muted">{{ m.lecturer }}</p>{% endif %}
+    </div>
     {% endfor %}
-  </ul>
-</section>
+  </div>
+</div>
 {% endif %}
 
-<section>
-  <h2>Adding Data</h2>
-  <p>Use Telegram commands to manage data:</p>
-  <ul>
-    <li><code>/add_module name="..." code="..."</code></li>
-    <li><code>/add_class title="..." day=mon start=10:00 end=12:00</code></li>
-    <li><code>/add_shift start="2026-05-18 16:00" end="2026-05-18 23:00"</code></li>
-    <li><code>/add_assignment title="..." due="2026-05-21 23:59"</code></li>
-    <li><code>/set_status assignment=ID status=in_progress</code></li>
-    <li><code>/set_hours assignment=ID completed=2.5</code></li>
-  </ul>
-  <p>Or import CSV files:</p>
-  <pre><code>python3 -m core.academic.importers assignments data/assignments.csv --dry-run
-python3 -m core.academic.importers assignments data/assignments.csv --apply</code></pre>
-</section>
+<div class="section">
+  <h2>Telegram Commands</h2>
+  <div class="command-block">/add_module name="Deep Learning" code="DL"</div>
+  <div class="command-block">/add_class title="DL" day=mon start=10:00 end=12:00 module=ID</div>
+  <div class="command-block">/add_shift start="2026-05-18 16:00" end="2026-05-18 23:00"</div>
+  <div class="command-block">/add_assignment title="NLP CA1" due="2026-05-21 23:59" priority=2 estimate=6</div>
+  <div class="command-block">/set_status assignment=ID status=in_progress</div>
+  <div class="command-block">/set_hours assignment=ID completed=2.5</div>
+</div>
+
+<div class="section">
+  <h2>Knowledge Commands</h2>
+  <div class="command-block">/add_note title="Backpropagation" body="Gradient descent..." module=ID tags="dl,ml"</div>
+  <div class="command-block">/notes module=ID</div>
+  <div class="command-block">/add_file path="/path/to/file.pdf" title="ALCE paper" module=ID</div>
+  <div class="command-block">/files module=ID</div>
+  <div class="command-block">/search q="grounding"</div>
+</div>
+
+<div class="section">
+  <h2>CSV Import</h2>
+  <div class="command-block">python3 -m core.academic.importers assignments data/assignments.csv --dry-run</div>
+  <div class="command-block">python3 -m core.academic.importers assignments data/assignments.csv --apply</div>
+</div>
 {% endblock %}
