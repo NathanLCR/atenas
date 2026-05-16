@@ -1,35 +1,41 @@
 {% extends "base.html" %}
 
-{% block title %}LLM Call Logs{% endblock %}
+{% block page_title %}Logs{% endblock %}
 
 {% block main %}
-<h1>LLM Call Logs</h1>
 {% if records %}
-<table>
-  <thead>
-    <tr>
-      <th scope="col">id</th>
-      <th scope="col">task_type</th>
-      <th scope="col">model_used</th>
-      <th scope="col">called_at</th>
-      <th scope="col">duration_ms</th>
-      <th scope="col">success</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for record in records %}
-    <tr>
-      <td>{{ record.id }}</td>
-      <td>{{ record.task_type }}</td>
-      <td>{{ record.model_used }}</td>
-      <td>{{ record.called_at }}</td>
-      <td>{{ record.duration_ms }}</td>
-      <td>{{ record.success }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="section">
+  <table>
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Type</th>
+        <th>Provider</th>
+        <th>Model</th>
+        <th>Tokens</th>
+        <th>Latency</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in records %}
+      <tr>
+        <td>{{ r.created_at[:19] }}</td>
+        <td><span class="badge">{{ r.task_type }}</span></td>
+        <td>{{ r.provider }}</td>
+        <td>{{ r.model }}</td>
+        <td>{{ r.input_tokens or 0 }}/{{ r.output_tokens or 0 }}</td>
+        <td>{{ r.latency_ms }}ms</td>
+        <td><span class="badge badge-{{ 'success' if r.success else 'danger' }}">{{ 'ok' if r.success else 'fail' }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% else %}
-<p>No LLM calls recorded yet.</p>
+<div class="empty-state">
+  <h3>No LLM calls recorded yet.</h3>
+  <p class="muted">LLM call logs will appear here when enabled.</p>
+</div>
 {% endif %}
 {% endblock %}

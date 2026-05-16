@@ -43,7 +43,8 @@ class CommandResult:
 def parse_kv_args(text: str) -> dict[str, str]:
     """Parse key=value and key=\"quoted value\" pairs from command text.
 
-    Supports both quoted and unquoted values.
+    Supports both quoted and unquoted values. Keys are lowercased.
+    Used by all Telegram command handlers for argument parsing.
     """
     args: dict[str, str] = {}
     for match in _KV_TOKEN_RE.finditer(text):

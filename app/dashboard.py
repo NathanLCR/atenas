@@ -13,6 +13,7 @@ from fastapi.templating import Jinja2Templates
 from app.config import Settings, get_settings
 from core.academic.service import AcademicService
 from core.db import get_connection
+from core.knowledge.service import KnowledgeService
 from core.time import utc_now_iso
 
 logger = logging.getLogger(__name__)
@@ -119,6 +120,52 @@ async def data(request: Request) -> HTMLResponse:
     )
 
 
+@router.get("/notes", response_class=HTMLResponse)
+async def notes(request: Request) -> HTMLResponse:
+    """Render a read-only notes listing page."""
+
+    settings = _get_request_settings(request)
+    service = _get_knowledge_service(settings)
+    notes_list = service.list_notes(limit=50)
+    return templates.TemplateResponse(
+        request,
+        "notes.html",
+        {"notes": notes_list},
+    )
+
+
+@router.get("/files", response_class=HTMLResponse)
+async def files(request: Request) -> HTMLResponse:
+    """Render a read-only files listing page."""
+
+    settings = _get_request_settings(request)
+    service = _get_knowledge_service(settings)
+    files_list = service.list_files(limit=50)
+    return templates.TemplateResponse(
+        request,
+        "files.html",
+        {"files": files_list},
+    )
+
+
+@router.get("/search", response_class=HTMLResponse)
+async def search(request: Request) -> HTMLResponse:
+    """Render a read-only search results page."""
+
+    settings = _get_request_settings(request)
+    service = _get_knowledge_service(settings)
+    query = request.query_params.get("q", "").strip()
+    results = []
+    error = None
+    if query:
+        results, error = service.search(query=query, limit=50)
+    return templates.TemplateResponse(
+        request,
+        "search.html",
+        {"query": query, "results": results, "error": error},
+    )
+
+
 def _get_request_settings(request: Request) -> Settings:
     """Return app-scoped settings when available."""
 
@@ -155,6 +202,12 @@ def _get_academic_service(settings: Settings) -> AcademicService:
     """Build the request-scoped academic service."""
 
     return AcademicService(settings.db_path, timezone=settings.timezone)
+
+
+def _get_knowledge_service(settings: Settings) -> KnowledgeService:
+    """Build the request-scoped knowledge service."""
+
+    return KnowledgeService(settings.db_path, timezone=settings.timezone)
 
 
 def _format_minutes(minutes: int) -> str:

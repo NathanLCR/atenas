@@ -57,7 +57,12 @@ from core.time import (
 
 
 class AcademicService:
-    """Deterministic scheduling service used by Telegram and dashboard views."""
+    """Deterministic scheduling service used by Telegram and dashboard views.
+
+    Coordinates availability calculation, study planning, and CRUD operations
+    for modules, classes, shifts, and assignments. All scheduling decisions
+    are deterministic — no randomness or LLM involvement.
+    """
 
     def __init__(
         self,

@@ -10,6 +10,7 @@ from app.config import Settings, get_settings
 from core.academic.models import Assignment, TimeBlock
 from core.academic.service import AcademicService
 from core.academic.validators import parse_kv_args, parse_weekday, validate_hours, validate_priority, validate_status
+from core.knowledge.service import KnowledgeService
 from skills.status import handler as status_handler
 
 if TYPE_CHECKING:
@@ -22,7 +23,12 @@ logger = logging.getLogger(__name__)
 
 
 class AllowlistFilter:
-    """Allow only configured Telegram user IDs through to handlers."""
+    """Allow only configured Telegram user IDs through to handlers.
+
+    This is the primary security boundary for the bot. All commands are
+    registered with this filter. Updates from non-allowed users are
+    silently dropped with a warning log.
+    """
 
     def __init__(self, allowed_user_ids: Sequence[int] | None = None) -> None:
         self._allowed_user_ids = set(allowed_user_ids) if allowed_user_ids is not None else None
@@ -382,7 +388,11 @@ async def assignments_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 def build_application(settings: Settings | None = None) -> Application:
-    """Build a configured python-telegram-bot application."""
+    """Build a configured python-telegram-bot application.
+
+    Registers all command handlers with the allowlist filter.
+    Settings are stored in bot_data for handler access.
+    """
 
     from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
@@ -413,6 +423,14 @@ def build_application(settings: Settings | None = None) -> Application:
     application.add_handler(CommandHandler("classes", classes_command, filters=allowlist_filter))
     application.add_handler(CommandHandler("shifts", shifts_command, filters=allowlist_filter))
     application.add_handler(CommandHandler("assignments", assignments_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("add_note", add_note_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("notes", notes_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("note", note_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("archive_note", archive_note_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("add_file", add_file_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("files", files_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("search", search_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("link_note_file", link_note_file_command, filters=allowlist_filter))
     application.add_handler(MessageHandler(filters.COMMAND & allowlist_filter, unknown_command))
     return application
 
@@ -755,3 +773,192 @@ def _extract_first_arg(text: str) -> str | None:
     if len(parts) < 2:
         return None
     return parts[1].strip()
+
+
+def _format_note_date(iso_str: str) -> str:
+    from datetime import datetime
+    try:
+        dt = datetime.fromisoformat(iso_str)
+        return f"{dt.day} {dt.strftime('%b')}"
+    except (ValueError, TypeError):
+        return iso_str[:10]
+
+
+async def add_note_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    settings = _get_bot_settings(context)
+    service = KnowledgeService(settings.db_path, timezone=settings.timezone)
+    text = update.effective_message.text or ""
+    args = parse_kv_args(text)
+    title = args.get("title")
+    body = args.get("body")
+    if not all([title, body]):
+        await _reply(update, 'Usage: /add_note title="My note" body="Note content..." module=abc123 tags="tag1,tag2"')
+        return
+    module_id = args.get("module")
+    assignment_id = args.get("assignment")
+    source_type = args.get("source", "manual")
+    tags_str = args.get("tags")
+    tags = [t.strip() for t in tags_str.split(",") if t.strip()] if tags_str else []
+    result = service.create_note(title=title, body=body, module_id=module_id,
+                                  assignment_id=assignment_id, source_type=source_type, tags=tags)
+    await _reply(update, result.message)
+
+
+async def notes_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    settings = _get_bot_settings(context)
+    service = KnowledgeService(settings.db_path, timezone=settings.timezone)
+    text = update.effective_message.text or ""
+    args = parse_kv_args(text)
+    module_id = args.get("module")
+    assignment_id = args.get("assignment")
+    tag = args.get("tag")
+    notes = service.list_notes(module_id=module_id, assignment_id=assignment_id, tag=tag, limit=20)
+    if not notes:
+        await _reply(update, "No notes found.")
+        return
+    lines = ["Notes", ""]
+    for n in notes:
+        updated = _format_note_date(n.updated_at)
+        tags_label = f"\nTags: {', '.join(n.tags)}" if n.tags else ""
+        lines.append(f"#{n.id} {n.title}")
+        lines.append(f"Updated: {updated}{tags_label}")
+        lines.append("")
+    await _reply(update, "\n".join(lines).rstrip())
+
+
+async def note_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    settings = _get_bot_settings(context)
+    service = KnowledgeService(settings.db_path, timezone=settings.timezone)
+    text = update.effective_message.text or ""
+    parts = text.split(None, 1)
+    if len(parts) < 2:
+        await _reply(update, "Usage: /note <id>")
+        return
+    try:
+        note_id = int(parts[1].strip())
+    except ValueError:
+        await _reply(update, "Invalid note ID. Use: /note <id>")
+        return
+    note = service.get_note(note_id)
+    if note is None:
+        await _reply(update, f"Note #{note_id} not found.")
+        return
+    body_preview = note.body[:1500]
+    if len(note.body) > 1500:
+        body_preview += "..."
+    tags_label = f"\nTags: {', '.join(note.tags)}" if note.tags else ""
+    await _reply(update, f"#{note.id} \u2014 {note.title}\n\n{body_preview}{tags_label}")
+
+
+async def archive_note_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    settings = _get_bot_settings(context)
+    service = KnowledgeService(settings.db_path, timezone=settings.timezone)
+    text = update.effective_message.text or ""
+    parts = text.split(None, 1)
+    if len(parts) < 2:
+        await _reply(update, "Usage: /archive_note <id>")
+        return
+    try:
+        note_id = int(parts[1].strip())
+    except ValueError:
+        await _reply(update, "Invalid note ID. Use: /archive_note <id>")
+        return
+    result = service.archive_note(note_id)
+    await _reply(update, result.message)
+
+
+async def add_file_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    settings = _get_bot_settings(context)
+    service = KnowledgeService(settings.db_path, timezone=settings.timezone)
+    text = update.effective_message.text or ""
+    args = parse_kv_args(text)
+    path = args.get("path")
+    if not path:
+        await _reply(update, 'Usage: /add_file path="/path/to/file.pdf" title="My file" module=abc123 tags="tag1,tag2"')
+        return
+    title = args.get("title")
+    module_id = args.get("module")
+    assignment_id = args.get("assignment")
+    tags_str = args.get("tags")
+    tags = [t.strip() for t in tags_str.split(",") if t.strip()] if tags_str else []
+    result = service.register_file(path=path, title=title, module_id=module_id,
+                                    assignment_id=assignment_id, tags=tags)
+    await _reply(update, result.message)
+
+
+async def files_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    settings = _get_bot_settings(context)
+    service = KnowledgeService(settings.db_path, timezone=settings.timezone)
+    text = update.effective_message.text or ""
+    args = parse_kv_args(text)
+    module_id = args.get("module")
+    assignment_id = args.get("assignment")
+    tag = args.get("tag")
+    files = service.list_files(module_id=module_id, assignment_id=assignment_id, tag=tag, limit=20)
+    if not files:
+        await _reply(update, "No files found.")
+        return
+    lines = ["Files", ""]
+    for f in files:
+        type_label = f"\nType: {f.file_type}" if f.file_type else ""
+        tags_label = f"\nTags: {', '.join(f.tags)}" if f.tags else ""
+        lines.append(f"#{f.id} {f.title or f.filename}")
+        lines.append(f"Path: {f.path}{type_label}{tags_label}")
+        lines.append("")
+    await _reply(update, "\n".join(lines).rstrip())
+
+
+async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    settings = _get_bot_settings(context)
+    service = KnowledgeService(settings.db_path, timezone=settings.timezone)
+    text = update.effective_message.text or ""
+    args = parse_kv_args(text)
+    query = args.get("q")
+    if not query:
+        parts = text.split(None, 1)
+        if len(parts) < 2:
+            await _reply(update, 'Usage: /search <query> or /search q="my query"')
+            return
+        query = parts[1].strip()
+    module_id = args.get("module")
+    assignment_id = args.get("assignment")
+    results, error = service.search(query=query, module_id=module_id, assignment_id=assignment_id, limit=20)
+    if error:
+        await _reply(update, error)
+        return
+    lines = [f'Search results for "{query}"', ""]
+    note_results = [r for r in results if r.kind == "note"]
+    file_results = [r for r in results if r.kind == "file"]
+    if note_results:
+        lines.append("Notes")
+        for r in note_results:
+            lines.append(f"#{r.id} {r.title}")
+            lines.append(f"  {r.snippet}")
+            lines.append("")
+    if file_results:
+        lines.append("Files")
+        for r in file_results:
+            lines.append(f"#{r.id} {r.title}")
+            lines.append(f"  {r.snippet}")
+            lines.append("")
+    await _reply(update, "\n".join(lines).rstrip())
+
+
+async def link_note_file_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    settings = _get_bot_settings(context)
+    service = KnowledgeService(settings.db_path, timezone=settings.timezone)
+    text = update.effective_message.text or ""
+    args = parse_kv_args(text)
+    note_str = args.get("note")
+    file_str = args.get("file")
+    if not all([note_str, file_str]):
+        await _reply(update, "Usage: /link_note_file note=12 file=4")
+        return
+    try:
+        note_id = int(note_str)
+        file_id = int(file_str)
+    except ValueError:
+        await _reply(update, "Invalid IDs. Use: /link_note_file note=12 file=4")
+        return
+    result = service.link_note_file(note_id, file_id)
+    await _reply(update, result.message)
