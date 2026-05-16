@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from app.config import Settings, get_settings
 from core.academic.models import Assignment, TimeBlock
 from core.academic.service import AcademicService
+from core.academic.validators import parse_kv_args, parse_weekday, validate_hours, validate_priority, validate_status
 from skills.status import handler as status_handler
 
 if TYPE_CHECKING:
@@ -129,6 +130,257 @@ async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await _reply(update, "Unknown command. Try /ping, /status, or /skills.")
 
 
+async def add_module_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Add a study module via key-value arguments."""
+
+    settings = _get_bot_settings(context)
+    service = AcademicService(settings.db_path, timezone=settings.timezone)
+    text = update.effective_message.text or ""
+    args = parse_kv_args(text)
+
+    name = args.get("name") or _extract_first_arg(text)
+    if not name:
+        await _reply(update, 'Usage: /add_module name="Deep Learning" code="DL"')
+        return
+
+    result = service.add_module(
+        name=name,
+        code=args.get("code"),
+        lecturer=args.get("lecturer"),
+        notes=args.get("notes"),
+    )
+    await _reply(update, result.message)
+
+
+async def add_class_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Add a weekly class session via key-value arguments."""
+
+    settings = _get_bot_settings(context)
+    service = AcademicService(settings.db_path, timezone=settings.timezone)
+    text = update.effective_message.text or ""
+    args = parse_kv_args(text)
+
+    title = args.get("title")
+    day = args.get("day")
+    start = args.get("start")
+    end = args.get("end")
+
+    if not all([title, day, start, end]):
+        await _reply(update, 'Usage: /add_class title="DL" day=mon start=10:00 end=12:00 module=1')
+        return
+
+    weekday = parse_weekday(day)
+    if weekday is None:
+        await _reply(update, "Invalid weekday. Use 0-6 or mon/tue/wed/thu/fri/sat/sun.")
+        return
+
+    module_id = args.get("module")
+    result = service.add_class_session(
+        title=title,
+        weekday=weekday,
+        start_time=start,
+        end_time=end,
+        module_id=module_id or None,
+        location=args.get("location"),
+        notes=args.get("notes"),
+    )
+    await _reply(update, result.message)
+
+
+async def add_shift_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Add a work shift via key-value arguments."""
+
+    settings = _get_bot_settings(context)
+    service = AcademicService(settings.db_path, timezone=settings.timezone)
+    text = update.effective_message.text or ""
+    args = parse_kv_args(text)
+
+    start = args.get("start")
+    end = args.get("end")
+
+    if not all([start, end]):
+        await _reply(update, 'Usage: /add_shift title="Work" start="2026-05-18 16:00" end="2026-05-18 23:00"')
+        return
+
+    energy = args.get("energy")
+    result = service.add_work_shift(
+        title=args.get("title", "Work"),
+        start_at=start,
+        end_at=end,
+        location=args.get("location"),
+        role=args.get("role"),
+        energy_cost=int(energy) if energy else None,
+        notes=args.get("notes"),
+    )
+    await _reply(update, result.message)
+
+
+async def add_assignment_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Add an assignment via key-value arguments."""
+
+    settings = _get_bot_settings(context)
+    service = AcademicService(settings.db_path, timezone=settings.timezone)
+    text = update.effective_message.text or ""
+    args = parse_kv_args(text)
+
+    title = args.get("title")
+    due = args.get("due")
+
+    if not all([title, due]):
+        await _reply(update, 'Usage: /add_assignment title="NLP CA1" due="2026-05-21 23:59" module=2 priority=2 estimate=6')
+        return
+
+    module_id = args.get("module")
+    priority_str = args.get("priority", "3")
+    priority = int(priority_str) if priority_str.isdigit() else 3
+    estimate_str = args.get("estimate")
+    estimated = float(estimate_str) if estimate_str else None
+
+    result = service.add_assignment(
+        title=title,
+        due_at=due,
+        module_id=module_id or None,
+        priority=priority,
+        estimated_hours=estimated,
+        notes=args.get("notes"),
+    )
+    await _reply(update, result.message)
+
+
+async def set_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Update assignment status."""
+
+    settings = _get_bot_settings(context)
+    service = AcademicService(settings.db_path, timezone=settings.timezone)
+    text = update.effective_message.text or ""
+    args = parse_kv_args(text)
+
+    assignment_id = args.get("assignment")
+    status = args.get("status")
+
+    if not all([assignment_id, status]):
+        await _reply(update, "Usage: /set_status assignment=8 status=in_progress")
+        return
+
+    result = service.update_assignment_status(assignment_id, status)
+    await _reply(update, result.message)
+
+
+async def set_hours_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Update assignment completed hours."""
+
+    settings = _get_bot_settings(context)
+    service = AcademicService(settings.db_path, timezone=settings.timezone)
+    text = update.effective_message.text or ""
+    args = parse_kv_args(text)
+
+    assignment_id = args.get("assignment")
+    completed = args.get("completed")
+
+    if not all([assignment_id, completed]):
+        await _reply(update, "Usage: /set_hours assignment=8 completed=2.5")
+        return
+
+    try:
+        hours = float(completed)
+    except ValueError:
+        await _reply(update, "completed must be a number.")
+        return
+
+    result = service.update_completed_hours(assignment_id, hours)
+    await _reply(update, result.message)
+
+
+async def modules_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """List all study modules."""
+
+    settings = _get_bot_settings(context)
+    service = AcademicService(settings.db_path, timezone=settings.timezone)
+    modules = service.list_modules()
+
+    if not modules:
+        await _reply(update, "No modules found.")
+        return
+
+    lines = ["Modules", ""]
+    for m in modules:
+        code = f" ({m.code})" if m.code else ""
+        lines.append(f"#{m.id[:8]} {m.name}{code}")
+    await _reply(update, "\n".join(lines))
+
+
+async def classes_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """List active class sessions grouped by weekday."""
+
+    settings = _get_bot_settings(context)
+    service = AcademicService(settings.db_path, timezone=settings.timezone)
+    sessions = service.list_class_sessions()
+
+    if not sessions:
+        await _reply(update, "No class sessions found.")
+        return
+
+    day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    by_day: dict[int, list] = {}
+    for s in sessions:
+        by_day.setdefault(s.weekday, []).append(s)
+
+    lines = ["Classes", ""]
+    for day in sorted(by_day):
+        lines.append(day_names[day])
+        for s in by_day[day]:
+            lines.append(f"  {s.start_time}\u2013{s.end_time} {s.title}")
+        lines.append("")
+    await _reply(update, "\n".join(lines).rstrip())
+
+
+async def shifts_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """List upcoming work shifts."""
+
+    settings = _get_bot_settings(context)
+    service = AcademicService(settings.db_path, timezone=settings.timezone)
+    shifts = service.list_all_work_shifts(limit=30)
+
+    if not shifts:
+        await _reply(update, "No work shifts found.")
+        return
+
+    lines = ["Work shifts", ""]
+    current_date = None
+    for s in shifts:
+        date_label = s.start_at.strftime("%a %d %b")
+        if date_label != current_date:
+            current_date = date_label
+            lines.append(date_label)
+        lines.append(f"  {s.start_at.strftime('%H:%M')}\u2013{s.end_at.strftime('%H:%M')} {s.title}")
+        lines.append("")
+    await _reply(update, "\n".join(lines).rstrip())
+
+
+async def assignments_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """List open assignments."""
+
+    settings = _get_bot_settings(context)
+    service = AcademicService(settings.db_path, timezone=settings.timezone)
+    assignments = service.list_all_assignments(include_completed=False)
+
+    if not assignments:
+        await _reply(update, "No open assignments found.")
+        return
+
+    lines = ["Assignments", ""]
+    for a in assignments:
+        lines.append(f"#{a.id[:8]} {a.title}")
+        lines.append(f"  Due: {a.due_at.strftime('%a %d %b %H:%M')}")
+        lines.append(f"  Status: {a.status.value}")
+        if a.estimated_hours is not None:
+            lines.append(f"  Estimate: {_format_hours(a.estimated_hours)}")
+        if a.completed_hours > 0:
+            lines.append(f"  Completed: {_format_hours(a.completed_hours)}")
+        lines.append("")
+    await _reply(update, "\n".join(lines).rstrip())
+
+
 def build_application(settings: Settings | None = None) -> Application:
     """Build a configured python-telegram-bot application."""
 
@@ -151,6 +403,16 @@ def build_application(settings: Settings | None = None) -> Application:
     application.add_handler(CommandHandler("availability", availability_command, filters=allowlist_filter))
     application.add_handler(CommandHandler("plan", plan_command, filters=allowlist_filter))
     application.add_handler(CommandHandler("study", study_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("add_module", add_module_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("add_class", add_class_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("add_shift", add_shift_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("add_assignment", add_assignment_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("set_status", set_status_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("set_hours", set_hours_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("modules", modules_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("classes", classes_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("shifts", shifts_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("assignments", assignments_command, filters=allowlist_filter))
     application.add_handler(MessageHandler(filters.COMMAND & allowlist_filter, unknown_command))
     return application
 
@@ -484,3 +746,12 @@ def _format_hours(hours: float) -> str:
     if hours.is_integer():
         return f"{int(hours)}h"
     return f"{hours:g}h"
+
+
+def _extract_first_arg(text: str) -> str | None:
+    """Extract the first positional argument after the command name."""
+
+    parts = text.split(None, 1)
+    if len(parts) < 2:
+        return None
+    return parts[1].strip()

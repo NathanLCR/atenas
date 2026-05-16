@@ -101,6 +101,24 @@ async def plan(request: Request) -> HTMLResponse:
     )
 
 
+@router.get("/data", response_class=HTMLResponse)
+async def data(request: Request) -> HTMLResponse:
+    """Render a read-only data management overview."""
+
+    settings = _get_request_settings(request)
+    service = _get_academic_service(settings)
+    return templates.TemplateResponse(
+        request,
+        "data.html",
+        {
+            "modules": service.list_modules(),
+            "class_count": len(service.list_class_sessions()),
+            "shift_count": len(service.list_all_work_shifts(limit=100)),
+            "assignment_count": len(service.list_all_assignments(include_completed=False)),
+        },
+    )
+
+
 def _get_request_settings(request: Request) -> Settings:
     """Return app-scoped settings when available."""
 
