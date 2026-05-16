@@ -52,6 +52,22 @@ def handle_skills(registry: SkillRegistry) -> str:
     return "\n".join(lines)
 
 
+def get_status() -> str:
+    """Return formatted status using process settings."""
+
+    from app.config import get_settings
+
+    return handle_status(get_settings().db_path)
+
+
+def get_skills() -> str:
+    """Return formatted skills using the process registry."""
+
+    from core.skill_registry import get_registry
+
+    return handle_skills(get_registry())
+
+
 def register_status_skill(registry: SkillRegistry, db_path: Path | str) -> None:
     """Register the status skill with `/ping`, `/status`, and `/skills`."""
 
@@ -143,4 +159,3 @@ def _count(
 
     row = connection.execute(query, parameters).fetchone()
     return int(row["count"]) if row else 0
-

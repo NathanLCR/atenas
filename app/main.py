@@ -9,7 +9,9 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.api import router as api_router
+from app.bot import build_application, start_bot, stop_bot
 from app.config import Settings, get_settings
+from app.dashboard import router as dashboard_router
 from core.db import init_db
 from core.skill_registry import SkillRegistry, get_registry
 from core.utils import setup_logging
@@ -31,6 +33,15 @@ def create_app(settings: Settings | None = None, registry: SkillRegistry | None 
         register_status_skill(runtime_registry, runtime_settings.db_path)
         app.state.settings = runtime_settings
         app.state.registry = runtime_registry
+        if runtime_settings.TELEGRAM_BOT_TOKEN:
+            bot_app = build_application(runtime_settings)
+            await start_bot(bot_app)
+            app.state.bot_app = bot_app
+        else:
+            logger.warning(
+                "telegram_bot_token_not_set",
+                extra={"event_type": "telegram_bot_token_not_set"},
+            )
         logger.info(
             "application_started",
             extra={"event_type": "application_started", "app_name": runtime_settings.app_name},
@@ -38,12 +49,15 @@ def create_app(settings: Settings | None = None, registry: SkillRegistry | None 
         try:
             yield
         finally:
+            bot_app = getattr(app.state, "bot_app", None)
+            if bot_app is not None:
+                await stop_bot(bot_app)
             logger.info("application_shutdown", extra={"event_type": "application_shutdown"})
 
     app = FastAPI(title=runtime_settings.app_name, lifespan=lifespan)
     app.include_router(api_router)
+    app.include_router(dashboard_router)
     return app
 
 
 app = create_app()
-
