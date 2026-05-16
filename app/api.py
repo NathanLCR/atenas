@@ -2,9 +2,30 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.security import APIKeyHeader
+
+from app.config import Settings, get_settings
 
 router = APIRouter()
+
+API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+def _require_api_key(
+    api_key: str | None = Depends(API_KEY_HEADER),
+    settings: Settings = Depends(get_settings),
+) -> None:
+    """Validate the API key from the request header."""
+
+    expected = getattr(settings, "api_key", None)
+    if not expected:
+        return
+    if not api_key or api_key != expected:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing API key",
+        )
 
 
 @router.get("/health")
@@ -14,7 +35,7 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@router.get("/status")
+@router.get("/status", dependencies=[Depends(_require_api_key)])
 async def status(request: Request) -> dict[str, str]:
     """Return the status skill response."""
 
@@ -22,7 +43,7 @@ async def status(request: Request) -> dict[str, str]:
     return {"response": response}
 
 
-@router.get("/skills")
+@router.get("/skills", dependencies=[Depends(_require_api_key)])
 async def skills(request: Request) -> dict[str, str]:
     """Return the skills listing response."""
 

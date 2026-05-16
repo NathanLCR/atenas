@@ -24,11 +24,14 @@ class Settings(BaseSettings):
     telegram_bot_token: str | None = None
     telegram_allowed_user_ids: list[int] = Field(default_factory=list)
 
+    api_key: str | None = None
+
     data_dir: Path = Path("data")
     memory_dir: Path = Path("memory")
     output_dir: Path = Path("output")
     inbox_dir: Path = Path("inbox")
     logs_dir: Path = Path("logs")
+    timezone: str = "Europe/Dublin"
 
     local_llm_provider: str = "ollama"
     ollama_base_url: str = "http://localhost:11434"
