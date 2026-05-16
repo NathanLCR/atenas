@@ -6,9 +6,8 @@ import logging
 import sqlite3
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
-from fastapi.security import APIKeyHeader
 from fastapi.templating import Jinja2Templates
 
 from app.config import Settings, get_settings
@@ -21,26 +20,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/dashboard")
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 
-API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 
-
-def _require_dashboard_key(
-    api_key: str | None = Depends(API_KEY_HEADER),
-    settings: Settings = Depends(get_settings),
-) -> None:
-    """Validate the API key for dashboard access."""
-
-    expected = getattr(settings, "api_key", None)
-    if not expected:
-        return
-    if not api_key or api_key != expected:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing API key",
-        )
-
-
-@router.get("/", response_class=HTMLResponse, dependencies=[Depends(_require_dashboard_key)])
+@router.get("/", response_class=HTMLResponse)
 async def home(request: Request) -> HTMLResponse:
     """Render the dashboard home page."""
 
@@ -56,7 +37,7 @@ async def home(request: Request) -> HTMLResponse:
     )
 
 
-@router.get("/logs", response_class=HTMLResponse, dependencies=[Depends(_require_dashboard_key)])
+@router.get("/logs", response_class=HTMLResponse)
 async def logs(request: Request) -> HTMLResponse:
     """Render the latest read-only LLM call records."""
 
@@ -71,7 +52,7 @@ async def logs(request: Request) -> HTMLResponse:
     )
 
 
-@router.get("/week", response_class=HTMLResponse, dependencies=[Depends(_require_dashboard_key)])
+@router.get("/week", response_class=HTMLResponse)
 async def week(request: Request) -> HTMLResponse:
     """Render a read-only weekly schedule and availability page."""
 
@@ -88,7 +69,7 @@ async def week(request: Request) -> HTMLResponse:
     )
 
 
-@router.get("/deadlines", response_class=HTMLResponse, dependencies=[Depends(_require_dashboard_key)])
+@router.get("/deadlines", response_class=HTMLResponse)
 async def deadlines(request: Request) -> HTMLResponse:
     """Render a read-only open deadlines page."""
 
@@ -103,7 +84,7 @@ async def deadlines(request: Request) -> HTMLResponse:
     )
 
 
-@router.get("/plan", response_class=HTMLResponse, dependencies=[Depends(_require_dashboard_key)])
+@router.get("/plan", response_class=HTMLResponse)
 async def plan(request: Request) -> HTMLResponse:
     """Render a read-only deterministic study plan page."""
 
@@ -145,7 +126,7 @@ def _load_llm_call_records(settings: Settings) -> list[dict[str, object]]:
     except sqlite3.OperationalError as exc:
         if "no such table: llm_calls" not in str(exc):
             raise
-        logger.debug("llm_call_records_table_missing")
+        logger.debug("llm_calls_table_missing")
         return []
     finally:
         connection.close()

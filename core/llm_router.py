@@ -78,20 +78,23 @@ class LLMRouter:
     ) -> None:
         """Append the mock call to logs/llm_calls.jsonl."""
 
-        path = Path(self.settings.llm_log_path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "timestamp": utc_now(),
-            "event_type": "llm_call",
-            "provider": response.provider.value,
-            "model": response.model,
-            "task_type": task_type,
-            "input_tokens": response.input_tokens,
-            "output_tokens": response.output_tokens,
-            "latency_ms": response.latency_ms,
-            "schema_model": schema_model.__name__ if schema_model else None,
-            "outcome": "success",
-        }
-        with path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        try:
+            path = Path(self.settings.llm_log_path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "timestamp": utc_now(),
+                "event_type": "llm_call",
+                "provider": response.provider.value,
+                "model": response.model,
+                "task_type": task_type,
+                "input_tokens": response.input_tokens,
+                "output_tokens": response.output_tokens,
+                "latency_ms": response.latency_ms,
+                "schema_model": schema_model.__name__ if schema_model else None,
+                "outcome": "success",
+            }
+            with path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        except OSError:
+            logger.warning("llm_call_log_write_failed", extra={"event_type": "llm_call_log_write_failed"})
 

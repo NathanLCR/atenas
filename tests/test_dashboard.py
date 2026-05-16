@@ -34,7 +34,7 @@ def test_logs_route_returns_200(settings: Settings) -> None:
 
 
 def test_logs_route_empty_state(settings: Settings) -> None:
-    """An empty llm_call_records table should show the empty state."""
+    """An empty llm_calls table should show the empty state."""
 
     app = create_app(settings=settings, registry=SkillRegistry())
 
@@ -43,13 +43,20 @@ def test_logs_route_empty_state(settings: Settings) -> None:
         try:
             connection.execute(
                 """
-                CREATE TABLE IF NOT EXISTS llm_call_records (
+                CREATE TABLE IF NOT EXISTS llm_calls (
                     id TEXT PRIMARY KEY,
-                    task_type TEXT,
-                    model_used TEXT,
-                    called_at TEXT,
-                    duration_ms INTEGER,
-                    success INTEGER
+                    provider TEXT NOT NULL,
+                    model TEXT NOT NULL,
+                    task_type TEXT NOT NULL,
+                    input_tokens INTEGER,
+                    output_tokens INTEGER,
+                    estimated_cost REAL,
+                    success INTEGER NOT NULL,
+                    latency_ms INTEGER,
+                    schema_valid INTEGER,
+                    policy_passed INTEGER,
+                    outcome TEXT NOT NULL DEFAULT 'success',
+                    created_at TEXT NOT NULL
                 )
                 """
             )

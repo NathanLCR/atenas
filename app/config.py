@@ -24,8 +24,6 @@ class Settings(BaseSettings):
     telegram_bot_token: str | None = None
     telegram_allowed_user_ids: list[int] = Field(default_factory=list)
 
-    api_key: str | None = None
-
     data_dir: Path = Path("data")
     memory_dir: Path = Path("memory")
     output_dir: Path = Path("output")
@@ -134,3 +132,9 @@ def get_settings() -> Settings:
     """Return the process-wide settings singleton."""
 
     return Settings()
+
+
+def clear_settings_cache() -> None:
+    """Clear the cached settings singleton. Useful for testing."""
+
+    get_settings.cache_clear()

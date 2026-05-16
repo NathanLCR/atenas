@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -33,12 +33,11 @@ MONDAY = date(2026, 5, 18)
 
 
 @pytest.mark.asyncio
-async def test_today_command_returns_compact_overview(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_today_command_returns_compact_overview() -> None:
     fake_service = _fake_service(today=_today_overview())
-    monkeypatch.setattr("app.bot.get_academic_service", lambda: fake_service)
-    update = _make_update(123, "/today")
-
-    await _dispatch_if_allowed(update, today_command)
+    with patch("app.bot.AcademicService", return_value=fake_service):
+        update = _make_update(123, "/today")
+        await _dispatch_if_allowed(update, today_command)
 
     reply = update.effective_message.reply_text.await_args.args[0]
     assert "Today - Mon 18 May" in reply
@@ -49,12 +48,11 @@ async def test_today_command_returns_compact_overview(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.asyncio
-async def test_week_command_returns_compact_summary(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_week_command_returns_compact_summary() -> None:
     fake_service = _fake_service(week=_week_overview())
-    monkeypatch.setattr("app.bot.get_academic_service", lambda: fake_service)
-    update = _make_update(123, "/week")
-
-    await _dispatch_if_allowed(update, week_command)
+    with patch("app.bot.AcademicService", return_value=fake_service):
+        update = _make_update(123, "/week")
+        await _dispatch_if_allowed(update, week_command)
 
     reply = update.effective_message.reply_text.await_args.args[0]
     assert "Week - 18 May to 24 May" in reply
@@ -63,16 +61,15 @@ async def test_week_command_returns_compact_summary(monkeypatch: pytest.MonkeyPa
 
 
 @pytest.mark.asyncio
-async def test_deadlines_command_returns_sorted_deadlines(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_deadlines_command_returns_sorted_deadlines() -> None:
     assignments = [
         _assignment("First Deadline", datetime(2026, 5, 21, 17, 0, tzinfo=TZ), priority=1),
         _assignment("Second Deadline", datetime(2026, 5, 25, 17, 0, tzinfo=TZ), priority=3),
     ]
     fake_service = _fake_service(assignments=assignments)
-    monkeypatch.setattr("app.bot.get_academic_service", lambda: fake_service)
-    update = _make_update(123, "/deadlines")
-
-    await _dispatch_if_allowed(update, deadlines_command)
+    with patch("app.bot.AcademicService", return_value=fake_service):
+        update = _make_update(123, "/deadlines")
+        await _dispatch_if_allowed(update, deadlines_command)
 
     reply = update.effective_message.reply_text.await_args.args[0]
     assert reply.index("First Deadline") < reply.index("Second Deadline")
@@ -80,12 +77,11 @@ async def test_deadlines_command_returns_sorted_deadlines(monkeypatch: pytest.Mo
 
 
 @pytest.mark.asyncio
-async def test_availability_command_returns_today_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_availability_command_returns_today_windows() -> None:
     fake_service = _fake_service(today=_today_overview())
-    monkeypatch.setattr("app.bot.get_academic_service", lambda: fake_service)
-    update = _make_update(123, "/availability")
-
-    await _dispatch_if_allowed(update, availability_command)
+    with patch("app.bot.AcademicService", return_value=fake_service):
+        update = _make_update(123, "/availability")
+        await _dispatch_if_allowed(update, availability_command)
 
     reply = update.effective_message.reply_text.await_args.args[0]
     assert "Availability today" in reply
@@ -94,26 +90,23 @@ async def test_availability_command_returns_today_windows(monkeypatch: pytest.Mo
 
 
 @pytest.mark.asyncio
-async def test_schedule_commands_respect_allowlist(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_schedule_commands_respect_allowlist() -> None:
     fake_service = _fake_service(today=_today_overview())
-    monkeypatch.setattr("app.bot.get_academic_service", lambda: fake_service)
-    update = _make_update(404, "/today")
+    with patch("app.bot.AcademicService", return_value=fake_service):
+        update = _make_update(404, "/today")
 
-    if AllowlistFilter(allowed_user_ids=[123]).filter(update):
-        await today_command(update, _make_context())
+        if AllowlistFilter(allowed_user_ids=[123]).filter(update):
+            await today_command(update, _make_context())
 
     update.effective_message.reply_text.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_today_command_empty_data_message_is_friendly(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_today_command_empty_data_message_is_friendly() -> None:
     fake_service = _fake_service(today=_today_overview(empty=True))
-    monkeypatch.setattr("app.bot.get_academic_service", lambda: fake_service)
-    update = _make_update(123, "/today")
-
-    await _dispatch_if_allowed(update, today_command)
+    with patch("app.bot.AcademicService", return_value=fake_service):
+        update = _make_update(123, "/today")
+        await _dispatch_if_allowed(update, today_command)
 
     reply = update.effective_message.reply_text.await_args.args[0]
     assert "No classes, work shifts, or deadlines found." in reply
@@ -263,4 +256,14 @@ def _make_update(user_id: int, text: str) -> SimpleNamespace:
 
 
 def _make_context() -> SimpleNamespace:
-    return SimpleNamespace(bot=SimpleNamespace(send_message=AsyncMock()))
+    return SimpleNamespace(
+        bot=SimpleNamespace(send_message=AsyncMock()),
+        bot_data={"settings": _fake_settings()},
+    )
+
+
+def _fake_settings() -> SimpleNamespace:
+    return SimpleNamespace(
+        db_path="/tmp/test.sqlite",
+        timezone="Europe/Dublin",
+    )

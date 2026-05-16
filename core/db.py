@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import logging
+import re
 import sqlite3
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+_IDENTIFIER_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
 SCHEMA_SQL = """
@@ -217,17 +220,14 @@ def get_connection(db_path: Path | str) -> sqlite3.Connection:
 
 
 def init_db(db_path: Path | str) -> None:
-    path = Path(db_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    conn = get_connection(path)
+    conn = get_connection(db_path)
     try:
         conn.executescript(SCHEMA_SQL)
         _apply_phase3_migrations(conn)
         _apply_phase3_indexes(conn)
-        conn.commit()
     finally:
         conn.close()
-    logger.info("database_initialized", extra={"event_type": "database_initialized", "db_path": str(path)})
+    logger.info("database_initialized", extra={"event_type": "database_initialized", "db_path": str(db_path)})
 
 
 def _apply_phase3_migrations(connection: sqlite3.Connection) -> None:
@@ -276,6 +276,10 @@ def _ensure_column(
 
     if table_name not in VALID_TABLE_NAMES:
         raise ValueError(f"Invalid table name: {table_name}")
+    if not _IDENTIFIER_RE.match(column_name):
+        raise ValueError(f"Invalid column name: {column_name}")
+    if not _IDENTIFIER_RE.match(definition.split()[0]):
+        raise ValueError(f"Invalid column definition: {definition}")
     columns = {
         row["name"]
         for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()
