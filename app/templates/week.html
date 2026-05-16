@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Weekly Schedule{% endblock %}
+
+{% block main %}
+<h1>Weekly Schedule</h1>
+<p>{{ overview.start_date.strftime("%d %b") }} to {{ overview.end_date.strftime("%d %b") }}</p>
+
+<dl>
+  <dt>Classes</dt>
+  <dd>{{ overview.class_count }}</dd>
+  <dt>Work shifts</dt>
+  <dd>{{ overview.work_shift_count }}</dd>
+  <dt>Open deadlines</dt>
+  <dd>{{ overview.open_deadline_count }}</dd>
+  <dt>Total study time</dt>
+  <dd>{{ format_minutes(overview.availability.total_study_minutes) }}</dd>
+</dl>
+
+{% for day in overview.availability.days %}
+<section>
+  <h2>{{ day.date.strftime("%a %d %b") }}</h2>
+
+  <h3>Blocked time</h3>
+  {% if day.blocked %}
+  <ul>
+    {% for block in day.blocked %}
+    <li>{{ format_time(block.start_at) }}-{{ format_time(block.end_at) }} {{ block.title }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p>No blocked time.</p>
+  {% endif %}
+
+  <h3>Study windows</h3>
+  {% if day.study_windows %}
+  <ul>
+    {% for window in day.study_windows %}
+    <li>{{ format_time(window.start_at) }}-{{ format_time(window.end_at) }} {{ format_minutes(window.minutes) }}</li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p>No study windows.</p>
+  {% endif %}
+</section>
+{% endfor %}
+{% endblock %}

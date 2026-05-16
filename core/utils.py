@@ -79,6 +79,7 @@ def setup_logging(logs_dir: Path, level: str = "INFO") -> None:
     root.addHandler(console)
     root.addHandler(events)
     root.addHandler(errors)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
     logging.getLogger(__name__).info(
         "logging_configured",
@@ -124,4 +125,3 @@ _STANDARD_LOG_RECORD_KEYS = {
     "message",
     "asctime",
 }
-

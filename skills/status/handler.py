@@ -28,7 +28,7 @@ def handle_status(db_path: Path | str) -> str:
         [
             "🟢 Atenas — Online",
             "",
-            "Student: Nathan",
+            "Student: Local profile",
             f"📚 Active assignments: {counts['active_assignments']}",
             f"⏰ Deadlines this week: {counts['deadlines_this_week']}",
             f"🏢 Work shifts this week: {counts['work_shifts_this_week']}",
@@ -110,7 +110,7 @@ def _load_status_counts(db_path: Path | str) -> dict[str, int]:
                 """
                 SELECT COUNT(*) AS count
                 FROM assignments
-                WHERE status NOT IN ('submitted', 'graded', 'archived')
+                WHERE status NOT IN ('submitted', 'graded', 'archived', 'done', 'cancelled')
                 """,
             )
             deadlines_this_week = _count(
@@ -118,8 +118,8 @@ def _load_status_counts(db_path: Path | str) -> dict[str, int]:
                 """
                 SELECT COUNT(*) AS count
                 FROM assignments
-                WHERE due_date IS NOT NULL
-                  AND substr(due_date, 1, 10) BETWEEN ? AND ?
+                WHERE COALESCE(due_at, due_date) IS NOT NULL
+                  AND substr(COALESCE(due_at, due_date), 1, 10) BETWEEN ? AND ?
                 """,
                 (today.isoformat(), next_week.isoformat()),
             )

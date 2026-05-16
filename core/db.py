@@ -73,14 +73,30 @@ CREATE TABLE IF NOT EXISTS tasks (
     updated_at         TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS study_modules (
+    id          TEXT PRIMARY KEY,
+    code        TEXT,
+    name        TEXT NOT NULL,
+    lecturer    TEXT,
+    notes       TEXT,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS assignments (
     id          TEXT PRIMARY KEY,
     title       TEXT NOT NULL,
     module_id   TEXT,
     description TEXT,
     due_date    TEXT,
-    status      TEXT NOT NULL DEFAULT 'not_started',
+    due_at      TEXT,
+    status      TEXT NOT NULL DEFAULT 'todo',
     priority    TEXT NOT NULL DEFAULT 'medium',
+    priority_rank INTEGER NOT NULL DEFAULT 3,
+    weight      REAL,
+    estimated_hours REAL,
+    completed_hours REAL NOT NULL DEFAULT 0,
+    notes       TEXT,
     brief_path  TEXT,
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
@@ -89,11 +105,16 @@ CREATE TABLE IF NOT EXISTS assignments (
 -- CORRECTION: added date column; fatigue_level is TEXT CHECK constraint
 CREATE TABLE IF NOT EXISTS work_shifts (
     id               TEXT PRIMARY KEY,
+    title            TEXT,
     date             TEXT NOT NULL,
     workplace        TEXT,
     start_time       TEXT NOT NULL,
     end_time         TEXT NOT NULL,
+    start_at         TEXT,
+    end_at           TEXT,
+    location         TEXT,
     role             TEXT,
+    energy_cost      INTEGER,
     commute_minutes  INTEGER NOT NULL DEFAULT 0,
     fatigue_level    TEXT NOT NULL DEFAULT 'medium'
                          CHECK(fatigue_level IN ('low', 'medium', 'high')),
@@ -105,12 +126,15 @@ CREATE TABLE IF NOT EXISTS work_shifts (
 
 CREATE TABLE IF NOT EXISTS class_sessions (
     id          TEXT PRIMARY KEY,
-    module_id   TEXT NOT NULL,
+    module_id   TEXT,
     title       TEXT NOT NULL,
+    weekday     INTEGER,
     start_time  TEXT NOT NULL,
     end_time    TEXT NOT NULL,
     location    TEXT,
-    recurrence  TEXT,
+    recurrence  TEXT NOT NULL DEFAULT 'weekly',
+    active      INTEGER NOT NULL DEFAULT 1,
+    notes       TEXT,
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
@@ -164,6 +188,7 @@ CREATE TABLE IF NOT EXISTS llm_calls (
 CREATE INDEX IF NOT EXISTS idx_chunks_document ON chunks(document_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
+CREATE INDEX IF NOT EXISTS idx_study_modules_code ON study_modules(code);
 CREATE INDEX IF NOT EXISTS idx_assignments_status ON assignments(status);
 CREATE INDEX IF NOT EXISTS idx_assignments_due_date ON assignments(due_date);
 CREATE INDEX IF NOT EXISTS idx_work_shifts_date ON work_shifts(date);
@@ -197,8 +222,63 @@ def init_db(db_path: Path | str) -> None:
     conn = get_connection(path)
     try:
         conn.executescript(SCHEMA_SQL)
+        _apply_phase3_migrations(conn)
+        _apply_phase3_indexes(conn)
         conn.commit()
     finally:
         conn.close()
     logger.info("database_initialized", extra={"event_type": "database_initialized", "db_path": str(path)})
 
+
+def _apply_phase3_migrations(connection: sqlite3.Connection) -> None:
+    """Add Phase 3 scheduling columns to databases created by earlier phases."""
+
+    _ensure_column(connection, "assignments", "due_at", "TEXT")
+    _ensure_column(connection, "assignments", "priority_rank", "INTEGER NOT NULL DEFAULT 3")
+    _ensure_column(connection, "assignments", "weight", "REAL")
+    _ensure_column(connection, "assignments", "estimated_hours", "REAL")
+    _ensure_column(connection, "assignments", "completed_hours", "REAL NOT NULL DEFAULT 0")
+    _ensure_column(connection, "assignments", "notes", "TEXT")
+
+    _ensure_column(connection, "work_shifts", "title", "TEXT")
+    _ensure_column(connection, "work_shifts", "start_at", "TEXT")
+    _ensure_column(connection, "work_shifts", "end_at", "TEXT")
+    _ensure_column(connection, "work_shifts", "location", "TEXT")
+    _ensure_column(connection, "work_shifts", "energy_cost", "INTEGER")
+
+    _ensure_column(connection, "class_sessions", "weekday", "INTEGER")
+    _ensure_column(connection, "class_sessions", "active", "INTEGER NOT NULL DEFAULT 1")
+    _ensure_column(connection, "class_sessions", "notes", "TEXT")
+
+
+def _apply_phase3_indexes(connection: sqlite3.Connection) -> None:
+    """Create indexes that depend on Phase 3 migration columns."""
+
+    connection.execute("CREATE INDEX IF NOT EXISTS idx_assignments_due_at ON assignments(due_at)")
+    connection.execute("CREATE INDEX IF NOT EXISTS idx_work_shifts_start_at ON work_shifts(start_at)")
+    connection.execute("CREATE INDEX IF NOT EXISTS idx_class_sessions_weekday ON class_sessions(weekday)")
+
+
+VALID_TABLE_NAMES = frozenset({
+    "documents", "chunks", "nodes", "edges", "tasks",
+    "study_modules", "assignments", "work_shifts",
+    "class_sessions", "study_blocks", "memory_items", "llm_calls",
+})
+
+
+def _ensure_column(
+    connection: sqlite3.Connection,
+    table_name: str,
+    column_name: str,
+    definition: str,
+) -> None:
+    """Add a column if it is absent."""
+
+    if table_name not in VALID_TABLE_NAMES:
+        raise ValueError(f"Invalid table name: {table_name}")
+    columns = {
+        row["name"]
+        for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+    }
+    if column_name not in columns:
+        connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
