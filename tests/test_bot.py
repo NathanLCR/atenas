@@ -34,7 +34,7 @@ async def test_allowlist_blocks_unknown_user(caplog: pytest.LogCaptureFixture) -
 
     context.bot.send_message.assert_not_called()
     update.effective_message.reply_text.assert_not_called()
-    assert "Blocked Telegram update from user_id=404" in caplog.text
+    assert "blocked_telegram_update" in caplog.text
 
 
 @pytest.mark.asyncio

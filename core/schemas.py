@@ -64,11 +64,11 @@ class TaskStatus(StrEnum):
 class AssignmentStatus(StrEnum):
     """Assignment workflow status."""
 
-    NOT_STARTED = "not_started"
+    TODO = "todo"
     IN_PROGRESS = "in_progress"
     SUBMITTED = "submitted"
-    GRADED = "graded"
-    ARCHIVED = "archived"
+    DONE = "done"
+    CANCELLED = "cancelled"
 
 
 class Priority(StrEnum):
@@ -234,7 +234,7 @@ class Assignment(StrictModel):
     module_id: str | None = None
     description: str | None = None
     due_date: str | None = None
-    status: AssignmentStatus = AssignmentStatus.NOT_STARTED
+    status: AssignmentStatus = AssignmentStatus.TODO
     priority: Priority = Priority.MEDIUM
     brief_path: str | None = None
     created_at: str = Field(default_factory=utc_now)

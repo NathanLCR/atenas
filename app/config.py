@@ -7,6 +7,14 @@ from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+_UNSET_OPTIONAL_SECRET_VALUES = {
+    "YOUR_TELEGRAM_BOT_TOKEN_HERE",
+    "YOUR_OPENAI_API_KEY_HERE",
+    "YOUR_OPENROUTER_API_KEY_HERE",
+    "YOUR_OPENROUTER_MODEL_HERE",
+}
+
+
 class Settings(BaseSettings):
     """Runtime settings loaded from environment variables and `.env`."""
 
@@ -29,6 +37,7 @@ class Settings(BaseSettings):
     output_dir: Path = Path("output")
     inbox_dir: Path = Path("inbox")
     logs_dir: Path = Path("logs")
+    timezone: str = "Europe/Dublin"
 
     local_llm_provider: str = "ollama"
     ollama_base_url: str = "http://localhost:11434"
@@ -58,10 +67,13 @@ class Settings(BaseSettings):
     )
     @classmethod
     def empty_string_to_none(cls, value: object) -> object:
-        """Treat empty env placeholders as unset optional settings."""
+        """Treat empty or scaffolded env placeholders as unset optional settings."""
 
-        if value == "":
-            return None
+        if isinstance(value, str):
+            value = value.strip()
+            if value == "" or value.upper() in _UNSET_OPTIONAL_SECRET_VALUES:
+                return None
+            return value
         return value
 
     @field_validator("telegram_allowed_user_ids", mode="before")
@@ -131,3 +143,9 @@ def get_settings() -> Settings:
     """Return the process-wide settings singleton."""
 
     return Settings()
+
+
+def clear_settings_cache() -> None:
+    """Clear the cached settings singleton. Useful for testing."""
+
+    get_settings.cache_clear()

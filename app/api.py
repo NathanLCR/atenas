@@ -28,4 +28,3 @@ async def skills(request: Request) -> dict[str, str]:
 
     response = await request.app.state.registry.dispatch("/skills", user_id=0)
     return {"response": response}
-
