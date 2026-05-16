@@ -42,3 +42,16 @@ def test_skills_endpoint(settings: Settings) -> None:
     assert response.status_code == 200
     assert "status" in response.json()["response"]
 
+
+def test_placeholder_telegram_token_does_not_block_startup(settings: Settings) -> None:
+    """A scaffolded Telegram token placeholder should be treated as disabled."""
+
+    settings_data = settings.model_dump()
+    settings_data["telegram_bot_token"] = "YOUR_TELEGRAM_BOT_TOKEN_HERE"
+    runtime_settings = Settings(_env_file=None, **settings_data)
+    app = create_app(settings=runtime_settings, registry=SkillRegistry())
+
+    with TestClient(app) as client:
+        response = client.get("/health")
+
+    assert response.status_code == 200

@@ -33,10 +33,17 @@ def create_app(settings: Settings | None = None, registry: SkillRegistry | None 
         register_status_skill(runtime_registry, runtime_settings.db_path)
         app.state.settings = runtime_settings
         app.state.registry = runtime_registry
+        bot_app = None
         if runtime_settings.TELEGRAM_BOT_TOKEN:
-            bot_app = build_application(runtime_settings)
-            await start_bot(bot_app)
-            app.state.bot_app = bot_app
+            try:
+                bot_app = build_application(runtime_settings)
+                await start_bot(bot_app)
+                app.state.bot_app = bot_app
+            except Exception:
+                logger.exception("telegram_bot_startup_failed")
+                if bot_app is not None:
+                    await stop_bot(bot_app)
+                    bot_app = None
         else:
             logger.warning(
                 "telegram_bot_token_not_set",

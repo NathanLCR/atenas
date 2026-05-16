@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}Study Plan{% endblock %}
+
+{% block main %}
+<h1>Study Plan</h1>
+<p>{{ plan.start_date.strftime("%d %b") }} to {{ plan.end_date.strftime("%d %b") }}</p>
+
+<section>
+  <h2>Summary</h2>
+  <dl>
+    <dt>Available time</dt>
+    <dd>{{ format_minutes(plan.summary.total_available_minutes) }}</dd>
+    <dt>Required time</dt>
+    <dd>{{ format_minutes(plan.summary.total_required_minutes) }}</dd>
+    <dt>Planned time</dt>
+    <dd>{{ format_minutes(plan.summary.total_planned_minutes) }}</dd>
+    <dt>Unscheduled time</dt>
+    <dd>{{ format_minutes(plan.summary.total_unscheduled_minutes) }}</dd>
+  </dl>
+</section>
+
+<section>
+  <h2>Planned Blocks</h2>
+  {% if plan.blocks %}
+    {% set current_day = namespace(value="") %}
+    {% for block in plan.blocks %}
+      {% set day_label = block.start_at.strftime("%a %d %b") %}
+      {% if day_label != current_day.value %}
+        {% if current_day.value %}
+          </ul>
+        {% endif %}
+        <h3>{{ day_label }}</h3>
+        <ul>
+        {% set current_day.value = day_label %}
+      {% endif %}
+      <li>
+        {{ format_time(block.start_at) }}-{{ format_time(block.end_at) }}
+        {{ block.assignment_title }}
+        {% if block.module_name %}({{ block.module_name }}){% endif %}
+        - {{ block.reason }}
+      </li>
+    {% endfor %}
+    </ul>
+  {% elif plan.summary.total_required_minutes == 0 and not plan.summary.unestimated_assignments and not plan.summary.overdue_assignments %}
+    <p>No open assignments to plan.</p>
+  {% else %}
+    <p>No planned study blocks.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Warnings</h2>
+  {% if plan.unscheduled or plan.summary.unestimated_assignments or plan.summary.overdue_assignments %}
+    <ul>
+      {% for item in plan.unscheduled %}
+      <li>{{ item.assignment_title }} has {{ format_minutes(item.unscheduled_minutes) }} unscheduled before deadline.</li>
+      {% endfor %}
+      {% if plan.summary.unestimated_assignments %}
+      <li>{{ plan.summary.unestimated_assignments|length }} assignments need estimated hours.</li>
+      {% endif %}
+      {% if plan.summary.overdue_assignments %}
+      <li>{{ plan.summary.overdue_assignments|length }} overdue assignments.</li>
+      {% endif %}
+    </ul>
+  {% else %}
+    <p>No warnings.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}Deadlines{% endblock %}
+
+{% block main %}
+<h1>Deadlines</h1>
+{% if assignments %}
+<table>
+  <thead>
+    <tr>
+      <th scope="col">Due</th>
+      <th scope="col">Module</th>
+      <th scope="col">Title</th>
+      <th scope="col">Priority</th>
+      <th scope="col">Status</th>
+      <th scope="col">Estimated hours</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for assignment in assignments %}
+    <tr>
+      <td>{{ assignment.due_at.strftime("%Y-%m-%d %H:%M") }}</td>
+      <td>{{ assignment.module_id or "" }}</td>
+      <td>{{ assignment.title }}</td>
+      <td>{{ assignment.priority }}</td>
+      <td>{{ assignment.status.value }}</td>
+      <td>{{ assignment.estimated_hours if assignment.estimated_hours is not none else "" }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No open deadlines found.</p>
+{% endif %}
+{% endblock %}
