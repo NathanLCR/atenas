@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}Data — Atenas{% endblock %}
+
+{% block main %}
+<h1>Data Management</h1>
+
+<section>
+  <h2>Overview</h2>
+  <ul>
+    <li>Modules: {{ modules|length }}</li>
+    <li>Class sessions: {{ class_count }}</li>
+    <li>Work shifts: {{ shift_count }}</li>
+    <li>Open assignments: {{ assignment_count }}</li>
+  </ul>
+</section>
+
+{% if modules %}
+<section>
+  <h2>Modules</h2>
+  <ul>
+    {% for m in modules %}
+    <li>
+      <strong>{{ m.name }}</strong>
+      {% if m.code %}({{ m.code }}){% endif %}
+      {% if m.lecturer %} — {{ m.lecturer }}{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section>
+  <h2>Adding Data</h2>
+  <p>Use Telegram commands to manage data:</p>
+  <ul>
+    <li><code>/add_module name="..." code="..."</code></li>
+    <li><code>/add_class title="..." day=mon start=10:00 end=12:00</code></li>
+    <li><code>/add_shift start="2026-05-18 16:00" end="2026-05-18 23:00"</code></li>
+    <li><code>/add_assignment title="..." due="2026-05-21 23:59"</code></li>
+    <li><code>/set_status assignment=ID status=in_progress</code></li>
+    <li><code>/set_hours assignment=ID completed=2.5</code></li>
+  </ul>
+  <p>Or import CSV files:</p>
+  <pre><code>python3 -m core.academic.importers assignments data/assignments.csv --dry-run
+python3 -m core.academic.importers assignments data/assignments.csv --apply</code></pre>
+</section>
+{% endblock %}

@@ -250,6 +250,171 @@ class AcademicRepository:
             ).fetchall()
         return [self._assignment_from_row(row) for row in rows]
 
+    def list_all_assignments(self, include_completed: bool = True) -> list[Assignment]:
+        """Return all assignments sorted by due date."""
+
+        status_filter = ""
+        params: list[object] = []
+        if not include_completed:
+            placeholders = ", ".join("?" for _ in COMPLETED_STATUSES)
+            status_filter = f" AND status NOT IN ({placeholders})"
+            params = list(COMPLETED_STATUSES)
+
+        with get_connection(self.db_path) as connection:
+            rows = connection.execute(
+                f"""
+                SELECT *
+                FROM assignments
+                WHERE COALESCE(due_at, due_date) IS NOT NULL{status_filter}
+                ORDER BY COALESCE(due_at, due_date), priority_rank, LOWER(title)
+                """,
+                params,
+            ).fetchall()
+        return [self._assignment_from_row(row) for row in rows]
+
+    def list_all_work_shifts(self, limit: int = 50) -> list[WorkShift]:
+        """Return upcoming work shifts."""
+
+        with get_connection(self.db_path) as connection:
+            rows = connection.execute(
+                """
+                SELECT *
+                FROM work_shifts
+                WHERE start_at IS NOT NULL
+                ORDER BY start_at
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [self._work_shift_from_row(row) for row in rows]
+
+    def update_assignment_status(self, assignment_id: str, status: AssignmentStatus) -> bool:
+        """Update assignment status. Returns True if row was found and updated."""
+
+        with get_connection(self.db_path) as connection:
+            cursor = connection.execute(
+                """
+                UPDATE assignments
+                SET status = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (status.value, connection.execute("SELECT datetime('now')").fetchone()[0], assignment_id),
+            )
+            connection.commit()
+        return cursor.rowcount > 0
+
+    def update_completed_hours(self, assignment_id: str, completed_hours: float) -> bool:
+        """Update assignment completed hours. Returns True if row was found."""
+
+        with get_connection(self.db_path) as connection:
+            cursor = connection.execute(
+                """
+                UPDATE assignments
+                SET completed_hours = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (completed_hours, connection.execute("SELECT datetime('now')").fetchone()[0], assignment_id),
+            )
+            connection.commit()
+        return cursor.rowcount > 0
+
+    def get_assignment_by_id(self, assignment_id: str) -> Assignment | None:
+        """Return a single assignment by ID."""
+
+        with get_connection(self.db_path) as connection:
+            row = connection.execute(
+                "SELECT * FROM assignments WHERE id = ?",
+                (assignment_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return self._assignment_from_row(row)
+
+    def get_module_by_id(self, module_id: str) -> StudyModule | None:
+        """Return a single module by ID."""
+
+        with get_connection(self.db_path) as connection:
+            row = connection.execute(
+                "SELECT * FROM study_modules WHERE id = ?",
+                (module_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return self._module_from_row(row)
+
+    def find_duplicate_module(self, name: str, code: str | None) -> StudyModule | None:
+        """Find existing module with same normalized name and code."""
+
+        with get_connection(self.db_path) as connection:
+            if code:
+                row = connection.execute(
+                    """
+                    SELECT * FROM study_modules
+                    WHERE LOWER(name) = LOWER(?) AND LOWER(COALESCE(code, '')) = LOWER(?)
+                    """,
+                    (name, code),
+                ).fetchone()
+            else:
+                row = connection.execute(
+                    """
+                    SELECT * FROM study_modules
+                    WHERE LOWER(name) = LOWER(?) AND code IS NULL
+                    """,
+                    (name,),
+                ).fetchone()
+        if row is None:
+            return None
+        return self._module_from_row(row)
+
+    def find_duplicate_class_session(
+        self, title: str, weekday: int, start_time: str, end_time: str
+    ) -> ClassSession | None:
+        """Find existing class session with same title, weekday, and times."""
+
+        with get_connection(self.db_path) as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM class_sessions
+                WHERE LOWER(title) = LOWER(?) AND weekday = ?
+                  AND start_time = ? AND end_time = ?
+                """,
+                (title, weekday, start_time, end_time),
+            ).fetchone()
+        if row is None:
+            return None
+        return self._class_session_from_row(row)
+
+    def find_duplicate_work_shift(self, title: str, start_at: str, end_at: str) -> WorkShift | None:
+        """Find existing work shift with same title, start_at, and end_at."""
+
+        with get_connection(self.db_path) as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM work_shifts
+                WHERE LOWER(COALESCE(title, '')) = LOWER(?)
+                  AND start_at = ? AND end_at = ?
+                """,
+                (title, start_at, end_at),
+            ).fetchone()
+        if row is None:
+            return None
+        return self._work_shift_from_row(row)
+
+    def find_duplicate_assignment(self, title: str, due_at: str) -> Assignment | None:
+        """Find existing assignment with same title and due_at."""
+
+        with get_connection(self.db_path) as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM assignments
+                WHERE LOWER(title) = LOWER(?) AND due_at = ?
+                """,
+                (title, due_at),
+            ).fetchone()
+        if row is None:
+            return None
+        return self._assignment_from_row(row)
+
     def _insert_class_session(
         self,
         connection: sqlite3.Connection,
