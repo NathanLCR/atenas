@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block page_title %}Files{% endblock %}
+
+{% block main %}
+{% if files %}
+<div class="grid">
+  {% for f in files %}
+  <div class="card">
+    <div class="card-header">
+      <h3>{{ f.title or f.filename }}</h3>
+      {% if f.file_type %}<span class="badge">{{ f.file_type }}</span>{% endif %}
+    </div>
+    <div class="card-body">
+      {% if f.description %}
+      <p>{{ f.description[:200] }}{% if f.description|length > 200 %}...{% endif %}</p>
+      {% endif %}
+      <code class="path">{{ f.path }}</code>
+      {% if f.tags %}
+      <div class="tags">
+        {% for tag in f.tags %}
+        <span class="badge badge-soft">{{ tag }}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    <div class="card-footer">
+      <span class="muted">Added {{ f.created_at[:10] }}</span>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <h3>No files registered</h3>
+  <p class="muted">Use <code>/add_file</code> in Telegram to register a file.</p>
+</div>
+{% endif %}
+{% endblock %}

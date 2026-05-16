@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block page_title %}Search{% endblock %}
+
+{% block main %}
+<form class="search-form" method="get" action="/dashboard/search">
+  <input type="text" name="q" value="{{ query }}" placeholder="Search notes and files..." autofocus />
+  <button type="submit">Search</button>
+</form>
+
+{% if query %}
+<h2>Results for "{{ query }}"</h2>
+
+{% if error %}
+<div class="empty-state">
+  <p class="muted">{{ error }}</p>
+</div>
+{% elif results %}
+<div class="results">
+  {% for r in results %}
+  <div class="card result-card">
+    <div class="card-header">
+      <span class="badge badge-{{ 'note' if r.kind == 'note' else 'file' }}">{{ r.kind }}</span>
+      <h3>{{ r.title }}</h3>
+    </div>
+    <div class="card-body">
+      <p class="snippet">{{ r.snippet }}</p>
+    </div>
+    <div class="card-footer">
+      <span class="muted">Updated {{ r.updated_at[:10] }}</span>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

@@ -1,35 +1,39 @@
 {% extends "base.html" %}
 
-{% block title %}Deadlines{% endblock %}
+{% block page_title %}Deadlines{% endblock %}
 
 {% block main %}
-<h1>Deadlines</h1>
 {% if assignments %}
-<table>
-  <thead>
-    <tr>
-      <th scope="col">Due</th>
-      <th scope="col">Module</th>
-      <th scope="col">Title</th>
-      <th scope="col">Priority</th>
-      <th scope="col">Status</th>
-      <th scope="col">Estimated hours</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for assignment in assignments %}
-    <tr>
-      <td>{{ assignment.due_at.strftime("%Y-%m-%d %H:%M") }}</td>
-      <td>{{ assignment.module_id or "" }}</td>
-      <td>{{ assignment.title }}</td>
-      <td>{{ assignment.priority }}</td>
-      <td>{{ assignment.status.value }}</td>
-      <td>{{ assignment.estimated_hours if assignment.estimated_hours is not none else "" }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="section">
+  <table>
+    <thead>
+      <tr>
+        <th>Due</th>
+        <th>Title</th>
+        <th>Priority</th>
+        <th>Status</th>
+        <th>Est. Hours</th>
+        <th>Completed</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in assignments %}
+      <tr>
+        <td>{{ a.due_at.strftime("%a %d %b %H:%M") }}</td>
+        <td>{{ a.title }}</td>
+        <td><span class="badge">{{ a.priority }}</span></td>
+        <td><span class="badge badge-{{ 'success' if a.status.value == 'done' else 'warning' if a.status.value == 'in_progress' else '' }}">{{ a.status.value }}</span></td>
+        <td>{{ a.estimated_hours if a.estimated_hours is not none else "—" }}</td>
+        <td>{{ a.completed_hours if a.completed_hours > 0 else "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% else %}
-<p>No open deadlines found.</p>
+<div class="empty-state">
+  <h3>No open deadlines</h3>
+  <p class="muted">Use <code>/add_assignment</code> in Telegram to add a deadline.</p>
+</div>
 {% endif %}
 {% endblock %}
