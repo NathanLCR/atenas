@@ -188,10 +188,10 @@ class LiteratureMatrixEntry(StrictModel):
     paper_id: str
     research_question: str
     methodology: str
-    sample: str | None
+    sample: str | None = None
     key_findings: str
     limitations: str
-    relevance_to_topic: str | None
+    relevance_to_topic: str | None = None
     confidence: float = Field(ge=0.0, le=1.0)
 
 
@@ -317,4 +317,3 @@ class ActionResult(StrictModel):
         """Whether the action completed successfully."""
 
         return self.outcome == ActionOutcome.SUCCESS
-
