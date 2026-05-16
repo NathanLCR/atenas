@@ -166,25 +166,27 @@ class AcademicRepository:
     ) -> list[WorkShift]:
         """Return work shifts, optionally filtered by local date intersection."""
 
+        conditions = []
+        params: list[object] = []
+        if start_date is not None:
+            conditions.append("date <= ?")
+            params.append(end_date.isoformat() if end_date else date.max.isoformat())
+        if end_date is not None:
+            conditions.append("date >= ?")
+            params.append(start_date.isoformat() if start_date else date.min.isoformat())
+
+        where = "WHERE " + " AND ".join(conditions) if conditions else ""
         with get_connection(self.db_path) as connection:
             rows = connection.execute(
-                """
+                f"""
                 SELECT *
                 FROM work_shifts
+                {where}
                 ORDER BY date, start_time, title
-                """
+                """,
+                params,
             ).fetchall()
-        shifts = [self._work_shift_from_row(row) for row in rows]
-        if start_date is None and end_date is None:
-            return shifts
-
-        start = start_date or date.min
-        end = end_date or date.max
-        return [
-            shift
-            for shift in shifts
-            if shift.start_at.date() <= end and shift.end_at.date() >= start
-        ]
+        return [self._work_shift_from_row(row) for row in rows]
 
     def create_assignment(self, assignment: Assignment) -> Assignment:
         """Insert and return an assignment/deadline."""
@@ -205,7 +207,7 @@ class AcademicRepository:
                     stored_assignment.id,
                     stored_assignment.title,
                     stored_assignment.module_id,
-                    stored_assignment.notes,
+                    None,
                     due_at.date().isoformat(),
                     due_at.isoformat(),
                     stored_assignment.status.value,
@@ -230,23 +232,23 @@ class AcademicRepository:
     ) -> list[Assignment]:
         """Return deadlines sorted by due date, then priority."""
 
+        status_filter = ""
+        if not include_completed:
+            placeholders = ", ".join("?" for _ in COMPLETED_STATUSES)
+            status_filter = f" AND status NOT IN ({placeholders})"
+
         with get_connection(self.db_path) as connection:
             rows = connection.execute(
-                """
+                f"""
                 SELECT *
                 FROM assignments
-                WHERE COALESCE(due_at, due_date) IS NOT NULL
-                """
+                WHERE COALESCE(due_at, due_date) IS NOT NULL{status_filter}
+                ORDER BY COALESCE(due_at, due_date), priority_rank, LOWER(title)
+                LIMIT ?
+                """,
+                list(COMPLETED_STATUSES) + [limit] if not include_completed else [limit],
             ).fetchall()
-        assignments = [self._assignment_from_row(row) for row in rows]
-        if not include_completed:
-            assignments = [
-                assignment
-                for assignment in assignments
-                if assignment.status.value not in COMPLETED_STATUSES
-            ]
-        assignments.sort(key=lambda item: (item.due_at, item.priority, item.title.lower()))
-        return assignments[:limit]
+        return [self._assignment_from_row(row) for row in rows]
 
     def _insert_class_session(
         self,
@@ -374,8 +376,14 @@ def _priority_rank(row: sqlite3.Row) -> int:
 
 
 def _assignment_status(value: str) -> AssignmentStatus:
-    if value == "not_started":
+    mapping = {
+        "not_started": AssignmentStatus.TODO,
+        "graded": AssignmentStatus.DONE,
+        "archived": AssignmentStatus.DONE,
+    }
+    if value in mapping:
+        return mapping[value]
+    try:
+        return AssignmentStatus(value)
+    except ValueError:
         return AssignmentStatus.TODO
-    if value in {"graded", "archived"}:
-        return AssignmentStatus.DONE
-    return AssignmentStatus(value)

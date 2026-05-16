@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
@@ -56,17 +57,11 @@ def test_dashboard_deadlines_route_returns_200(settings: Settings) -> None:
     assert "todo" in response.text
 
 
-def test_dashboard_plan_route_returns_200(
-    settings: Settings,
-    monkeypatch,
-) -> None:
-    monkeypatch.setattr(
-        "app.dashboard._get_academic_service",
-        lambda settings: _FakePlanningService(_dashboard_plan(blocks=[_dashboard_block()])),
-    )
+def test_dashboard_plan_route_returns_200(settings: Settings) -> None:
+    fake_service = _FakePlanningService(_dashboard_plan(blocks=[_dashboard_block()]))
     app = create_app(settings=settings, registry=SkillRegistry())
 
-    with TestClient(app) as client:
+    with TestClient(app) as client, patch("app.dashboard._get_academic_service", return_value=fake_service):
         response = client.get("/dashboard/plan")
 
     assert response.status_code == 200
@@ -76,21 +71,18 @@ def test_dashboard_plan_route_returns_200(
     assert "NLP CA1" in response.text
 
 
-def test_dashboard_plan_empty_state(settings: Settings, monkeypatch) -> None:
-    monkeypatch.setattr(
-        "app.dashboard._get_academic_service",
-        lambda settings: _FakePlanningService(_dashboard_plan(blocks=[], required=0, planned=0)),
-    )
+def test_dashboard_plan_empty_state(settings: Settings) -> None:
+    fake_service = _FakePlanningService(_dashboard_plan(blocks=[], required=0, planned=0))
     app = create_app(settings=settings, registry=SkillRegistry())
 
-    with TestClient(app) as client:
+    with TestClient(app) as client, patch("app.dashboard._get_academic_service", return_value=fake_service):
         response = client.get("/dashboard/plan")
 
     assert response.status_code == 200
     assert "No open assignments to plan." in response.text
 
 
-def test_dashboard_plan_warning_rendering(settings: Settings, monkeypatch) -> None:
+def test_dashboard_plan_warning_rendering(settings: Settings) -> None:
     plan = _dashboard_plan(
         blocks=[],
         required=120,
@@ -99,13 +91,10 @@ def test_dashboard_plan_warning_rendering(settings: Settings, monkeypatch) -> No
         unscheduled=[_dashboard_unscheduled()],
         unestimated=["Needs estimate"],
     )
-    monkeypatch.setattr(
-        "app.dashboard._get_academic_service",
-        lambda settings: _FakePlanningService(plan),
-    )
+    fake_service = _FakePlanningService(plan)
     app = create_app(settings=settings, registry=SkillRegistry())
 
-    with TestClient(app) as client:
+    with TestClient(app) as client, patch("app.dashboard._get_academic_service", return_value=fake_service):
         response = client.get("/dashboard/plan")
 
     assert response.status_code == 200

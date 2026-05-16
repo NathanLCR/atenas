@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -23,13 +23,12 @@ SUNDAY = date(2026, 5, 24)
 
 
 @pytest.mark.asyncio
-async def test_plan_command_returns_weekly_plan(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_plan_command_returns_weekly_plan() -> None:
     block = _block()
     plan = _study_plan(blocks=[block])
-    monkeypatch.setattr("app.bot.get_academic_service", lambda: _FakePlanningService(plan))
-    update = _make_update(123, "/plan")
-
-    await _dispatch_if_allowed(update, plan_command)
+    with patch("app.bot.AcademicService", return_value=_FakePlanningService(plan)):
+        update = _make_update(123, "/plan")
+        await _dispatch_if_allowed(update, plan_command)
 
     reply = update.effective_message.reply_text.await_args.args[0]
     assert "Study plan - 18 May to 24 May" in reply
@@ -39,16 +38,12 @@ async def test_plan_command_returns_weekly_plan(monkeypatch: pytest.MonkeyPatch)
 
 
 @pytest.mark.asyncio
-async def test_study_command_returns_next_block(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_study_command_returns_next_block() -> None:
     block = _block()
     plan = _study_plan(blocks=[block])
-    monkeypatch.setattr(
-        "app.bot.get_academic_service",
-        lambda: _FakePlanningService(plan, today_block=block, next_block=block),
-    )
-    update = _make_update(123, "/study")
-
-    await _dispatch_if_allowed(update, study_command)
+    with patch("app.bot.AcademicService", return_value=_FakePlanningService(plan, today_block=block, next_block=block)):
+        update = _make_update(123, "/study")
+        await _dispatch_if_allowed(update, study_command)
 
     reply = update.effective_message.reply_text.await_args.args[0]
     assert "Study next" in reply
@@ -58,19 +53,18 @@ async def test_study_command_returns_next_block(monkeypatch: pytest.MonkeyPatch)
 
 
 @pytest.mark.asyncio
-async def test_plan_command_empty_state(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_plan_command_empty_state() -> None:
     plan = _study_plan(blocks=[], required=0, planned=0)
-    monkeypatch.setattr("app.bot.get_academic_service", lambda: _FakePlanningService(plan))
-    update = _make_update(123, "/plan")
-
-    await _dispatch_if_allowed(update, plan_command)
+    with patch("app.bot.AcademicService", return_value=_FakePlanningService(plan)):
+        update = _make_update(123, "/plan")
+        await _dispatch_if_allowed(update, plan_command)
 
     reply = update.effective_message.reply_text.await_args.args[0]
     assert reply == "No open assignments to plan."
 
 
 @pytest.mark.asyncio
-async def test_plan_command_no_availability_state(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_plan_command_no_availability_state() -> None:
     unscheduled = _unscheduled()
     plan = _study_plan(
         blocks=[],
@@ -80,10 +74,9 @@ async def test_plan_command_no_availability_state(monkeypatch: pytest.MonkeyPatc
         unscheduled_minutes=120,
         unscheduled=[unscheduled],
     )
-    monkeypatch.setattr("app.bot.get_academic_service", lambda: _FakePlanningService(plan))
-    update = _make_update(123, "/plan")
-
-    await _dispatch_if_allowed(update, plan_command)
+    with patch("app.bot.AcademicService", return_value=_FakePlanningService(plan)):
+        update = _make_update(123, "/plan")
+        await _dispatch_if_allowed(update, plan_command)
 
     reply = update.effective_message.reply_text.await_args.args[0]
     assert "No study windows available this week." in reply
@@ -92,17 +85,16 @@ async def test_plan_command_no_availability_state(monkeypatch: pytest.MonkeyPatc
 
 
 @pytest.mark.asyncio
-async def test_planning_commands_include_warnings(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_planning_commands_include_warnings() -> None:
     plan = _study_plan(
         blocks=[],
         required=0,
         planned=0,
         unestimated=["Needs estimate"],
     )
-    monkeypatch.setattr("app.bot.get_academic_service", lambda: _FakePlanningService(plan))
-    update = _make_update(123, "/study")
-
-    await _dispatch_if_allowed(update, study_command)
+    with patch("app.bot.AcademicService", return_value=_FakePlanningService(plan)):
+        update = _make_update(123, "/study")
+        await _dispatch_if_allowed(update, study_command)
 
     reply = update.effective_message.reply_text.await_args.args[0]
     assert "No study recommendation available." in reply
@@ -199,4 +191,14 @@ def _make_update(user_id: int, text: str) -> SimpleNamespace:
 
 
 def _make_context() -> SimpleNamespace:
-    return SimpleNamespace(bot=SimpleNamespace(send_message=AsyncMock()))
+    return SimpleNamespace(
+        bot=SimpleNamespace(send_message=AsyncMock()),
+        bot_data={"settings": _fake_settings()},
+    )
+
+
+def _fake_settings() -> SimpleNamespace:
+    return SimpleNamespace(
+        db_path="/tmp/test.sqlite",
+        timezone="Europe/Dublin",
+    )

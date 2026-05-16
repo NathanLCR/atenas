@@ -7,12 +7,15 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from app.config import Settings, get_settings
-from core.academic.service import get_academic_service
+from core.academic.models import Assignment, TimeBlock
+from core.academic.service import AcademicService
 from skills.status import handler as status_handler
 
 if TYPE_CHECKING:
     from telegram import Update
     from telegram.ext import Application, ContextTypes
+
+    from core.academic.models import Assignment, TimeBlock
 
 logger = logging.getLogger(__name__)
 
@@ -66,42 +69,48 @@ async def skills_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def today_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Reply to /today with today's deterministic schedule overview."""
 
-    service = get_academic_service()
+    settings = _get_bot_settings(context)
+    service = AcademicService(settings.db_path, timezone=settings.timezone)
     await _reply(update, _format_today(service.get_today_overview()))
 
 
 async def week_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Reply to /week with a deterministic weekly schedule summary."""
 
-    service = get_academic_service()
+    settings = _get_bot_settings(context)
+    service = AcademicService(settings.db_path, timezone=settings.timezone)
     await _reply(update, _format_week(service.get_week_overview()))
 
 
 async def deadlines_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Reply to /deadlines with upcoming open academic deadlines."""
 
-    service = get_academic_service()
+    settings = _get_bot_settings(context)
+    service = AcademicService(settings.db_path, timezone=settings.timezone)
     await _reply(update, _format_deadlines(service.list_upcoming_assignments(limit=10)))
 
 
 async def availability_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Reply to /availability with today's available study windows."""
 
-    service = get_academic_service()
+    settings = _get_bot_settings(context)
+    service = AcademicService(settings.db_path, timezone=settings.timezone)
     await _reply(update, _format_availability(service.get_today_overview().availability))
 
 
 async def plan_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Reply to /plan with the deterministic weekly study plan."""
 
-    service = get_academic_service()
+    settings = _get_bot_settings(context)
+    service = AcademicService(settings.db_path, timezone=settings.timezone)
     await _reply(update, _format_plan(service.get_study_plan()))
 
 
 async def study_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Reply to /study with the next deterministic study recommendation."""
 
-    service = get_academic_service()
+    settings = _get_bot_settings(context)
+    service = AcademicService(settings.db_path, timezone=settings.timezone)
     plan = service.get_study_plan()
     await _reply(
         update,
@@ -132,6 +141,7 @@ def build_application(settings: Settings | None = None) -> Application:
 
     allowlist_filter = _build_allowlist_filter()
     application = Application.builder().token(token).build()
+    application.bot_data["settings"] = runtime_settings
     application.add_handler(CommandHandler("ping", ping_command, filters=allowlist_filter))
     application.add_handler(CommandHandler("status", status_command, filters=allowlist_filter))
     application.add_handler(CommandHandler("skills", skills_command, filters=allowlist_filter))
@@ -174,6 +184,15 @@ def _build_allowlist_filter() -> AllowlistFilter:
             return AllowlistFilter.filter(self, update)
 
     return TelegramAllowlistFilter()
+
+
+def _get_bot_settings(context: ContextTypes.DEFAULT_TYPE) -> Settings:
+    """Return settings from bot_data, falling back to the global cache."""
+
+    stored = context.bot_data.get("settings")
+    if isinstance(stored, Settings):
+        return stored
+    return get_settings()
 
 
 async def _reply(update: Update, text: str) -> None:
