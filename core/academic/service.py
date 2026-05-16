@@ -34,6 +34,19 @@ from core.academic.planner import (
     today_study_block,
 )
 from core.academic.repository import AcademicRepository
+from core.academic.validators import (
+    ALLOWED_STATUSES,
+    CommandResult,
+    parse_datetime_input,
+    parse_datetime_strict,
+    validate_energy_cost,
+    validate_hours,
+    validate_notes,
+    validate_priority,
+    validate_status,
+    validate_text_field,
+    validate_weight,
+)
 from core.time import (
     combine_local,
     ensure_local_datetime,
@@ -381,6 +394,328 @@ class AcademicService:
             if start < end:
                 total += _duration_minutes(start, end)
         return total
+
+    def add_module(
+        self,
+        name: str,
+        code: str | None = None,
+        lecturer: str | None = None,
+        notes: str | None = None,
+    ) -> CommandResult:
+        """Create a study module with validation."""
+
+        validated_name = validate_text_field(name, required=True)
+        if not validated_name:
+            return CommandResult(success=False, message="Module name is required.")
+        if validated_name is None:
+            return CommandResult(success=False, message="Module name exceeds 200 characters.")
+
+        validated_code = validate_text_field(code, max_length=50)
+        validated_lecturer = validate_text_field(lecturer, max_length=100)
+        validated_notes = validate_notes(notes)
+
+        existing = self.repository.find_duplicate_module(validated_name, validated_code)
+        if existing is not None:
+            return CommandResult(
+                success=False,
+                message=f"Module already exists: #{existing.id} — {existing.name}",
+            )
+
+        module = self.create_module(
+            name=validated_name,
+            code=validated_code,
+            lecturer=validated_lecturer,
+            notes=validated_notes,
+        )
+        label = f" — {module.code}" if module.code else ""
+        return CommandResult(
+            success=True,
+            message=f"Module added\n\n#{module.id[:8]}{label} — {module.name}",
+            record_id=module.id,
+        )
+
+    def add_class_session(
+        self,
+        title: str,
+        weekday: int,
+        start_time: str,
+        end_time: str,
+        module_id: str | None = None,
+        location: str | None = None,
+        notes: str | None = None,
+    ) -> CommandResult:
+        """Create a weekly class session with validation."""
+
+        validated_title = validate_text_field(title, required=True)
+        if not validated_title:
+            return CommandResult(success=False, message="Class title is required.")
+        if validated_title is None:
+            return CommandResult(success=False, message="Class title exceeds 200 characters.")
+
+        if not (0 <= weekday <= 6):
+            return CommandResult(success=False, message="Weekday must be 0-6 (Mon=0, Sun=6).")
+
+        try:
+            parse_hhmm(start_time)
+        except ValueError:
+            return CommandResult(success=False, message="start_time must be HH:MM format.")
+        try:
+            parse_hhmm(end_time)
+        except ValueError:
+            return CommandResult(success=False, message="end_time must be HH:MM format.")
+
+        if parse_hhmm(start_time) >= parse_hhmm(end_time):
+            return CommandResult(success=False, message="start_time must be before end_time.")
+
+        if module_id:
+            module = self.repository.get_module_by_id(module_id)
+            if module is None:
+                return CommandResult(success=False, message=f"Module #{module_id} not found.")
+
+        validated_location = validate_text_field(location, max_length=200)
+        validated_notes = validate_notes(notes)
+
+        existing = self.repository.find_duplicate_class_session(
+            validated_title, weekday, start_time, end_time
+        )
+        if existing is not None:
+            return CommandResult(
+                success=False,
+                message=f"Class session already exists: {existing.title} on {_weekday_name(weekday)} {start_time}-{end_time}",
+            )
+
+        session = self.create_class_session(
+            title=validated_title,
+            weekday=weekday,
+            start_time=start_time,
+            end_time=end_time,
+            module_id=module_id,
+            location=validated_location,
+            notes=validated_notes,
+        )
+        day_label = _weekday_name(weekday)
+        return CommandResult(
+            success=True,
+            message=f"Class added\n\n{session.title}\n{day_label} {start_time}\u2013{end_time}",
+            record_id=session.id,
+        )
+
+    def add_work_shift(
+        self,
+        title: str,
+        start_at: str | datetime,
+        end_at: str | datetime,
+        location: str | None = None,
+        role: str | None = None,
+        energy_cost: int | None = None,
+        notes: str | None = None,
+    ) -> CommandResult:
+        """Create a dated work shift with validation."""
+
+        validated_title = validate_text_field(title or "Work", max_length=200)
+        if not validated_title:
+            validated_title = "Work"
+
+        if isinstance(start_at, str):
+            parsed_start, err = parse_datetime_strict(start_at, self.timezone)
+            if err:
+                return CommandResult(success=False, message=err)
+        else:
+            parsed_start = ensure_local_datetime(start_at, self.timezone)
+
+        if isinstance(end_at, str):
+            parsed_end, err = parse_datetime_strict(end_at, self.timezone)
+            if err:
+                return CommandResult(success=False, message=err)
+        else:
+            parsed_end = ensure_local_datetime(end_at, self.timezone)
+
+        if parsed_start >= parsed_end:
+            return CommandResult(success=False, message="start_at must be before end_at.")
+
+        if energy_cost is not None:
+            validated_energy = validate_energy_cost(energy_cost)
+            if validated_energy is None:
+                return CommandResult(success=False, message="energy_cost must be between 1 and 5.")
+        else:
+            validated_energy = None
+
+        validated_location = validate_text_field(location, max_length=200)
+        validated_role = validate_text_field(role, max_length=100)
+        validated_notes = validate_notes(notes)
+
+        start_iso = parsed_start.isoformat()
+        end_iso = parsed_end.isoformat()
+        existing = self.repository.find_duplicate_work_shift(validated_title, start_iso, end_iso)
+        if existing is not None:
+            return CommandResult(
+                success=False,
+                message=f"Work shift already exists: {existing.title} on {parsed_start.strftime('%a %d %b %H:%M')}",
+            )
+
+        shift = self.create_work_shift(
+            title=validated_title,
+            start_at=parsed_start,
+            end_at=parsed_end,
+            location=validated_location,
+            role=validated_role,
+            energy_cost=validated_energy,
+            notes=validated_notes,
+        )
+        date_label = parsed_start.strftime("%a %d %b")
+        time_label = f"{parsed_start.strftime('%H:%M')}\u2013{parsed_end.strftime('%H:%M')}"
+        return CommandResult(
+            success=True,
+            message=f"Work shift added\n\n{date_label}\n{time_label}",
+            record_id=shift.id,
+        )
+
+    def add_assignment(
+        self,
+        title: str,
+        due_at: str | datetime | date,
+        module_id: str | None = None,
+        priority: int = 3,
+        status: str = "todo",
+        weight: float | None = None,
+        estimated_hours: float | None = None,
+        completed_hours: float = 0,
+        notes: str | None = None,
+    ) -> CommandResult:
+        """Create an assignment with validation."""
+
+        validated_title = validate_text_field(title, required=True)
+        if not validated_title:
+            return CommandResult(success=False, message="Assignment title is required.")
+        if validated_title is None:
+            return CommandResult(success=False, message="Assignment title exceeds 200 characters.")
+
+        if isinstance(due_at, str):
+            parsed_due, err = parse_datetime_input(due_at, self.timezone)
+            if err:
+                return CommandResult(success=False, message=err)
+        else:
+            parsed_due = parse_due_at(due_at, self.timezone)
+
+        if module_id:
+            module = self.repository.get_module_by_id(module_id)
+            if module is None:
+                return CommandResult(success=False, message=f"Module #{module_id} not found.")
+
+        validated_priority = validate_priority(priority)
+        if validated_priority is None:
+            return CommandResult(success=False, message="Priority must be between 1 and 5.")
+
+        validated_status = validate_status(status)
+        if validated_status is None:
+            allowed = ", ".join(sorted(ALLOWED_STATUSES))
+            return CommandResult(success=False, message=f"Invalid status. Allowed: {allowed}")
+
+        if weight is not None:
+            validated_weight = validate_weight(weight)
+            if validated_weight is None:
+                return CommandResult(success=False, message="Weight must be between 0 and 100.")
+        else:
+            validated_weight = None
+
+        if estimated_hours is not None:
+            validated_estimate = validate_hours(estimated_hours)
+            if validated_estimate is None:
+                return CommandResult(success=False, message="estimated_hours must be >= 0.")
+        else:
+            validated_estimate = None
+
+        validated_completed = validate_hours(completed_hours)
+        if validated_completed is None:
+            return CommandResult(success=False, message="completed_hours must be >= 0.")
+
+        validated_notes = validate_notes(notes)
+
+        due_iso = parsed_due.isoformat()
+        existing = self.repository.find_duplicate_assignment(validated_title, due_iso)
+        if existing is not None:
+            return CommandResult(
+                success=False,
+                message=f"Assignment already exists: {existing.title} due {parsed_due.strftime('%a %d %b %H:%M')}",
+            )
+
+        assignment = self.create_assignment(
+            title=validated_title,
+            due_at=parsed_due,
+            module_id=module_id,
+            status=AssignmentStatus(validated_status),
+            priority=validated_priority,
+            weight=validated_weight,
+            estimated_hours=validated_estimate,
+            completed_hours=validated_completed,
+            notes=validated_notes,
+        )
+        due_label = parsed_due.strftime("%a %d %b %H:%M")
+        estimate_label = f"\nEstimate: {validated_estimate}h" if validated_estimate else ""
+        return CommandResult(
+            success=True,
+            message=f"Assignment added\n\n#{assignment.id[:8]} \u2014 {assignment.title}\nDue: {due_label}\nPriority: {validated_priority}{estimate_label}",
+            record_id=assignment.id,
+        )
+
+    def update_assignment_status(self, assignment_id: str, status: str) -> CommandResult:
+        """Update assignment status with validation."""
+
+        validated_status = validate_status(status)
+        if validated_status is None:
+            allowed = ", ".join(sorted(ALLOWED_STATUSES))
+            return CommandResult(success=False, message=f"Invalid status. Allowed: {allowed}")
+
+        assignment = self.repository.get_assignment_by_id(assignment_id)
+        if assignment is None:
+            return CommandResult(success=False, message=f"Assignment #{assignment_id} not found.")
+
+        updated = self.repository.update_assignment_status(assignment_id, AssignmentStatus(validated_status))
+        if not updated:
+            return CommandResult(success=False, message="Failed to update assignment.")
+
+        return CommandResult(
+            success=True,
+            message=f"Assignment updated\n\n#{assignment_id[:8]} \u2014 {assignment.title}\nStatus: {validated_status}",
+            record_id=assignment_id,
+        )
+
+    def update_completed_hours(self, assignment_id: str, completed_hours: float) -> CommandResult:
+        """Update assignment completed hours with validation."""
+
+        validated_hours = validate_hours(completed_hours)
+        if validated_hours is None:
+            return CommandResult(success=False, message="completed_hours must be >= 0.")
+
+        assignment = self.repository.get_assignment_by_id(assignment_id)
+        if assignment is None:
+            return CommandResult(success=False, message=f"Assignment #{assignment_id} not found.")
+
+        updated = self.repository.update_completed_hours(assignment_id, validated_hours)
+        if not updated:
+            return CommandResult(success=False, message="Failed to update hours.")
+
+        remaining = max(0, (assignment.estimated_hours or 0) - validated_hours)
+        remaining_label = f"\nRemaining: {remaining}h" if assignment.estimated_hours else ""
+        return CommandResult(
+            success=True,
+            message=f"Progress updated\n\n#{assignment_id[:8]} \u2014 {assignment.title}\nCompleted: {validated_hours}h{remaining_label}",
+            record_id=assignment_id,
+        )
+
+    def list_all_assignments(self, include_completed: bool = True) -> list[Assignment]:
+        """Return all assignments."""
+
+        return self.repository.list_all_assignments(include_completed=include_completed)
+
+    def list_all_work_shifts(self, limit: int = 50) -> list[WorkShift]:
+        """Return upcoming work shifts."""
+
+        return self.repository.list_all_work_shifts(limit=limit)
+
+
+def _weekday_name(weekday: int) -> str:
+    return ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][weekday]
 
 
 def get_academic_service() -> AcademicService:
