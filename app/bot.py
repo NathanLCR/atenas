@@ -160,11 +160,14 @@ async def start_bot(app: Application) -> None:
 
     await app.initialize()
     await app.start()
+    await app.updater.start_polling()
 
 
 async def stop_bot(app: Application) -> None:
     """Stop and shut down the Telegram application."""
 
+    if app.updater and app.updater.running:
+        await app.updater.stop()
     if app.running:
         await app.stop()
     await app.shutdown()

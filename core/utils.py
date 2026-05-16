@@ -47,7 +47,7 @@ class JSONLHandler(logging.Handler):
                     continue
                 payload[key] = _json_safe(value)
             if record.exc_info:
-                payload["exception"] = self.formatException(record.exc_info)
+                payload["exception"] = _EXCEPTION_FORMATTER.formatException(record.exc_info)
             with self.filepath.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
         except Exception:
@@ -125,3 +125,5 @@ _STANDARD_LOG_RECORD_KEYS = {
     "message",
     "asctime",
 }
+
+_EXCEPTION_FORMATTER = logging.Formatter()
