@@ -166,6 +166,19 @@ async def search(request: Request) -> HTMLResponse:
     )
 
 
+@router.get("/llm", response_class=HTMLResponse)
+async def llm(request: Request) -> HTMLResponse:
+    """Render a read-only LLM call history page."""
+
+    settings = _get_request_settings(request)
+    records = _load_llm_call_records(settings)
+    return templates.TemplateResponse(
+        request,
+        "llm.html",
+        {"records": records},
+    )
+
+
 def _get_request_settings(request: Request) -> Settings:
     """Return app-scoped settings when available."""
 

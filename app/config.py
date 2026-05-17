@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_small_model: str = "llama3.2"
     ollama_embedding_model: str = "nomic-embed-text"
+    ollama_model: str = "llama3.1:8b"
+    ollama_timeout_seconds: int = 60
 
     cloud_llm_provider: str = "openai"
     openai_api_key: str | None = None
