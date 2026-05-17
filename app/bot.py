@@ -11,6 +11,7 @@ from core.academic.models import Assignment, TimeBlock
 from core.academic.service import AcademicService
 from core.academic.validators import parse_kv_args, parse_weekday, validate_hours, validate_priority, validate_status
 from core.knowledge.service import KnowledgeService
+from core.llm.service import LLMService
 from skills.status import handler as status_handler
 
 if TYPE_CHECKING:
@@ -431,6 +432,11 @@ def build_application(settings: Settings | None = None) -> Application:
     application.add_handler(CommandHandler("files", files_command, filters=allowlist_filter))
     application.add_handler(CommandHandler("search", search_command, filters=allowlist_filter))
     application.add_handler(CommandHandler("link_note_file", link_note_file_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("summarize_note", summarize_note_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("explain_note", explain_note_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("questions_note", questions_note_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("flashcards_note", flashcards_note_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("rewrite_note", rewrite_note_command, filters=allowlist_filter))
     application.add_handler(MessageHandler(filters.COMMAND & allowlist_filter, unknown_command))
     return application
 
@@ -962,3 +968,110 @@ async def link_note_file_command(update: Update, context: ContextTypes.DEFAULT_T
         return
     result = service.link_note_file(note_id, file_id)
     await _reply(update, result.message)
+
+
+def _build_llm_service(context: ContextTypes.DEFAULT_TYPE) -> LLMService:
+    settings = _get_bot_settings(context)
+    return LLMService(
+        db_path=settings.db_path,
+        timezone=settings.timezone,
+        ollama_base_url=settings.ollama_base_url,
+        ollama_model=settings.ollama_model,
+        ollama_timeout=settings.ollama_timeout_seconds,
+    )
+
+
+def _parse_note_id_from_command(text: str) -> tuple[int | None, str | None]:
+    """Extract note ID from command text. Returns (note_id, error)."""
+
+    parts = text.split(None, 1)
+    if len(parts) < 2:
+        return None, "Usage: /<command> <note_id> [key=value...]"
+    first = parts[1].split()[0]
+    try:
+        return int(first), None
+    except ValueError:
+        return None, f"Invalid note ID: {first}"
+
+
+def _format_llm_result(result: object, note_title: str) -> str:
+    """Format LLM action result for Telegram."""
+
+    if not result.success:
+        if "unavailable" in (result.error or "").lower() or "connection" in (result.error or "").lower():
+            return (
+                f"Local LLM unavailable.\n\n"
+                f"Check that Ollama is running:\n"
+                f"ollama serve"
+            )
+        return f"Error: {result.error}"
+
+    model_label = f"\nModel: {result.model}" if result.model else ""
+    return f"{note_title}{model_label}\n\n{result.output[:2000]}"
+
+
+async def summarize_note_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text = update.effective_message.text or ""
+    note_id, error = _parse_note_id_from_command(text)
+    if error:
+        await _reply(update, error)
+        return
+    service = _build_llm_service(context)
+    result = service.summarize_note(note_id)
+    note = service.knowledge.get_note(note_id)
+    title = f"#{note_id} \u2014 {note.title}" if note else f"Note #{note_id}"
+    await _reply(update, _format_llm_result(result, title))
+
+
+async def explain_note_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text = update.effective_message.text or ""
+    note_id, error = _parse_note_id_from_command(text)
+    if error:
+        await _reply(update, error)
+        return
+    service = _build_llm_service(context)
+    result = service.explain_note(note_id)
+    note = service.knowledge.get_note(note_id)
+    title = f"#{note_id} \u2014 {note.title}" if note else f"Note #{note_id}"
+    await _reply(update, _format_llm_result(result, title))
+
+
+async def questions_note_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text = update.effective_message.text or ""
+    note_id, error = _parse_note_id_from_command(text)
+    if error:
+        await _reply(update, error)
+        return
+    service = _build_llm_service(context)
+    result = service.generate_questions_from_note(note_id)
+    note = service.knowledge.get_note(note_id)
+    title = f"#{note_id} \u2014 {note.title}" if note else f"Note #{note_id}"
+    await _reply(update, _format_llm_result(result, title))
+
+
+async def flashcards_note_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text = update.effective_message.text or ""
+    note_id, error = _parse_note_id_from_command(text)
+    if error:
+        await _reply(update, error)
+        return
+    service = _build_llm_service(context)
+    result = service.generate_flashcards_from_note(note_id)
+    note = service.knowledge.get_note(note_id)
+    title = f"#{note_id} \u2014 {note.title}" if note else f"Note #{note_id}"
+    await _reply(update, _format_llm_result(result, title))
+
+
+async def rewrite_note_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text = update.effective_message.text or ""
+    note_id, error = _parse_note_id_from_command(text)
+    if error:
+        await _reply(update, error)
+        return
+    args = parse_kv_args(text)
+    style = args.get("style", "concise")
+    service = _build_llm_service(context)
+    result = service.rewrite_note(note_id, style=style)
+    note = service.knowledge.get_note(note_id)
+    title = f"#{note_id} \u2014 {note.title}" if note else f"Note #{note_id}"
+    await _reply(update, _format_llm_result(result, title))

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block page_title %}LLM Calls{% endblock %}
+
+{% block main %}
+{% if records %}
+<div class="section">
+  <table>
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Action</th>
+        <th>Model</th>
+        <th>Source</th>
+        <th>Latency</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in records %}
+      <tr>
+        <td>{{ r.created_at[:19] if r.created_at else r.get('timestamp', '')[:19] }}</td>
+        <td><span class="badge">{{ r.task_type or r.get('action', '') }}</span></td>
+        <td>{{ r.model }}</td>
+        <td>{{ r.source_kind or '' }}{% if r.source_id %} #{{ r.source_id }}{% endif %}</td>
+        <td>{{ r.latency_ms or 0 }}ms</td>
+        <td><span class="badge badge-{{ 'success' if r.success else 'danger' }}">{{ 'ok' if r.success else 'fail' }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty-state">
+  <h3>No LLM calls recorded</h3>
+  <p class="muted">LLM call logs will appear here after using note assistance commands.</p>
+</div>
+{% endif %}
+{% endblock %}
