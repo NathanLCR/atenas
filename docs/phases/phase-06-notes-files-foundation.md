@@ -2,7 +2,10 @@
 
 ## Status
 
-Planned / next backend foundation.
+Complete.
+
+Implemented in `core/knowledge/`, Telegram note/file/search commands, and
+read-only dashboard pages for notes, files, and search.
 
 ## Goal
 

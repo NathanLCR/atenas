@@ -12,6 +12,8 @@ from core.academic.service import AcademicService
 from core.academic.validators import parse_kv_args, parse_weekday, validate_hours, validate_priority, validate_status
 from core.knowledge.service import KnowledgeService
 from core.llm.service import LLMService
+from core.retrieval.models import NO_SOURCE_FALLBACK
+from core.retrieval.service import RetrievalService
 from skills.status import handler as status_handler
 
 if TYPE_CHECKING:
@@ -21,6 +23,16 @@ if TYPE_CHECKING:
     from core.academic.models import Assignment, TimeBlock
 
 logger = logging.getLogger(__name__)
+
+ASK_NOTES_USAGE = (
+    'Usage: /ask_notes q="transformers attention" '
+    "[module=module_id] [assignment=assignment_id] [limit=5]"
+)
+ASK_NOTE_USAGE = 'Usage: /ask_note note=12 q="what is the main idea?" [limit=5]'
+SOURCES_USAGE = (
+    'Usage: /sources q="citation grounding" '
+    "[module=module_id] [assignment=assignment_id] [limit=8]"
+)
 
 
 class AllowlistFilter:
@@ -432,6 +444,9 @@ def build_application(settings: Settings | None = None) -> Application:
     application.add_handler(CommandHandler("files", files_command, filters=allowlist_filter))
     application.add_handler(CommandHandler("search", search_command, filters=allowlist_filter))
     application.add_handler(CommandHandler("link_note_file", link_note_file_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("ask_notes", ask_notes_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("ask_note", ask_note_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("sources", sources_command, filters=allowlist_filter))
     application.add_handler(CommandHandler("summarize_note", summarize_note_command, filters=allowlist_filter))
     application.add_handler(CommandHandler("explain_note", explain_note_command, filters=allowlist_filter))
     application.add_handler(CommandHandler("questions_note", questions_note_command, filters=allowlist_filter))
@@ -950,6 +965,65 @@ async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await _reply(update, "\n".join(lines).rstrip())
 
 
+async def ask_notes_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text = update.effective_message.text or ""
+    args = parse_kv_args(text)
+    query = args.get("q") or _extract_first_arg(text)
+    if not query:
+        await _reply(update, ASK_NOTES_USAGE)
+        return
+    service = _build_retrieval_service(context)
+    result = service.answer_question(
+        query,
+        module_id=args.get("module"),
+        assignment_id=args.get("assignment"),
+        max_sources=_parse_limit(args.get("limit"), default=5, maximum=8),
+    )
+    await _reply(update, _format_retrieval_answer(result))
+
+
+async def ask_note_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text = update.effective_message.text or ""
+    args = parse_kv_args(text)
+    note_id, query, error = _parse_ask_note_args(text, args)
+    if error:
+        await _reply(update, error)
+        return
+    service = _build_retrieval_service(context)
+    result = service.answer_question(
+        query or "",
+        note_id=note_id,
+        max_sources=_parse_limit(args.get("limit"), default=5, maximum=8),
+        include_files=False,
+    )
+    await _reply(update, _format_retrieval_answer(result))
+
+
+async def sources_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    text = update.effective_message.text or ""
+    args = parse_kv_args(text)
+    query = args.get("q") or _extract_first_arg(text)
+    if not query:
+        await _reply(update, SOURCES_USAGE)
+        return
+    service = _build_retrieval_service(context)
+    sources, error = service.retrieve_sources(
+        query,
+        module_id=args.get("module"),
+        assignment_id=args.get("assignment"),
+        limit=_parse_limit(args.get("limit"), default=8, maximum=12),
+    )
+    if error:
+        await _reply(update, error)
+        return
+    if not sources:
+        await _reply(update, NO_SOURCE_FALLBACK)
+        return
+    lines = [f'Sources for "{query}"', ""]
+    lines.extend(_format_retrieval_source_lines(sources))
+    await _reply(update, "\n".join(lines).rstrip())
+
+
 async def link_note_file_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     settings = _get_bot_settings(context)
     service = KnowledgeService(settings.db_path, timezone=settings.timezone)
@@ -968,6 +1042,89 @@ async def link_note_file_command(update: Update, context: ContextTypes.DEFAULT_T
         return
     result = service.link_note_file(note_id, file_id)
     await _reply(update, result.message)
+
+
+def _build_retrieval_service(context: ContextTypes.DEFAULT_TYPE) -> RetrievalService:
+    settings = _get_bot_settings(context)
+    return RetrievalService(
+        db_path=settings.db_path,
+        timezone=settings.timezone,
+        ollama_base_url=settings.ollama_base_url,
+        ollama_model=settings.ollama_model,
+        ollama_timeout=settings.ollama_timeout_seconds,
+    )
+
+
+def _parse_ask_note_args(text: str, args: dict[str, str]) -> tuple[int | None, str | None, str | None]:
+    note_str = args.get("note")
+    query = args.get("q")
+    if note_str is None:
+        parts = text.split(None, 2)
+        if len(parts) < 2:
+            return None, None, ASK_NOTE_USAGE
+        note_str = parts[1]
+        if query is None and len(parts) >= 3:
+            query = parts[2].strip()
+    try:
+        note_id = int(note_str)
+    except (TypeError, ValueError):
+        return None, None, f"Invalid note ID: {note_str}"
+    if not query:
+        return None, None, ASK_NOTE_USAGE
+    return note_id, query, None
+
+
+def _parse_limit(value: str | None, *, default: int, maximum: int) -> int:
+    if value is None:
+        return default
+    try:
+        parsed = int(value)
+    except ValueError:
+        return default
+    return max(1, min(parsed, maximum))
+
+
+def _format_retrieval_answer(result: object) -> str:
+    if not result.success:
+        error = result.error or "Retrieval failed."
+        if "unavailable" in error.lower() or "connection" in error.lower():
+            lines = [
+                "Local LLM unavailable.",
+                "",
+                "Check that Ollama is running:",
+                "ollama serve",
+            ]
+            if result.sources:
+                lines.extend(["", "Sources found"])
+                lines.extend(_format_retrieval_source_lines(result.sources))
+            return "\n".join(lines)
+        return f"Error: {error}"
+
+    if not result.sources:
+        return result.answer
+
+    lines = [f'Answer for "{result.question}"', ""]
+    if result.model:
+        lines.extend([f"Model: {result.model}", ""])
+    lines.append(_truncate_text(result.answer, 1800))
+    lines.extend(["", "Sources"])
+    lines.extend(_format_retrieval_source_lines(result.sources))
+    return "\n".join(lines).rstrip()
+
+
+def _format_retrieval_source_lines(sources: Sequence[object]) -> list[str]:
+    lines: list[str] = []
+    for source in sources:
+        lines.append(f"- [{source.chunk_label}] {source.title}")
+        if source.snippet:
+            lines.append(f"  {_truncate_text(source.snippet, 260)}")
+    return lines
+
+
+def _truncate_text(text: str, max_len: int) -> str:
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 3].rstrip() + "..."
 
 
 def _build_llm_service(context: ContextTypes.DEFAULT_TYPE) -> LLMService:

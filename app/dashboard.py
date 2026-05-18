@@ -14,6 +14,7 @@ from app.config import Settings, get_settings
 from core.academic.service import AcademicService
 from core.db import get_connection
 from core.knowledge.service import KnowledgeService
+from core.retrieval.service import RetrievalService
 from core.time import utc_now_iso
 
 logger = logging.getLogger(__name__)
@@ -166,6 +167,36 @@ async def search(request: Request) -> HTMLResponse:
     )
 
 
+@router.get("/retrieval", response_class=HTMLResponse)
+async def retrieval(request: Request) -> HTMLResponse:
+    """Render a read-only controlled retrieval page."""
+
+    settings = _get_request_settings(request)
+    query = request.query_params.get("q", "").strip()
+    module_id = request.query_params.get("module", "").strip() or None
+    assignment_id = request.query_params.get("assignment", "").strip() or None
+    academic_service = _get_academic_service(settings)
+    answer = None
+    if query:
+        answer = _get_retrieval_service(settings).answer_question(
+            query,
+            module_id=module_id,
+            assignment_id=assignment_id,
+        )
+    return templates.TemplateResponse(
+        request,
+        "retrieval.html",
+        {
+            "query": query,
+            "answer": answer,
+            "modules": academic_service.list_modules(),
+            "assignments": academic_service.list_all_assignments(include_completed=True),
+            "selected_module_id": module_id or "",
+            "selected_assignment_id": assignment_id or "",
+        },
+    )
+
+
 @router.get("/llm", response_class=HTMLResponse)
 async def llm(request: Request) -> HTMLResponse:
     """Render a read-only LLM call history page."""
@@ -221,6 +252,18 @@ def _get_knowledge_service(settings: Settings) -> KnowledgeService:
     """Build the request-scoped knowledge service."""
 
     return KnowledgeService(settings.db_path, timezone=settings.timezone)
+
+
+def _get_retrieval_service(settings: Settings) -> RetrievalService:
+    """Build the request-scoped retrieval service."""
+
+    return RetrievalService(
+        settings.db_path,
+        timezone=settings.timezone,
+        ollama_base_url=settings.ollama_base_url,
+        ollama_model=settings.ollama_model,
+        ollama_timeout=settings.ollama_timeout_seconds,
+    )
 
 
 def _format_minutes(minutes: int) -> str:

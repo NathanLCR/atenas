@@ -1,5 +1,22 @@
 # Atenas — Roadmap v0.1
 
+## Current Snapshot - 2026-05-18
+
+This file is the original high-level roadmap. The current operating roadmap now
+lives in `docs/phases/README.md`.
+
+Verified after pulling `origin/main`:
+
+- Branch: `main`
+- HEAD: `cb72413`
+- Tests: `328 passed`
+- Completed: Phases 0-7 plus Phase 6.5 code-map docs
+- Next recommended phase: Phase 8 - Controlled Retrieval/RAG Foundation
+
+See `docs/HANDOFF.md` for the working handoff.
+
+---
+
 ## Phase 0 — Specs ✅
 
 All architectural decisions documented. Conflicts between PDF spec and generated specs resolved.

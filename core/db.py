@@ -254,6 +254,28 @@ CREATE INDEX IF NOT EXISTS idx_notes_archived ON notes(archived);
 CREATE INDEX IF NOT EXISTS idx_notes_module ON notes(module_id);
 CREATE INDEX IF NOT EXISTS idx_files_archived ON files(archived);
 CREATE INDEX IF NOT EXISTS idx_files_module ON files(module_id);
+
+-- Phase 8: Controlled retrieval chunk index
+CREATE TABLE IF NOT EXISTS retrieval_chunks (
+    id TEXT PRIMARY KEY,
+    source_kind TEXT NOT NULL CHECK(source_kind IN ('note', 'file')),
+    source_id INTEGER NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    text TEXT NOT NULL,
+    module_id TEXT NULL,
+    assignment_id TEXT NULL,
+    updated_at TEXT NOT NULL,
+    indexed_at TEXT NOT NULL,
+    UNIQUE(source_kind, source_id, chunk_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_retrieval_chunks_source
+ON retrieval_chunks(source_kind, source_id);
+CREATE INDEX IF NOT EXISTS idx_retrieval_chunks_module
+ON retrieval_chunks(module_id);
+CREATE INDEX IF NOT EXISTS idx_retrieval_chunks_assignment
+ON retrieval_chunks(assignment_id);
 """
 
 
@@ -330,7 +352,7 @@ VALID_TABLE_NAMES = frozenset({
     "documents", "chunks", "nodes", "edges", "tasks",
     "study_modules", "assignments", "work_shifts",
     "class_sessions", "study_blocks", "memory_items", "llm_calls",
-    "notes", "files", "note_file_links",
+    "notes", "files", "note_file_links", "retrieval_chunks",
 })
 
 
