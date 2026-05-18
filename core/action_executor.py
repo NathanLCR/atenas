@@ -54,9 +54,12 @@ class ActionExecutor:
             return result
 
         try:
+            if inspect.iscoroutinefunction(handler):
+                raise RuntimeError(
+                    f"Async action handler '{proposal.action_type}' is not supported. "
+                    "Register a synchronous handler instead."
+                )
             handler_result = handler(proposal.payload)
-            if inspect.isawaitable(handler_result):
-                raise RuntimeError("Async action handlers are not supported in Phase 1.")
             result = self._normalize_result(proposal.action_type, handler_result)
         except Exception as exc:
             logger.exception(
