@@ -50,7 +50,33 @@ CONFIRMATION_REQUIRED = frozenset({
 })
 ```
 
-Confirmation must be explicit (`yes` or `/confirm`) — not assumed from context.
+Confirmation must be explicit (`yes` or `/confirm`) — not assumed from
+context. It is carried on `ActionProposal.user_confirmed`, which **defaults
+to `false`** (safe default) and is set `true` by *code* only after the user
+confirms. The LLM never sets it. (The earlier field name
+`requires_confirmation` inverted this — `true` meant "skip the gate" — and
+was removed as a confirmation-bypass footgun.)
+
+## Allowlist (Default-Deny)
+
+The policy engine is an **allowlist**, not a denylist. Only action types in
+`ALLOWED_ACTIONS` (or `CONFIRMATION_REQUIRED` with `user_confirmed=true`)
+may execute:
+
+```python
+ALLOWED_ACTIONS = frozenset({
+    "read_memory", "write_memory", "search", "summarize",
+    "add_work_shift", "add_class_session", "add_assignment", "add_task",
+    "generate_plan", "generate_flashcards", "update_matrix", "ingest_paper",
+})
+```
+
+Any `action_type` not in a policy set — including a novel string the model
+invents (`"cleanup"`, `"remove_path"`, …) — is **blocked by default**. This
+closes the denylist bypass where an LLM evades `FORBIDDEN_ACTIONS` by not
+using a forbidden word. `FORBIDDEN_ACTIONS` remains as defence-in-depth on
+top of default-deny. Evaluation order: forbidden → confirmation-required →
+allowlisted → else **deny**.
 
 ---
 

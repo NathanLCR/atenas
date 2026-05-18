@@ -4,14 +4,14 @@ from core.action_executor import ActionExecutor
 from core.schemas import ActionOutcome, ActionProposal
 
 
-def proposal(action_type: str, requires_confirmation: bool = False) -> ActionProposal:
+def proposal(action_type: str, user_confirmed: bool = False) -> ActionProposal:
     """Build a minimal action proposal."""
 
     return ActionProposal(
         action_type=action_type,
         payload={"value": 1},
         confidence=0.9,
-        requires_confirmation=requires_confirmation,
+        user_confirmed=user_confirmed,
     )
 
 

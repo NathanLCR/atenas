@@ -139,6 +139,26 @@ class WorkShiftsExtracted(StrictModel):
     needs_confirmation: bool
 
 
+class ClassSessionItem(StrictModel):
+    """Single class session extracted from user input."""
+
+    module_id: str | None = None
+    title: str
+    date: str | None = Field(default=None, pattern=DATE_PATTERN)
+    start_time: str = Field(pattern=TIME_PATTERN)
+    end_time: str = Field(pattern=TIME_PATTERN)
+    location: str | None = None
+    recurrence: str | None = None
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
+class ClassSessionsExtracted(StrictModel):
+    """LLM output wrapper for one or more extracted class sessions."""
+
+    sessions: list[ClassSessionItem]
+    needs_confirmation: bool
+
+
 class MemoryItemExtracted(StrictModel):
     """LLM output for memory extraction and classification."""
 
@@ -147,27 +167,44 @@ class MemoryItemExtracted(StrictModel):
     topic: str = Field(max_length=100)
     summary: str = Field(max_length=2000)
     importance: Importance
+    sensitive: bool = False
     tags: list[str] = Field(default_factory=list, max_length=8)
     confidence: float = Field(ge=0.0, le=1.0)
 
 
-class StudyBlockGenerated(StrictModel):
-    """LLM-generated study block with scheduling rationale."""
+class AvailabilitySlot(StrictModel):
+    """Code-authored study slot. Times and the intensity cap are computed
+    deterministically (availability minus hard blocks, fatigue rules). The
+    LLM receives these as input and MUST NOT alter them."""
 
-    start_time: str | None = Field(default=None, pattern=TIME_PATTERN)
-    end_time: str | None = Field(default=None, pattern=TIME_PATTERN)
+    slot_id: int = Field(ge=0)
+    date: str = Field(pattern=DATE_PATTERN)
+    start_time: str = Field(pattern=TIME_PATTERN)
+    end_time: str = Field(pattern=TIME_PATTERN)
+    max_intensity: StudyIntensity
+
+
+class BlockAssignment(StrictModel):
+    """LLM output: what to do in one pre-computed slot. The LLM never emits
+    times. `slot_id` must reference an input `AvailabilitySlot`; `intensity`
+    must be <= that slot's `max_intensity`. Code validates and rejects
+    assignments that violate either rule."""
+
+    slot_id: int = Field(ge=0)
     title: str
     task_type: str | None = None
+    task_id: str | None = None
     intensity: StudyIntensity
     reason: str
 
 
 class DailyPlanGenerated(StrictModel):
-    """LLM-generated daily plan."""
+    """LLM-generated daily plan. The LLM only assigns work to code-authored
+    slots; it does not author or modify any times."""
 
     date: str = Field(pattern=DATE_PATTERN)
     capacity: PlanCapacity
-    blocks: list[StudyBlockGenerated]
+    assignments: list[BlockAssignment]
     warnings: list[str]
 
 
@@ -234,6 +271,7 @@ class Assignment(StrictModel):
     module_id: str | None = None
     description: str | None = None
     due_date: str | None = None
+    estimated_hours: float | None = Field(default=None, ge=0)
     status: AssignmentStatus = AssignmentStatus.TODO
     priority: Priority = Priority.MEDIUM
     brief_path: str | None = None
@@ -268,6 +306,7 @@ class MemoryItem(StrictModel):
     topic: str
     tags: list[str] = Field(default_factory=list)
     importance: Importance = Importance.MEDIUM
+    sensitive: bool = False
     source: str = "telegram"
     inferred: bool = True
     created_at: str = Field(default_factory=utc_now)
@@ -293,12 +332,17 @@ class LLMCallRecord(StrictModel):
 
 
 class ActionProposal(StrictModel):
-    """Validated proposal passed to the policy engine."""
+    """Validated proposal passed to the policy engine.
+
+    `user_confirmed` defaults to False so the safe path (gate the action) is
+    the default. It is set True only after the user has explicitly confirmed
+    (e.g. replied `yes` / `/confirm`). The LLM must never set it.
+    """
 
     action_type: str
     payload: dict[str, Any]
     confidence: float = Field(ge=0.0, le=1.0)
-    requires_confirmation: bool
+    user_confirmed: bool = False
     reason: str | None = None
 
 

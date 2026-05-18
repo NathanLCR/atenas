@@ -36,6 +36,26 @@ CONFIRMATION_REQUIRED: frozenset[str] = frozenset(
     }
 )
 
+# Default-deny: only action types listed here (or in CONFIRMATION_REQUIRED,
+# once confirmed) may execute. Anything not explicitly allowed is blocked,
+# so an LLM cannot bypass policy by inventing a new action_type string.
+ALLOWED_ACTIONS: frozenset[str] = frozenset(
+    {
+        "read_memory",
+        "write_memory",
+        "search",
+        "summarize",
+        "add_work_shift",
+        "add_class_session",
+        "add_assignment",
+        "add_task",
+        "generate_plan",
+        "generate_flashcards",
+        "update_matrix",
+        "ingest_paper",
+    }
+)
+
 
 @dataclass(frozen=True)
 class PolicyDecision:
@@ -58,20 +78,30 @@ class PolicyEngine:
                 outcome=ActionOutcome.BLOCKED,
                 reason=f"Forbidden action: {proposal.action_type}",
             )
-        elif (
-            proposal.action_type in CONFIRMATION_REQUIRED
-            and not proposal.requires_confirmation
-        ):
-            decision = PolicyDecision(
-                allowed=False,
-                outcome=ActionOutcome.NEEDS_CONFIRMATION,
-                reason=f"Action requires explicit confirmation: {proposal.action_type}",
-            )
-        else:
+        elif proposal.action_type in CONFIRMATION_REQUIRED:
+            if proposal.user_confirmed:
+                decision = PolicyDecision(
+                    allowed=True,
+                    outcome=ActionOutcome.SUCCESS,
+                    reason=f"Confirmed by user: {proposal.action_type}",
+                )
+            else:
+                decision = PolicyDecision(
+                    allowed=False,
+                    outcome=ActionOutcome.NEEDS_CONFIRMATION,
+                    reason=f"Action requires explicit confirmation: {proposal.action_type}",
+                )
+        elif proposal.action_type in ALLOWED_ACTIONS:
             decision = PolicyDecision(
                 allowed=True,
                 outcome=ActionOutcome.SUCCESS,
                 reason="Action allowed by policy.",
+            )
+        else:
+            decision = PolicyDecision(
+                allowed=False,
+                outcome=ActionOutcome.BLOCKED,
+                reason=f"Unknown action type (not in allowlist): {proposal.action_type}",
             )
 
         logger.info(

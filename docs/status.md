@@ -13,7 +13,7 @@ System health and context overview. Confirms the agent is running, lists active 
 
 ## Inputs
 - `/ping` — none.
-- `/status` — reads SQLite (assignment/deadline/shift counts), `memory/profile.md`, Ollama ping, cloud status.
+- `/status` — reads SQLite counts only: active assignments, deadlines in the next 7 days, work shifts in the current calendar week. Student name is a hardcoded constant ("Nathan") in Phase 1. LLM status lines are static placeholders (no live Ollama ping or cloud check yet — see Phase 3).
 - `/skills` — reads skill registry.
 
 ## Outputs
@@ -31,17 +31,24 @@ Student: Nathan
 📚 Active assignments: 3
 ⏰ Deadlines this week: 1
 🏢 Work shifts this week: 4
-💡 Local LLM: ✅ Available
-☁️  Cloud LLM: ✅ Available
+💡 Local LLM: ⬜ Mock only
+☁️  Cloud LLM: ⬜ Disabled
 ```
+
+`Deadlines this week` counts assignments due within the next 7 days (rolling
+window from today). `Work shifts this week` counts the current Mon–Sun calendar
+week. The two windows differ by design. Live LLM availability replaces the
+static placeholder lines in Phase 3.
 
 ### `/skills`
 ```
 📦 Registered Skills
 ✅ status        — System health and context
-⬜ memory        — Not yet implemented
-⬜ work_schedule — Not yet implemented
 ```
+
+Only registered skills are listed. In Phase 1 that is `status` alone; later
+phases add rows as their skills register. The ✅/⬜ icon reflects the skill's
+`enabled` flag, not implementation status.
 
 ## Storage Impact
 Read-only. No writes.
@@ -59,5 +66,5 @@ None.
 | `/ping` | Returns `pong` within 1s |
 | `/status` with empty DB | Online status with zeros |
 | `/status` with data | Correct counts |
-| `/status` with Ollama offline | Shows `❌ Unavailable` |
+| `/status` with unreadable DB | Falls back to zero counts, still Online |
 | `/skills` with 1 skill registered | Lists it correctly |
