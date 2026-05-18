@@ -170,6 +170,7 @@ CREATE TABLE IF NOT EXISTS memory_items (
     importance  TEXT NOT NULL DEFAULT 'medium',
     source      TEXT NOT NULL DEFAULT 'telegram',
     inferred    INTEGER NOT NULL DEFAULT 1,
+    sensitive   INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
@@ -276,7 +277,7 @@ def init_db(db_path: Path | str) -> None:
     """Create tables and apply backward-compatible migrations.
 
     Runs SCHEMA_SQL (CREATE TABLE IF NOT EXISTS) and then applies
-    Phase 3 column migrations for databases created by earlier phases.
+    column migrations for databases created by earlier phases.
     Safe to call multiple times.
     """
     conn = get_connection(db_path)
@@ -284,6 +285,7 @@ def init_db(db_path: Path | str) -> None:
         conn.executescript(SCHEMA_SQL)
         _apply_phase3_migrations(conn)
         _apply_phase3_indexes(conn)
+        _apply_memory_migrations(conn)
     finally:
         conn.close()
     logger.info("database_initialized", extra={"event_type": "database_initialized", "db_path": str(db_path)})
@@ -316,6 +318,12 @@ def _apply_phase3_indexes(connection: sqlite3.Connection) -> None:
     connection.execute("CREATE INDEX IF NOT EXISTS idx_assignments_due_at ON assignments(due_at)")
     connection.execute("CREATE INDEX IF NOT EXISTS idx_work_shifts_start_at ON work_shifts(start_at)")
     connection.execute("CREATE INDEX IF NOT EXISTS idx_class_sessions_weekday ON class_sessions(weekday)")
+
+
+def _apply_memory_migrations(connection: sqlite3.Connection) -> None:
+    """Add memory_items columns introduced after initial schema creation."""
+
+    _ensure_column(connection, "memory_items", "sensitive", "INTEGER NOT NULL DEFAULT 0")
 
 
 VALID_TABLE_NAMES = frozenset({
