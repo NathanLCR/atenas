@@ -33,7 +33,11 @@ def create_app(settings: Settings | None = None, registry: SkillRegistry | None 
         setup_logging(runtime_settings.logs_dir, runtime_settings.log_level)
         init_db(runtime_settings.db_path)
         register_status_skill(
-            runtime_registry, runtime_settings.db_path, runtime_settings.timezone
+            runtime_registry,
+            runtime_settings.db_path,
+            runtime_settings.timezone,
+            runtime_settings.ollama_base_url,
+            runtime_settings.ollama_model,
         )
         app.state.settings = runtime_settings
         app.state.registry = runtime_registry
