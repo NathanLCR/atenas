@@ -8,6 +8,7 @@ from core.schemas import (
     DailyPlanGenerated,
     FatigueLevel,
     MemoryItemExtracted,
+    StudyIntensity,
     WorkShiftsExtracted,
 )
 
@@ -58,18 +59,22 @@ def test_memory_item_extracted_validates_should_store_false() -> None:
     assert model.should_store is False
 
 
-def test_daily_plan_generated_validates_capacity_warnings_and_reason() -> None:
-    """DailyPlanGenerated should include capacity, warnings, and block reasons."""
+def test_daily_plan_generated_assigns_to_slots_without_authoring_times() -> None:
+    """The LLM plan output assigns work to code-authored slots only.
+
+    There must be no time fields on the LLM block output — times are owned
+    by deterministic code, not the model.
+    """
 
     model = DailyPlanGenerated(
         date="2026-05-19",
         capacity="medium",
-        blocks=[
+        assignments=[
             {
-                "start_time": "10:00",
-                "end_time": "12:00",
+                "slot_id": 0,
                 "title": "Write literature review",
                 "task_type": "writing",
+                "task_id": None,
                 "intensity": "deep",
                 "reason": "Deadline is soon and morning capacity is available.",
             }
@@ -78,7 +83,29 @@ def test_daily_plan_generated_validates_capacity_warnings_and_reason() -> None:
     )
 
     assert model.capacity == "medium"
-    assert model.blocks[0].reason
+    assert model.assignments[0].slot_id == 0
+    assert model.assignments[0].reason
+    assert not hasattr(model.assignments[0], "start_time")
+
+
+def test_block_assignment_rejects_llm_authored_times() -> None:
+    """A model that tries to emit times must fail validation (extra=forbid)."""
+
+    with pytest.raises(ValidationError):
+        DailyPlanGenerated(
+            date="2026-05-19",
+            capacity="medium",
+            assignments=[
+                {
+                    "slot_id": 0,
+                    "title": "Sneak a time in",
+                    "intensity": StudyIntensity.DEEP,
+                    "reason": "trying to author a time",
+                    "start_time": "10:00",
+                }
+            ],
+            warnings=[],
+        )
 
 
 def test_action_proposal_validates_correctly() -> None:
@@ -88,11 +115,11 @@ def test_action_proposal_validates_correctly() -> None:
         action_type="write_memory",
         payload={"summary": "A useful item"},
         confidence=0.88,
-        requires_confirmation=False,
         reason="Store user-provided memory.",
     )
 
     assert proposal.action_type == "write_memory"
+    assert proposal.user_confirmed is False
 
 
 def test_fatigue_level_rejects_invalid_values() -> None:

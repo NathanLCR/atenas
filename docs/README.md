@@ -2,9 +2,11 @@
 
 ## What's in this folder
 
+All spec docs are flat inside `docs/`:
+
 ```
-CODEX_BUILD_PROMPT.md          ← Give this to Claude Code for Phase 1
 docs/
+├── CODEX_BUILD_PROMPT.md      ← Phase 1 build prompt for Claude Code
 ├── PRODUCT_SPEC.md            ← What Atenas is
 ├── REQUIREMENTS.md            ← FRs and NFRs
 ├── ARCHITECTURE.md            ← Component map, decisions
@@ -13,21 +15,22 @@ docs/
 ├── DATA_MODEL.md              ← SQLite schema (corrected), entities
 ├── SCHEMAS.md                 ← LLM output schemas (corrected)
 ├── ROADMAP.md                 ← Build phases
-└── skills/
-    ├── status.md              ← Phase 1 — implement this
-    ├── memory.md              ← Phase 4
-    ├── work_schedule.md       ← Phase 5
-    └── study_planner.md       ← Phase 6
+├── status.md                  ← Status skill spec — Phase 1
+├── memory.md                  ← Memory skill spec — Phase 4
+├── work_schedule.md           ← Work schedule skill spec — Phase 5
+├── class_timetable.md         ← Class timetable skill spec — Phase 6
+└── study_planner.md           ← Study planner skill spec — Phase 8
 ```
 
 ## How to use
 
-1. Create a new repo called `atenas-core`.
-2. Copy `docs/` into the repo root.
-3. Give Claude Code the contents of `CODEX_BUILD_PROMPT.md` as the task.
-4. Review the output against the acceptance criteria at the bottom of the prompt.
-5. Run `pytest` — all tests must pass.
-6. Run `docker-compose up` — healthcheck must pass.
+Phase 1 is already implemented in this repo. To work with it:
+
+1. `pip install -r requirements.txt`
+2. Run `pytest` — all tests must pass.
+3. Run `docker-compose up` (or `uvicorn app.main:app --reload`) and hit `GET /health`.
+
+For later phases, use `docs/CODEX_BUILD_PROMPT.md` as the pattern and follow `ROADMAP.md`. These docs are the source of truth; keep them in sync with the code.
 
 ## What was corrected
 

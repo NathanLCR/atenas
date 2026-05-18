@@ -56,13 +56,13 @@ Atenas helps students who also work manage classes, work shifts, assignments, de
 
 | Capability | Description |
 |---|---|
-| Memory | Store and search notes, facts, preferences, module info |
+| Memory | Store and keyword-search notes, facts, preferences, module info |
 | Work schedule | Ingest work shifts; use them to constrain planning |
 | Class timetable | Ingest class schedule; treat as fixed blocks |
 | Assignment tracking | Track assignments, deadlines, task estimates |
 | Study planning | Generate realistic daily and weekly study plans |
 | PDF ingestion | Upload and summarise academic papers |
-| Semantic search | Search notes and papers by meaning |
+| Semantic search | Search papers and notes by meaning (embeddings, Phase 10). Memory items use keyword search. |
 | Literature matrix | Extract structured metadata from papers |
 | Flashcards | Generate simple revision flashcards |
 
@@ -99,7 +99,7 @@ Atenas v1 is complete when it can:
 1. Receive and respond to Telegram commands.
 2. Display a simple readable web dashboard.
 3. Store memory safely and consistently.
-4. Search memory semantically.
+4. Search memory by keyword (semantic search over papers/notes arrives with embeddings, Phase 10).
 5. Accept a class timetable.
 6. Accept work shifts with fatigue and commute context.
 7. Accept assignments and deadlines.
