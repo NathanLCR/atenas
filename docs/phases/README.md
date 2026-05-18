@@ -23,12 +23,13 @@ As of the 2026-05-18 checkpoint after pulling `origin/main`:
 | 6 | Complete | Notes + files foundation |
 | 6.5 | Complete | Developer code map |
 | 7 | Complete | Local LLM over selected notes |
-| 8 | Next | Controlled retrieval/RAG foundation |
+| 8 | Complete | Controlled retrieval/RAG foundation |
+| 9 | Complete | Notifications + reminders |
 
 Current verified test baseline:
 
 ```text
-328 passed
+383 passed
 ```
 
 ## MVP target
