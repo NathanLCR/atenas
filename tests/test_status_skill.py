@@ -1,6 +1,9 @@
 """Tests for the deterministic status skill."""
 
 from pathlib import Path
+from zoneinfo import ZoneInfoNotFoundError
+
+import pytest
 
 from core.skill_registry import SkillInfo, SkillRegistry
 from skills.status.handler import handle_ping, handle_skills, handle_status
@@ -27,6 +30,22 @@ def test_handle_status_with_empty_db_shows_zeros(tmp_db: Path) -> None:
     assert "Active assignments: 0" in response
     assert "Deadlines this week: 0" in response
     assert "Work shifts this week: 0" in response
+
+
+def test_handle_status_accepts_configured_timezone(tmp_db: Path) -> None:
+    """The status window honors the configured IANA timezone (NFR-07)."""
+
+    response = handle_status(tmp_db, "America/Sao_Paulo")
+
+    assert "Active assignments: 0" in response
+    assert "Deadlines this week: 0" in response
+
+
+def test_handle_status_rejects_invalid_timezone(tmp_db: Path) -> None:
+    """A bogus timezone surfaces, proving the zone is actually consumed."""
+
+    with pytest.raises(ZoneInfoNotFoundError):
+        handle_status(tmp_db, "Europe/Lndon")
 
 
 def test_handle_skills_lists_registered_skills(registry: SkillRegistry) -> None:

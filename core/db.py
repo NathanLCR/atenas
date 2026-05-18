@@ -266,7 +266,7 @@ def get_connection(db_path: Path | str) -> sqlite3.Connection:
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
     connection.execute("PRAGMA journal_mode = WAL")
-    logger.info(
+    logger.debug(
         "database_connection_opened",
         extra={"event_type": "database_connection_opened", "db_path": str(path)},
     )
