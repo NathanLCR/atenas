@@ -37,6 +37,9 @@ class Settings(BaseSettings):
 
     telegram_bot_token: str | None = None
     telegram_allowed_user_ids: list[int] = Field(default_factory=list)
+    notifications_chat_id: int | None = None
+    deadline_alert_hours: int = Field(default=72, ge=1, le=336)
+    notifications_enabled: bool = True
 
     data_dir: Path = Path("data")
     memory_dir: Path = Path("memory")
@@ -154,6 +157,24 @@ class Settings(BaseSettings):
         """Compatibility alias for brief-style uppercase settings access."""
 
         return self.telegram_allowed_user_ids
+
+    @property
+    def NOTIFICATIONS_CHAT_ID(self) -> int | None:
+        """Compatibility alias for brief-style uppercase settings access."""
+
+        return self.notifications_chat_id
+
+    @property
+    def NOTIFICATIONS_ENABLED(self) -> bool:
+        """Compatibility alias for brief-style uppercase settings access."""
+
+        return self.notifications_enabled
+
+    @property
+    def DEADLINE_ALERT_HOURS(self) -> int:
+        """Compatibility alias for brief-style uppercase settings access."""
+
+        return self.deadline_alert_hours
 
 
 @lru_cache
