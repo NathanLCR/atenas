@@ -1,4 +1,4 @@
-"""Deterministic status skill handlers for Phase 1."""
+"""Status skill handlers."""
 
 from __future__ import annotations
 
@@ -22,10 +22,16 @@ def handle_ping() -> str:
     return "🏓 pong"
 
 
-def handle_status(db_path: Path | str, timezone: str = "UTC") -> str:
+def handle_status(
+    db_path: Path | str,
+    timezone: str = "UTC",
+    ollama_base_url: str = "http://localhost:11434",
+    ollama_model: str = "llama3.1:8b",
+) -> str:
     """Return a formatted system status from SQLite counts."""
 
     counts = _load_status_counts(db_path, timezone)
+    llm_line = _local_llm_status(ollama_base_url, ollama_model)
     return "\n".join(
         [
             "🟢 Atenas — Online",
@@ -34,7 +40,7 @@ def handle_status(db_path: Path | str, timezone: str = "UTC") -> str:
             f"📚 Active assignments: {counts['active_assignments']}",
             f"⏰ Deadlines this week: {counts['deadlines_this_week']}",
             f"🏢 Work shifts this week: {counts['work_shifts_this_week']}",
-            "💡 Local LLM: ⬜ Mock only",
+            f"💡 Local LLM: {llm_line}",
             "☁️  Cloud LLM: ⬜ Disabled",
         ]
     )
@@ -60,7 +66,12 @@ def get_status() -> str:
     from app.config import get_settings
 
     settings = get_settings()
-    return handle_status(settings.db_path, settings.timezone)
+    return handle_status(
+        settings.db_path,
+        settings.timezone,
+        settings.ollama_base_url,
+        settings.ollama_model,
+    )
 
 
 def get_skills() -> str:
@@ -72,7 +83,11 @@ def get_skills() -> str:
 
 
 def register_status_skill(
-    registry: SkillRegistry, db_path: Path | str, timezone: str = "UTC"
+    registry: SkillRegistry,
+    db_path: Path | str,
+    timezone: str = "UTC",
+    ollama_base_url: str = "http://localhost:11434",
+    ollama_model: str = "llama3.1:8b",
 ) -> None:
     """Register the status skill with `/ping`, `/status`, and `/skills`."""
 
@@ -80,7 +95,7 @@ def register_status_skill(
         if command == "/ping":
             return handle_ping()
         if command == "/status":
-            return handle_status(db_path, timezone)
+            return handle_status(db_path, timezone, ollama_base_url, ollama_model)
         if command == "/skills":
             return handle_skills(registry)
         return f"Unknown status command: {command}"
@@ -168,3 +183,19 @@ def _count(
 
     row = connection.execute(query, parameters).fetchone()
     return int(row["count"]) if row else 0
+
+
+def _local_llm_status(base_url: str, model: str) -> str:
+    """Return a short status string for the local Ollama LLM."""
+
+    import urllib.error
+    import urllib.request
+
+    try:
+        req = urllib.request.Request(f"{base_url.rstrip('/')}/api/tags", method="GET")
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            if resp.status == 200:
+                return f"✅ Ollama ({model})"
+    except Exception:
+        pass
+    return f"⬜ Ollama offline — model: {model}"
