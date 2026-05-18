@@ -18,6 +18,7 @@ EXPECTED_TABLES = {
     "study_blocks",
     "memory_items",
     "llm_calls",
+    "retrieval_chunks",
 }
 
 
