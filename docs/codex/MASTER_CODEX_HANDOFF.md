@@ -41,17 +41,34 @@ read spec -> inspect repo -> implement minimal scope -> add tests -> run full te
 - Phase 6.5 — developer code map
 - Phase 7 — local LLM over selected notes
 - Phase 8 — controlled retrieval/RAG foundation
+- Phase 9 — notifications + reminders
 
 ## Current test baseline
 
-Latest verified checkpoint after Phase 8 polish on 2026-05-18:
+Latest verified checkpoint after Phase 9 on 2026-05-18:
 
 ```text
 .venv/bin/pytest -q
-349 passed
+383 passed
 ```
 
 Warnings from `pytest-asyncio` deprecations may exist and are pre-existing unless new warnings appear.
+
+## Phase 9 summary
+
+Phase 9 adds proactive Telegram notifications using asyncio background tasks (no new dependencies).
+
+Implemented:
+
+- `core/notifications/` package: `DeadlineAlert`, `StudyBlockReminder`, `OverdueAlert` models and `NotificationService`.
+- Asyncio background loops for: daily deadline alerts (08:00), overdue checks (22:00), 15-minute study-block poll, and Sunday weekly review (18:00).
+- Graceful task cancellation on bot shutdown.
+- Telegram command:
+  - `/reminders`
+- Config settings:
+  - `NOTIFICATIONS_ENABLED` (default: `true`)
+  - `NOTIFICATIONS_CHAT_ID` (required for proactive pushes)
+  - `DEADLINE_ALERT_HOURS` (default: `72`)
 
 ## Phase 8 summary
 
@@ -99,7 +116,9 @@ Controlled RAG now exists, but it is limited to registered local notes/files, lo
 ## Recommended next work
 
 ```text
-Define the next post-MVP phase, or continue Phase 8 polish only within the local-only controlled retrieval boundaries.
+Post-MVP Phase 10 (Learning Analytics) or Post-MVP Phase 12 (Production Hardening).
+Phase 10 adds dashboard analytics: planned vs completed hours, assignment risk scores, module workload summaries.
+Phase 12 hardens the deployment: API auth, dashboard auth, backup/restore, Docker hardening.
 ```
 
 ## Final response format for every phase
