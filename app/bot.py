@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
@@ -12,11 +13,13 @@ from core.academic.service import AcademicService
 from core.academic.validators import parse_kv_args, parse_weekday, validate_hours, validate_priority, validate_status
 from core.knowledge.service import KnowledgeService
 from core.llm.service import LLMService
+from core.notifications.service import NotificationService, seconds_until, seconds_until_weekday
 from core.retrieval.models import NO_SOURCE_FALLBACK
 from core.retrieval.service import RetrievalService
 from skills.status import handler as status_handler
 
 if TYPE_CHECKING:
+    from telegram import Bot
     from telegram import Update
     from telegram.ext import Application, ContextTypes
 
@@ -400,6 +403,160 @@ async def assignments_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     await _reply(update, "\n".join(lines).rstrip())
 
 
+async def reminders_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Reply to /reminders with notification status and upcoming alerts."""
+
+    settings = _get_bot_settings(context)
+    if not settings.NOTIFICATIONS_ENABLED:
+        await _reply(update, "Notifications are disabled. Set NOTIFICATIONS_ENABLED=true to enable.")
+        return
+
+    chat_id = settings.NOTIFICATIONS_CHAT_ID
+    alert_hours = settings.DEADLINE_ALERT_HOURS
+    service = _build_notification_service(context)
+
+    lines: list[str] = [
+        f"Notifications: enabled",
+        f"Alert window: {alert_hours}h",
+        f"Push chat ID: {chat_id or 'not configured (set NOTIFICATIONS_CHAT_ID)'}",
+        "",
+    ]
+
+    deadline_msg = service.format_deadline_alerts_message(alert_hours=alert_hours)
+    if deadline_msg:
+        lines.append(deadline_msg)
+    else:
+        lines.append(f"No deadlines within the next {alert_hours}h.")
+
+    overdue_msg = service.format_overdue_message()
+    if overdue_msg:
+        lines.extend(["", overdue_msg])
+
+    await _reply(update, "\n".join(lines))
+
+
+async def _notify_deadline_alerts(bot: Bot, settings: Settings) -> None:
+    """Send deadline alerts to the configured notifications chat."""
+
+    chat_id = settings.NOTIFICATIONS_CHAT_ID
+    if not chat_id or not settings.NOTIFICATIONS_ENABLED:
+        return
+    service = NotificationService(db_path=settings.db_path, timezone=settings.timezone)
+    msg = service.format_deadline_alerts_message(alert_hours=settings.DEADLINE_ALERT_HOURS)
+    if msg:
+        await bot.send_message(chat_id=chat_id, text=msg)
+        logger.info("notification_sent", extra={"event_type": "notification_sent", "kind": "deadline_alert"})
+
+
+async def _notify_overdue(bot: Bot, settings: Settings) -> None:
+    """Send overdue assignment alerts to the configured notifications chat."""
+
+    chat_id = settings.NOTIFICATIONS_CHAT_ID
+    if not chat_id or not settings.NOTIFICATIONS_ENABLED:
+        return
+    service = NotificationService(db_path=settings.db_path, timezone=settings.timezone)
+    msg = service.format_overdue_message()
+    if msg:
+        await bot.send_message(chat_id=chat_id, text=msg)
+        logger.info("notification_sent", extra={"event_type": "notification_sent", "kind": "overdue_alert"})
+
+
+async def _notify_study_block(bot: Bot, settings: Settings) -> None:
+    """Send a study block reminder if one is starting soon."""
+
+    chat_id = settings.NOTIFICATIONS_CHAT_ID
+    if not chat_id or not settings.NOTIFICATIONS_ENABLED:
+        return
+    service = NotificationService(db_path=settings.db_path, timezone=settings.timezone)
+    reminder = service.study_block_reminder()
+    if reminder:
+        await bot.send_message(chat_id=chat_id, text=reminder.format_message())
+        logger.info("notification_sent", extra={"event_type": "notification_sent", "kind": "study_block"})
+
+
+async def _notify_weekly_review(bot: Bot, settings: Settings) -> None:
+    """Send a weekly review prompt."""
+
+    chat_id = settings.NOTIFICATIONS_CHAT_ID
+    if not chat_id or not settings.NOTIFICATIONS_ENABLED:
+        return
+    service = NotificationService(db_path=settings.db_path, timezone=settings.timezone)
+    msg = service.weekly_review_message()
+    await bot.send_message(chat_id=chat_id, text=msg)
+    logger.info("notification_sent", extra={"event_type": "notification_sent", "kind": "weekly_review"})
+
+
+async def _run_deadline_alert_loop(app: Application) -> None:
+    """Daily job: send deadline alerts each morning at 08:00 local time."""
+
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    settings: Settings = app.bot_data["settings"]
+    tz = ZoneInfo(settings.timezone)
+    while True:
+        now = datetime.now(tz)
+        delay = seconds_until(8, 0, now)
+        await asyncio.sleep(delay)
+        try:
+            await _notify_deadline_alerts(app.bot, settings)
+        except Exception:
+            logger.exception("notification_job_error", extra={"event_type": "notification_job_error", "job": "deadline_alerts"})
+
+
+async def _run_overdue_check_loop(app: Application) -> None:
+    """Daily job: warn about overdue assignments each evening at 22:00 local time."""
+
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    settings: Settings = app.bot_data["settings"]
+    tz = ZoneInfo(settings.timezone)
+    while True:
+        now = datetime.now(tz)
+        delay = seconds_until(22, 0, now)
+        await asyncio.sleep(delay)
+        try:
+            await _notify_overdue(app.bot, settings)
+        except Exception:
+            logger.exception("notification_job_error", extra={"event_type": "notification_job_error", "job": "overdue_check"})
+
+
+async def _run_study_reminder_loop(app: Application) -> None:
+    """Periodic job: check every 15 minutes for an upcoming study block."""
+
+    settings: Settings = app.bot_data["settings"]
+    while True:
+        await asyncio.sleep(15 * 60)
+        try:
+            await _notify_study_block(app.bot, settings)
+        except Exception:
+            logger.exception("notification_job_error", extra={"event_type": "notification_job_error", "job": "study_reminder"})
+
+
+async def _run_weekly_review_loop(app: Application) -> None:
+    """Weekly job: send a review prompt each Sunday at 18:00 local time."""
+
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    settings: Settings = app.bot_data["settings"]
+    tz = ZoneInfo(settings.timezone)
+    while True:
+        now = datetime.now(tz)
+        delay = seconds_until_weekday(6, 18, 0, now)  # 6=Sunday
+        await asyncio.sleep(delay)
+        try:
+            await _notify_weekly_review(app.bot, settings)
+        except Exception:
+            logger.exception("notification_job_error", extra={"event_type": "notification_job_error", "job": "weekly_review"})
+
+
+def _build_notification_service(context: ContextTypes.DEFAULT_TYPE) -> NotificationService:
+    settings = _get_bot_settings(context)
+    return NotificationService(db_path=settings.db_path, timezone=settings.timezone)
+
+
 def build_application(settings: Settings | None = None) -> Application:
     """Build a configured python-telegram-bot application.
 
@@ -452,6 +609,7 @@ def build_application(settings: Settings | None = None) -> Application:
     application.add_handler(CommandHandler("questions_note", questions_note_command, filters=allowlist_filter))
     application.add_handler(CommandHandler("flashcards_note", flashcards_note_command, filters=allowlist_filter))
     application.add_handler(CommandHandler("rewrite_note", rewrite_note_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("reminders", reminders_command, filters=allowlist_filter))
     application.add_handler(MessageHandler(filters.COMMAND & allowlist_filter, unknown_command))
     return application
 
@@ -462,16 +620,45 @@ async def start_bot(app: Application) -> None:
     await app.initialize()
     await app.start()
     await app.updater.start_polling()
+    _start_notification_tasks(app)
 
 
 async def stop_bot(app: Application) -> None:
     """Stop and shut down the Telegram application."""
 
+    _cancel_notification_tasks(app)
     if app.updater and app.updater.running:
         await app.updater.stop()
     if app.running:
         await app.stop()
     await app.shutdown()
+
+
+def _start_notification_tasks(app: Application) -> None:
+    """Start asyncio background tasks for proactive notifications."""
+
+    settings: Settings = app.bot_data.get("settings") or get_settings()
+    if not settings.NOTIFICATIONS_ENABLED:
+        return
+    tasks = [
+        asyncio.create_task(_run_deadline_alert_loop(app), name="deadline_alerts"),
+        asyncio.create_task(_run_overdue_check_loop(app), name="overdue_check"),
+        asyncio.create_task(_run_study_reminder_loop(app), name="study_reminder"),
+        asyncio.create_task(_run_weekly_review_loop(app), name="weekly_review"),
+    ]
+    app.bot_data["_notification_tasks"] = tasks
+    logger.info(
+        "notification_tasks_started",
+        extra={"event_type": "notification_tasks_started", "count": len(tasks)},
+    )
+
+
+def _cancel_notification_tasks(app: Application) -> None:
+    """Cancel all background notification tasks."""
+
+    tasks: list[asyncio.Task] = app.bot_data.pop("_notification_tasks", [])
+    for task in tasks:
+        task.cancel()
 
 
 def _build_allowlist_filter() -> AllowlistFilter:
