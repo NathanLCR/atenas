@@ -28,7 +28,7 @@ def handle_status(db_path: Path | str) -> str:
         [
             "🟢 Atenas — Online",
             "",
-            "Student: Nathan",
+            "Student: Local profile",
             f"📚 Active assignments: {counts['active_assignments']}",
             f"⏰ Deadlines this week: {counts['deadlines_this_week']}",
             f"🏢 Work shifts this week: {counts['work_shifts_this_week']}",
@@ -50,6 +50,22 @@ def handle_skills(registry: SkillRegistry) -> str:
         icon = "✅" if skill.enabled else "⬜"
         lines.append(f"{icon} {skill.name:<12} — {skill.description}")
     return "\n".join(lines)
+
+
+def get_status() -> str:
+    """Return formatted status using process settings."""
+
+    from app.config import get_settings
+
+    return handle_status(get_settings().db_path)
+
+
+def get_skills() -> str:
+    """Return formatted skills using the process registry."""
+
+    from core.skill_registry import get_registry
+
+    return handle_skills(get_registry())
 
 
 def register_status_skill(registry: SkillRegistry, db_path: Path | str) -> None:
@@ -94,7 +110,7 @@ def _load_status_counts(db_path: Path | str) -> dict[str, int]:
                 """
                 SELECT COUNT(*) AS count
                 FROM assignments
-                WHERE status NOT IN ('submitted', 'graded', 'archived')
+                WHERE status NOT IN ('submitted', 'graded', 'archived', 'done', 'cancelled')
                 """,
             )
             deadlines_this_week = _count(
@@ -102,8 +118,8 @@ def _load_status_counts(db_path: Path | str) -> dict[str, int]:
                 """
                 SELECT COUNT(*) AS count
                 FROM assignments
-                WHERE due_date IS NOT NULL
-                  AND substr(due_date, 1, 10) BETWEEN ? AND ?
+                WHERE COALESCE(due_at, due_date) IS NOT NULL
+                  AND substr(COALESCE(due_at, due_date), 1, 10) BETWEEN ? AND ?
                 """,
                 (today.isoformat(), next_week.isoformat()),
             )
@@ -143,4 +159,3 @@ def _count(
 
     row = connection.execute(query, parameters).fetchone()
     return int(row["count"]) if row else 0
-

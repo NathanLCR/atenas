@@ -64,11 +64,11 @@ class TaskStatus(StrEnum):
 class AssignmentStatus(StrEnum):
     """Assignment workflow status."""
 
-    NOT_STARTED = "not_started"
+    TODO = "todo"
     IN_PROGRESS = "in_progress"
     SUBMITTED = "submitted"
-    GRADED = "graded"
-    ARCHIVED = "archived"
+    DONE = "done"
+    CANCELLED = "cancelled"
 
 
 class Priority(StrEnum):
@@ -225,10 +225,10 @@ class LiteratureMatrixEntry(StrictModel):
     paper_id: str
     research_question: str
     methodology: str
-    sample: str | None
+    sample: str | None = None
     key_findings: str
     limitations: str
-    relevance_to_topic: str | None
+    relevance_to_topic: str | None = None
     confidence: float = Field(ge=0.0, le=1.0)
 
 
@@ -272,7 +272,7 @@ class Assignment(StrictModel):
     description: str | None = None
     due_date: str | None = None
     estimated_hours: float | None = Field(default=None, ge=0)
-    status: AssignmentStatus = AssignmentStatus.NOT_STARTED
+    status: AssignmentStatus = AssignmentStatus.TODO
     priority: Priority = Priority.MEDIUM
     brief_path: str | None = None
     created_at: str = Field(default_factory=utc_now)
@@ -361,4 +361,3 @@ class ActionResult(StrictModel):
         """Whether the action completed successfully."""
 
         return self.outcome == ActionOutcome.SUCCESS
-

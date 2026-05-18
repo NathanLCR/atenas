@@ -47,7 +47,7 @@ class JSONLHandler(logging.Handler):
                     continue
                 payload[key] = _json_safe(value)
             if record.exc_info:
-                payload["exception"] = self.formatException(record.exc_info)
+                payload["exception"] = _EXCEPTION_FORMATTER.formatException(record.exc_info)
             with self.filepath.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
         except Exception:
@@ -79,6 +79,7 @@ def setup_logging(logs_dir: Path, level: str = "INFO") -> None:
     root.addHandler(console)
     root.addHandler(events)
     root.addHandler(errors)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
     logging.getLogger(__name__).info(
         "logging_configured",
@@ -125,3 +126,4 @@ _STANDARD_LOG_RECORD_KEYS = {
     "asctime",
 }
 
+_EXCEPTION_FORMATTER = logging.Formatter()
