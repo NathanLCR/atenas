@@ -2,7 +2,10 @@
 
 ## Status
 
-Recommended cleanup phase.
+Complete.
+
+The code map exists in `docs/code-map/` and should be kept in sync with future
+phase work.
 
 ## Goal
 

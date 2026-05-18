@@ -2,7 +2,10 @@
 
 ## Status
 
-Planned.
+Complete.
+
+Implemented as local Ollama-compatible selected-note actions in `core/llm/`,
+Telegram commands, tests, and read-only LLM log dashboard support.
 
 ## Required baseline
 

@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block page_title %}Retrieval{% endblock %}
+
+{% block main %}
+<form class="search-form retrieval-form" method="get" action="/dashboard/retrieval">
+  <input type="text" name="q" value="{{ query }}" placeholder="Ask notes/files..." autofocus />
+  <select name="module" aria-label="Module">
+    <option value="">All modules</option>
+    {% for module in modules %}
+    <option value="{{ module.id }}" {% if module.id == selected_module_id %}selected{% endif %}>
+      {{ module.code ~ " - " if module.code else "" }}{{ module.name }}
+    </option>
+    {% endfor %}
+  </select>
+  <select name="assignment" aria-label="Assignment">
+    <option value="">All assignments</option>
+    {% for assignment in assignments %}
+    <option value="{{ assignment.id }}" {% if assignment.id == selected_assignment_id %}selected{% endif %}>
+      {{ assignment.title }}
+    </option>
+    {% endfor %}
+  </select>
+  <button type="submit">Ask</button>
+</form>
+
+{% if query %}
+<h2>Answer for "{{ query }}"</h2>
+
+{% if answer and not answer.success %}
+<div class="empty-state retrieval-error">
+  <h3>{{ "Local answer unavailable" if answer.sources else "Retrieval unavailable" }}</h3>
+  <p class="muted">{{ answer.error }}</p>
+  {% if answer.sources %}
+  <p class="muted">Sources were found. Start Ollama to generate the answer.</p>
+  <div class="command-block">ollama serve</div>
+  {% endif %}
+</div>
+{% elif answer %}
+<div class="card retrieval-answer">
+  <div class="card-body">
+    <p>{{ answer.answer }}</p>
+    {% if answer.model %}
+    <p class="muted">Model: {{ answer.model }}</p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% if answer.sources %}
+<h2>Sources</h2>
+<div class="results">
+  {% for source in answer.sources %}
+  <div class="card result-card">
+    <div class="card-header">
+      <span class="badge badge-{{ 'note' if source.source_kind == 'note' else 'file' }}">{{ source.chunk_label }}</span>
+      <h3>{{ source.title }}</h3>
+    </div>
+    <div class="card-body">
+      <p class="snippet">{{ source.snippet }}</p>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}
