@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block page_title %}Logs{% endblock %}
+
+{% block main %}
+{% if records %}
+<div class="section">
+  <table>
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Type</th>
+        <th>Provider</th>
+        <th>Model</th>
+        <th>Tokens</th>
+        <th>Latency</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in records %}
+      <tr>
+        <td>{{ r.created_at[:19] }}</td>
+        <td><span class="badge">{{ r.task_type }}</span></td>
+        <td>{{ r.provider }}</td>
+        <td>{{ r.model }}</td>
+        <td>{{ r.input_tokens or 0 }}/{{ r.output_tokens or 0 }}</td>
+        <td>{{ r.latency_ms }}ms</td>
+        <td><span class="badge badge-{{ 'success' if r.success else 'danger' }}">{{ 'ok' if r.success else 'fail' }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty-state">
+  <h3>No LLM calls recorded yet.</h3>
+  <p class="muted">LLM call logs will appear here when enabled.</p>
+</div>
+{% endif %}
+{% endblock %}

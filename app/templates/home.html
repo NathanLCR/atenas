@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block page_title %}Overview{% endblock %}
+
+{% block main %}
+<div class="summary-grid">
+  <div class="summary-card">
+    <div class="label">Version</div>
+    <div class="value">{{ version }}</div>
+  </div>
+  <div class="summary-card">
+    <div class="label">UTC Time</div>
+    <div class="value" style="font-size:16px;font-weight:400;">{{ utc_now[:19] }}</div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Quick Links</h2>
+  <div class="grid">
+    <a href="/dashboard/week" class="card" style="padding:16px 20px;display:block;">
+      <h3>Week</h3>
+      <p class="muted">View weekly schedule and availability</p>
+    </a>
+    <a href="/dashboard/deadlines" class="card" style="padding:16px 20px;display:block;">
+      <h3>Deadlines</h3>
+      <p class="muted">Open assignments and due dates</p>
+    </a>
+    <a href="/dashboard/plan" class="card" style="padding:16px 20px;display:block;">
+      <h3>Study Plan</h3>
+      <p class="muted">Deterministic weekly study plan</p>
+    </a>
+    <a href="/dashboard/data" class="card" style="padding:16px 20px;display:block;">
+      <h3>Data</h3>
+      <p class="muted">Modules, classes, shifts, and commands</p>
+    </a>
+    <a href="/dashboard/notes" class="card" style="padding:16px 20px;display:block;">
+      <h3>Notes</h3>
+      <p class="muted">Study notes and knowledge</p>
+    </a>
+    <a href="/dashboard/files" class="card" style="padding:16px 20px;display:block;">
+      <h3>Files</h3>
+      <p class="muted">Registered file metadata</p>
+    </a>
+  </div>
+</div>
+{% endblock %}

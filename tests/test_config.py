@@ -15,6 +15,7 @@ def test_default_settings_load_without_env() -> None:
     assert settings.max_cloud_cost_per_day_usd == 1.00
     assert settings.max_cloud_calls_per_day == 50
     assert settings.telegram_allowed_user_ids == []
+    assert settings.timezone == "Europe/Dublin"
 
 
 def test_db_path_property_resolves_correctly(tmp_path: Path) -> None:
@@ -31,3 +32,11 @@ def test_single_numeric_telegram_user_id_is_accepted() -> None:
     settings = Settings(_env_file=None, telegram_allowed_user_ids=8552559127)
 
     assert settings.telegram_allowed_user_ids == [8552559127]
+
+
+def test_placeholder_telegram_bot_token_is_treated_as_unset() -> None:
+    """Scaffolded Telegram token placeholders should not start the bot."""
+
+    settings = Settings(_env_file=None, telegram_bot_token="YOUR_TELEGRAM_BOT_TOKEN_HERE")
+
+    assert settings.telegram_bot_token is None

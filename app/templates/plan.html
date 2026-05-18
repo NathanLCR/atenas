@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block page_title %}Study Plan{% endblock %}
+
+{% block main %}
+<p class="muted" style="margin-bottom:16px;">{{ plan.start_date.strftime("%d %b") }} to {{ plan.end_date.strftime("%d %b") }}</p>
+
+<div class="summary-grid">
+  <div class="summary-card">
+    <div class="label">Available</div>
+    <div class="value">{{ format_minutes(plan.summary.total_available_minutes) }}</div>
+  </div>
+  <div class="summary-card">
+    <div class="label">Required</div>
+    <div class="value">{{ format_minutes(plan.summary.total_required_minutes) }}</div>
+  </div>
+  <div class="summary-card">
+    <div class="label">Planned</div>
+    <div class="value">{{ format_minutes(plan.summary.total_planned_minutes) }}</div>
+  </div>
+  <div class="summary-card">
+    <div class="label">Unscheduled</div>
+    <div class="value">{{ format_minutes(plan.summary.total_unscheduled_minutes) }}</div>
+  </div>
+</div>
+
+{% if plan.blocks %}
+<div class="section">
+  <h2>Planned Blocks</h2>
+  {% set current_day = namespace(value="") %}
+  {% for block in plan.blocks %}
+    {% set day_label = block.start_at.strftime("%a %d %b") %}
+    {% if day_label != current_day.value %}
+      {% if current_day.value %}</div>{% endif %}
+      <div class="day-card">
+        <h3>{{ day_label }}</h3>
+        <ul>
+      {% set current_day.value = day_label %}
+    {% endif %}
+    <li>
+      <strong>{{ format_time(block.start_at) }}–{{ format_time(block.end_at) }}</strong>
+      {{ block.assignment_title }}
+      {% if block.module_name %} ({{ block.module_name }}){% endif %}
+      <span class="muted">— {{ block.reason }}</span>
+    </li>
+  {% endfor %}
+  </ul></div>
+</div>
+{% elif plan.summary.total_required_minutes == 0 and not plan.summary.unestimated_assignments %}
+<div class="empty-state">
+  <h3>No open assignments to plan.</h3>
+</div>
+{% else %}
+<div class="empty-state">
+  <h3>No planned study blocks</h3>
+  <p class="muted">Estimate hours on your assignments to generate a plan.</p>
+</div>
+{% endif %}
+
+{% if plan.unscheduled or plan.summary.unestimated_assignments or plan.summary.overdue_assignments %}
+<div class="section">
+  <h2>Warnings</h2>
+  {% for item in plan.unscheduled %}
+  <div class="card" style="padding:12px 16px;margin-bottom:8px;border-left:3px solid var(--warning);">
+    {{ item.assignment_title }} has {{ format_minutes(item.unscheduled_minutes) }} unscheduled before deadline
+  </div>
+  {% endfor %}
+  {% if plan.summary.unestimated_assignments %}
+  <div class="card" style="padding:12px 16px;margin-bottom:8px;border-left:3px solid var(--danger);">
+    <strong>{{ plan.summary.unestimated_assignments|length }} assignments need estimated hours</strong>
+  </div>
+  {% endif %}
+  {% if plan.summary.overdue_assignments %}
+  <div class="card" style="padding:12px 16px;margin-bottom:8px;border-left:3px solid var(--danger);">
+    <strong>{{ plan.summary.overdue_assignments|length }} overdue assignments</strong>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

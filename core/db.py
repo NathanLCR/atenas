@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import logging
+import re
 import sqlite3
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+_IDENTIFIER_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 
 
 SCHEMA_SQL = """
@@ -75,15 +78,30 @@ CREATE TABLE IF NOT EXISTS tasks (
     updated_at         TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS study_modules (
+    id          TEXT PRIMARY KEY,
+    code        TEXT,
+    name        TEXT NOT NULL,
+    lecturer    TEXT,
+    notes       TEXT,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS assignments (
     id              TEXT PRIMARY KEY,
     title           TEXT NOT NULL,
     module_id       TEXT,
     description     TEXT,
     due_date        TEXT,
-    estimated_hours REAL,
-    status          TEXT NOT NULL DEFAULT 'not_started',
+    due_at          TEXT,
+    status          TEXT NOT NULL DEFAULT 'todo',
     priority        TEXT NOT NULL DEFAULT 'medium',
+    priority_rank   INTEGER NOT NULL DEFAULT 3,
+    weight          REAL,
+    estimated_hours REAL,
+    completed_hours REAL NOT NULL DEFAULT 0,
+    notes           TEXT,
     brief_path      TEXT,
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL
@@ -92,11 +110,16 @@ CREATE TABLE IF NOT EXISTS assignments (
 -- CORRECTION: added date column; fatigue_level is TEXT CHECK constraint
 CREATE TABLE IF NOT EXISTS work_shifts (
     id               TEXT PRIMARY KEY,
+    title            TEXT,
     date             TEXT NOT NULL,
     workplace        TEXT,
     start_time       TEXT NOT NULL,
     end_time         TEXT NOT NULL,
+    start_at         TEXT,
+    end_at           TEXT,
+    location         TEXT,
     role             TEXT,
+    energy_cost      INTEGER,
     commute_minutes  INTEGER NOT NULL DEFAULT 0,
     fatigue_level    TEXT NOT NULL DEFAULT 'medium'
                          CHECK(fatigue_level IN ('low', 'medium', 'high')),
@@ -108,12 +131,15 @@ CREATE TABLE IF NOT EXISTS work_shifts (
 
 CREATE TABLE IF NOT EXISTS class_sessions (
     id          TEXT PRIMARY KEY,
-    module_id   TEXT NOT NULL,
+    module_id   TEXT,
     title       TEXT NOT NULL,
+    weekday     INTEGER,
     start_time  TEXT NOT NULL,
     end_time    TEXT NOT NULL,
     location    TEXT,
-    recurrence  TEXT,
+    recurrence  TEXT NOT NULL DEFAULT 'weekly',
+    active      INTEGER NOT NULL DEFAULT 1,
+    notes       TEXT,
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
@@ -167,6 +193,7 @@ CREATE TABLE IF NOT EXISTS llm_calls (
 CREATE INDEX IF NOT EXISTS idx_chunks_document ON chunks(document_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
+CREATE INDEX IF NOT EXISTS idx_study_modules_code ON study_modules(code);
 CREATE INDEX IF NOT EXISTS idx_assignments_status ON assignments(status);
 CREATE INDEX IF NOT EXISTS idx_assignments_due_date ON assignments(due_date);
 CREATE INDEX IF NOT EXISTS idx_work_shifts_date ON work_shifts(date);
@@ -175,6 +202,57 @@ CREATE INDEX IF NOT EXISTS idx_memory_items_domain ON memory_items(domain);
 CREATE INDEX IF NOT EXISTS idx_memory_items_topic ON memory_items(topic);
 CREATE INDEX IF NOT EXISTS idx_llm_calls_task_type ON llm_calls(task_type);
 CREATE INDEX IF NOT EXISTS idx_llm_calls_provider ON llm_calls(provider);
+
+-- Phase 6: Knowledge layer tables
+CREATE TABLE IF NOT EXISTS notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    module_id TEXT NULL,
+    assignment_id TEXT NULL,
+    source_type TEXT NOT NULL DEFAULT 'manual',
+    tags TEXT NULL,
+    archived INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (module_id) REFERENCES study_modules(id),
+    FOREIGN KEY (assignment_id) REFERENCES assignments(id)
+);
+
+CREATE TABLE IF NOT EXISTS files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    path TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    title TEXT NULL,
+    description TEXT NULL,
+    module_id TEXT NULL,
+    assignment_id TEXT NULL,
+    file_type TEXT NULL,
+    mime_type TEXT NULL,
+    size_bytes INTEGER NULL,
+    sha256 TEXT NULL,
+    tags TEXT NULL,
+    archived INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (module_id) REFERENCES study_modules(id),
+    FOREIGN KEY (assignment_id) REFERENCES assignments(id)
+);
+
+CREATE TABLE IF NOT EXISTS note_file_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    note_id INTEGER NOT NULL,
+    file_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(note_id, file_id),
+    FOREIGN KEY (note_id) REFERENCES notes(id),
+    FOREIGN KEY (file_id) REFERENCES files(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_notes_archived ON notes(archived);
+CREATE INDEX IF NOT EXISTS idx_notes_module ON notes(module_id);
+CREATE INDEX IF NOT EXISTS idx_files_archived ON files(archived);
+CREATE INDEX IF NOT EXISTS idx_files_module ON files(module_id);
 """
 
 
@@ -195,13 +273,76 @@ def get_connection(db_path: Path | str) -> sqlite3.Connection:
 
 
 def init_db(db_path: Path | str) -> None:
-    path = Path(db_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    conn = get_connection(path)
+    """Create tables and apply backward-compatible migrations.
+
+    Runs SCHEMA_SQL (CREATE TABLE IF NOT EXISTS) and then applies
+    Phase 3 column migrations for databases created by earlier phases.
+    Safe to call multiple times.
+    """
+    conn = get_connection(db_path)
     try:
         conn.executescript(SCHEMA_SQL)
-        conn.commit()
+        _apply_phase3_migrations(conn)
+        _apply_phase3_indexes(conn)
     finally:
         conn.close()
-    logger.info("database_initialized", extra={"event_type": "database_initialized", "db_path": str(path)})
+    logger.info("database_initialized", extra={"event_type": "database_initialized", "db_path": str(db_path)})
 
+
+def _apply_phase3_migrations(connection: sqlite3.Connection) -> None:
+    """Add Phase 3 scheduling columns to databases created by earlier phases."""
+
+    _ensure_column(connection, "assignments", "due_at", "TEXT")
+    _ensure_column(connection, "assignments", "priority_rank", "INTEGER NOT NULL DEFAULT 3")
+    _ensure_column(connection, "assignments", "weight", "REAL")
+    _ensure_column(connection, "assignments", "estimated_hours", "REAL")
+    _ensure_column(connection, "assignments", "completed_hours", "REAL NOT NULL DEFAULT 0")
+    _ensure_column(connection, "assignments", "notes", "TEXT")
+
+    _ensure_column(connection, "work_shifts", "title", "TEXT")
+    _ensure_column(connection, "work_shifts", "start_at", "TEXT")
+    _ensure_column(connection, "work_shifts", "end_at", "TEXT")
+    _ensure_column(connection, "work_shifts", "location", "TEXT")
+    _ensure_column(connection, "work_shifts", "energy_cost", "INTEGER")
+
+    _ensure_column(connection, "class_sessions", "weekday", "INTEGER")
+    _ensure_column(connection, "class_sessions", "active", "INTEGER NOT NULL DEFAULT 1")
+    _ensure_column(connection, "class_sessions", "notes", "TEXT")
+
+
+def _apply_phase3_indexes(connection: sqlite3.Connection) -> None:
+    """Create indexes that depend on Phase 3 migration columns."""
+
+    connection.execute("CREATE INDEX IF NOT EXISTS idx_assignments_due_at ON assignments(due_at)")
+    connection.execute("CREATE INDEX IF NOT EXISTS idx_work_shifts_start_at ON work_shifts(start_at)")
+    connection.execute("CREATE INDEX IF NOT EXISTS idx_class_sessions_weekday ON class_sessions(weekday)")
+
+
+VALID_TABLE_NAMES = frozenset({
+    "documents", "chunks", "nodes", "edges", "tasks",
+    "study_modules", "assignments", "work_shifts",
+    "class_sessions", "study_blocks", "memory_items", "llm_calls",
+    "notes", "files", "note_file_links",
+})
+
+
+def _ensure_column(
+    connection: sqlite3.Connection,
+    table_name: str,
+    column_name: str,
+    definition: str,
+) -> None:
+    """Add a column if it is absent."""
+
+    if table_name not in VALID_TABLE_NAMES:
+        raise ValueError(f"Invalid table name: {table_name}")
+    if not _IDENTIFIER_RE.match(column_name):
+        raise ValueError(f"Invalid column name: {column_name}")
+    if not _IDENTIFIER_RE.match(definition.split()[0]):
+        raise ValueError(f"Invalid column definition: {definition}")
+    columns = {
+        row["name"]
+        for row in connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+    }
+    if column_name not in columns:
+        connection.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")

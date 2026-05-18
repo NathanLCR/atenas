@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block page_title %}Deadlines{% endblock %}
+
+{% block main %}
+{% if assignments %}
+<div class="section">
+  <table>
+    <thead>
+      <tr>
+        <th>Due</th>
+        <th>Title</th>
+        <th>Priority</th>
+        <th>Status</th>
+        <th>Est. Hours</th>
+        <th>Completed</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in assignments %}
+      <tr>
+        <td>{{ a.due_at.strftime("%a %d %b %H:%M") }}</td>
+        <td>{{ a.title }}</td>
+        <td><span class="badge">{{ a.priority }}</span></td>
+        <td><span class="badge badge-{{ 'success' if a.status.value == 'done' else 'warning' if a.status.value == 'in_progress' else '' }}">{{ a.status.value }}</span></td>
+        <td>{{ a.estimated_hours if a.estimated_hours is not none else "—" }}</td>
+        <td>{{ a.completed_hours if a.completed_hours > 0 else "—" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty-state">
+  <h3>No open deadlines</h3>
+  <p class="muted">Use <code>/add_assignment</code> in Telegram to add a deadline.</p>
+</div>
+{% endif %}
+{% endblock %}
