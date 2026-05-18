@@ -16,7 +16,8 @@ It helps manage:
 - study plans
 - notes
 - files
-- later local/cloud LLM assistance
+- local LLM assistance
+- controlled source-grounded retrieval
 
 ## Build method
 
@@ -36,33 +37,56 @@ read spec -> inspect repo -> implement minimal scope -> add tests -> run full te
 - Phase 3 — Academic/work scheduling
 - Phase 4 — deterministic study planner
 - Phase 5 — controlled data input/editing
+- Phase 6 — notes + files foundation
+- Phase 6.5 — developer code map
+- Phase 7 — local LLM over selected notes
+- Phase 8 — controlled retrieval/RAG foundation
 
 ## Current test baseline
 
-Latest known checkpoint:
+Latest verified checkpoint after Phase 8 polish on 2026-05-18:
 
 ```text
-python3 -m pytest
-264 passed
-0 failed
+.venv/bin/pytest -q
+349 passed
 ```
 
 Warnings from `pytest-asyncio` deprecations may exist and are pre-existing unless new warnings appear.
+
+## Phase 8 summary
+
+Phase 8 adds controlled local retrieval over registered notes and supported text files.
+
+Implemented:
+
+- `core/retrieval/` package for deterministic chunking, SQLite-backed lexical retrieval, prompt construction, and source-grounded answers.
+- `retrieval_chunks` SQLite table and indexes.
+- Telegram commands:
+  - `/ask_notes`
+  - `/ask_note`
+  - `/sources`
+- Dashboard route:
+  - `/dashboard/retrieval`
+- Read-only dashboard retrieval filters:
+  - `module`
+  - `assignment`
+- No-source fallback when no registered source supports the question.
+- Source display even when local Ollama is unavailable after sources are found.
 
 ## Important constraints
 
 Do not add unless the active phase explicitly requires it:
 
-- LLM calls
+- uncontrolled LLM features
 - agents
-- embeddings
-- vector DB
-- RAG
+- cloud fallback
 - external APIs
 - Google Calendar sync
 - file watchers
 - dashboard write routes
 - new dependencies
+
+Controlled RAG now exists, but it is limited to registered local notes/files, local Ollama, explicit sources, and the no-source fallback. Do not add web search, automatic filesystem ingestion, OCR/PDF parsing, cloud fallback, or a vector database unless a later spec explicitly scopes it.
 
 ## Security notes
 
@@ -72,24 +96,10 @@ Do not add unless the active phase explicitly requires it:
 - Secrets must never be committed.
 - SQL identifier construction must be validated.
 
-## Recommended next phase
-
-If Phase 6 is not complete:
+## Recommended next work
 
 ```text
-Implement Phase 6 — Notes + Files Foundation.
-```
-
-If Phase 6 is complete:
-
-```text
-Implement Phase 6.5 — Developer Code Map.
-```
-
-Then:
-
-```text
-Phase 7 — Local LLM over selected notes.
+Define the next post-MVP phase, or continue Phase 8 polish only within the local-only controlled retrieval boundaries.
 ```
 
 ## Final response format for every phase

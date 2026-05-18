@@ -2,11 +2,13 @@
 
 ## What's in this folder
 
-All spec docs are flat inside `docs/`:
+Core spec docs are in `docs/`, with newer phase/code-map handoff material in
+subdirectories:
 
 ```
 docs/
-├── CODEX_BUILD_PROMPT.md      ← Phase 1 build prompt for Claude Code
+├── HANDOFF.md                 ← Current verified state and next-phase handoff
+├── CODEX_BUILD_PROMPT.md      ← Original Phase 1 build prompt
 ├── PRODUCT_SPEC.md            ← What Atenas is
 ├── REQUIREMENTS.md            ← FRs and NFRs
 ├── ARCHITECTURE.md            ← Component map, decisions
@@ -19,18 +21,27 @@ docs/
 ├── memory.md                  ← Memory skill spec — Phase 4
 ├── work_schedule.md           ← Work schedule skill spec — Phase 5
 ├── class_timetable.md         ← Class timetable skill spec — Phase 6
-└── study_planner.md           ← Study planner skill spec — Phase 8
+├── study_planner.md           ← Study planner skill spec — legacy Phase 8
+├── phases/                    ← Current phase-by-phase roadmap
+├── codex/                     ← Codex handoff and next-phase prompts
+└── code-map/                  ← Developer architecture map
 ```
 
 ## How to use
 
-Phase 1 is already implemented in this repo. To work with it:
+The current implementation is beyond the original Phase 1 skeleton. To work
+with it:
 
-1. `pip install -r requirements.txt`
-2. Run `pytest` — all tests must pass.
-3. Run `docker-compose up` (or `uvicorn app.main:app --reload`) and hit `GET /health`.
+1. Read `HANDOFF.md`.
+2. Read `codex/MASTER_CODEX_HANDOFF.md`.
+3. Read the active next phase spec in `phases/`.
+4. Create or refresh a Python 3.11 environment.
+5. `pip install -r requirements.txt`
+6. Run `pytest` - all tests must pass before and after changes.
+7. Run `docker-compose up` or `uvicorn app.main:app --reload`.
 
-For later phases, use `docs/CODEX_BUILD_PROMPT.md` as the pattern and follow `ROADMAP.md`. These docs are the source of truth; keep them in sync with the code.
+For future phases, prefer the newer `docs/phases/`, `docs/codex/`, and
+`docs/code-map/` docs over the original Phase 1 prompt.
 
 ## What was corrected
 

@@ -8,9 +8,9 @@ It is being built with spec-driven development:
 spec -> implementation -> tests -> audit -> next phase
 ```
 
-## Current status
+## Current Status
 
-As of the latest checkpoint:
+As of the 2026-05-18 checkpoint after pulling `origin/main`:
 
 | Phase | Status | Summary |
 |---:|---|---|
@@ -20,9 +20,16 @@ As of the latest checkpoint:
 | 3 | Complete | Academic/work scheduling + availability |
 | 4 | Complete | Deterministic study planner |
 | 5 | Complete | Controlled data input/editing + imports |
-| 6 | Planned / in progress | Notes + files foundation |
-| 7 | Planned | Local LLM over selected notes |
-| 8 | Planned | Controlled retrieval/RAG foundation |
+| 6 | Complete | Notes + files foundation |
+| 6.5 | Complete | Developer code map |
+| 7 | Complete | Local LLM over selected notes |
+| 8 | Next | Controlled retrieval/RAG foundation |
+
+Current verified test baseline:
+
+```text
+328 passed
+```
 
 ## MVP target
 
