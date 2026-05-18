@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import sqlite3
 from datetime import date, timedelta
@@ -104,7 +105,7 @@ def _load_status_counts(db_path: Path | str) -> dict[str, int]:
     next_week = today + timedelta(days=7)
 
     try:
-        with get_connection(db_path) as connection:
+        with contextlib.closing(get_connection(db_path)) as connection:
             active_assignments = _count(
                 connection,
                 """
