@@ -32,7 +32,9 @@ def create_app(settings: Settings | None = None, registry: SkillRegistry | None 
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         setup_logging(runtime_settings.logs_dir, runtime_settings.log_level)
         init_db(runtime_settings.db_path)
-        register_status_skill(runtime_registry, runtime_settings.db_path)
+        register_status_skill(
+            runtime_registry, runtime_settings.db_path, runtime_settings.timezone
+        )
         app.state.settings = runtime_settings
         app.state.registry = runtime_registry
         bot_app = None
@@ -72,4 +74,19 @@ def create_app(settings: Settings | None = None, registry: SkillRegistry | None 
     return app
 
 
-app = create_app()
+_app: FastAPI | None = None
+
+
+def __getattr__(name: str) -> FastAPI:
+    """Lazily build the ASGI app on first access (PEP 562).
+
+    Keeps ``uvicorn app.main:app`` working while ensuring a bare
+    ``import app.main`` does not read real settings or build the app.
+    """
+
+    if name == "app":
+        global _app
+        if _app is None:
+            _app = create_app()
+        return _app
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

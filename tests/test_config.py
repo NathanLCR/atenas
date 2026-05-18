@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from app.config import Settings
 
 
@@ -32,6 +34,27 @@ def test_single_numeric_telegram_user_id_is_accepted() -> None:
     settings = Settings(_env_file=None, telegram_allowed_user_ids=8552559127)
 
     assert settings.telegram_allowed_user_ids == [8552559127]
+
+
+def test_valid_timezone_is_accepted() -> None:
+    """A real IANA timezone should pass validation."""
+
+    settings = Settings(_env_file=None, timezone="America/Sao_Paulo")
+
+    assert settings.timezone == "America/Sao_Paulo"
+
+
+def test_invalid_timezone_fails_fast() -> None:
+    """A typo'd timezone should fail at settings construction (NFR-07)."""
+
+    with pytest.raises(ValueError, match="Invalid IANA timezone"):
+        Settings(_env_file=None, timezone="Europe/Lndon")
+
+
+def test_timezone_is_declared_exactly_once() -> None:
+    """Guard against the duplicate-field regression (second def silently wins)."""
+
+    assert list(Settings.model_fields).count("timezone") == 1
 
 
 def test_placeholder_telegram_bot_token_is_treated_as_unset() -> None:
