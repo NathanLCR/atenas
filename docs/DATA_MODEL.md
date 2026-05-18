@@ -5,9 +5,55 @@
 | Layer | Technology | Role |
 |---|---|---|
 | **Source of truth** | Markdown / YAML files in `memory/` | Human-readable, user-owned |
-| **Operational store** | SQLite (`data/atenas.sqlite`) | Fast queries, metadata, logs, graph |
+| **Operational store** | SQLite (`data/atenas.sqlite`) | Fast queries, metadata, logs (graph tables reserved, post-v1) |
 
 SQLite is always a derivative of the filesystem. If lost, rebuild from `memory/` files.
+
+---
+
+## Source-of-Truth Coherence Protocol
+
+There are multiple writers (skills, the dashboard) and the user may hand-edit
+YAML. Without a defined protocol that is a silent-corruption hazard. The
+rules:
+
+1. **YAML/Markdown files are canonical. SQLite is a derived cache.** On any
+   disagreement, the file wins. SQLite is never the only copy of user data.
+2. **One write path.** Skills and the dashboard never write SQLite directly.
+   Both call the same skill write function, which performs an atomic logical
+   write: (a) write/replace the YAML region, (b) upsert the SQLite row, in
+   that order, in one operation. If (b) fails, the file is still correct and
+   the row is re-derivable; the failure is logged (NFR-03), not swallowed.
+3. **Reconciliation on startup and on demand.** Each canonical file tracks an
+   `updated_at`. On startup, and via an admin `reindex` action, Atenas
+   compares file `updated_at` / mtime against the last index marker; any file
+   newer than its derived rows triggers a re-derive of just those rows.
+   This is how hand-edits to YAML are absorbed.
+4. **Rebuild is specified, not hand-waved.** `reindex(scope)` truncates the
+   derived tables in scope and rebuilds them by parsing the canonical files.
+   It is idempotent and safe to run anytime. Logs/`llm_calls` are *not*
+   derived and are never truncated by reindex.
+5. **Conflict policy.** If a file is malformed, the reindex for that scope
+   aborts with a logged error and the previous derived rows are kept (stale
+   but consistent) rather than partially applied. The user is told which
+   file failed to parse.
+6. **No dual ownership of a field.** A field is owned by exactly one file.
+   Derived/computed values (e.g. `deadline_risk`) live only in SQLite and are
+   recomputed, never hand-edited.
+
+---
+
+## Time & Timezone
+
+- All stored `created_at`/`updated_at` are UTC ISO 8601 (`utc_now()`).
+- All wall-clock fields (`date`, `start_time`, `end_time`) are **naive
+  local** and interpreted in `settings.timezone` (IANA, e.g.
+  `Europe/London`; default `UTC`).
+- Every availability/fatigue/deadline computation converts via
+  `settings.timezone` and uses the zone's real offset for that date, so DST
+  shifts and an international student's relocation do not silently corrupt
+  scheduling. Changing `TIMEZONE` re-interprets future scheduling only;
+  historical UTC timestamps are unaffected.
 
 ---
 
@@ -43,16 +89,18 @@ CREATE TABLE IF NOT EXISTS documents (
 );
 
 CREATE TABLE IF NOT EXISTS chunks (
-    id           TEXT PRIMARY KEY,
-    document_id  TEXT NOT NULL REFERENCES documents(id),
-    chunk_index  INTEGER NOT NULL,
-    text         TEXT NOT NULL,
-    summary      TEXT,
-    section      TEXT,
-    page_start   INTEGER,
-    page_end     INTEGER,
-    embedding_id TEXT,
-    created_at   TEXT NOT NULL
+    id            TEXT PRIMARY KEY,
+    document_id   TEXT NOT NULL REFERENCES documents(id),
+    chunk_index   INTEGER NOT NULL,
+    text          TEXT NOT NULL,
+    summary       TEXT,
+    section       TEXT,
+    page_start    INTEGER,
+    page_end      INTEGER,
+    embedding_id  TEXT,
+    embedding     TEXT,
+    embedding_dim INTEGER,
+    created_at    TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS nodes (
@@ -92,16 +140,17 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 
 CREATE TABLE IF NOT EXISTS assignments (
-    id          TEXT PRIMARY KEY,
-    title       TEXT NOT NULL,
-    module_id   TEXT,
-    description TEXT,
-    due_date    TEXT,
-    status      TEXT NOT NULL DEFAULT 'not_started',
-    priority    TEXT NOT NULL DEFAULT 'medium',
-    brief_path  TEXT,
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL
+    id              TEXT PRIMARY KEY,
+    title           TEXT NOT NULL,
+    module_id       TEXT,
+    description     TEXT,
+    due_date        TEXT,
+    estimated_hours REAL,
+    status          TEXT NOT NULL DEFAULT 'not_started',
+    priority        TEXT NOT NULL DEFAULT 'medium',
+    brief_path      TEXT,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
 );
 
 -- CORRECTION: added date column; fatigue_level is TEXT CHECK constraint
@@ -197,7 +246,35 @@ CREATE INDEX IF NOT EXISTS idx_llm_calls_provider ON llm_calls(provider);
 
 ---
 
-## Graph Ontology (from PDF)
+## Semantic Search Storage Design
+
+Decision for v1 (single-user scale): **no external vector store** (Qdrant is
+out of scope, SQLite has no native vector type).
+
+- Each chunk's embedding is stored on the `chunks` row as `embedding` =
+  JSON-encoded `list[float]`, with `embedding_dim` recording the vector
+  length. `embedding_id` is reserved for a future external store and stays
+  null in v1.
+- Retrieval is **brute-force cosine** computed in Python over the candidate
+  chunk set (optionally pre-filtered by `document_id`/`section`). At
+  single-user scale (thousands of chunks, not millions) this is well within
+  the NFR-02 budget; a linear scan of ~10k 768-dim vectors is tens of ms.
+- **Documented ceiling:** if total chunks exceed ~50k, revisit (add an ANN
+  index or `sqlite-vec`). That is a post-v1 concern, explicitly noted so the
+  decision is not silently outgrown.
+- Embedding model: Ollama `nomic-embed-text` (config
+  `OLLAMA_EMBEDDING_MODEL`). Built in Phase 10, after Phase 9 chunking.
+
+---
+
+## Graph Ontology — DEFERRED to post-v1
+
+The `nodes`/`edges` tables ship in the schema as **reserved structure with
+no v1 consumer**. No v1 phase builds or queries the graph; it had no defined
+question it answers that the relational tables + retrieval cannot. It is
+kept (cheap, empty) only to avoid a later migration, and is explicitly out
+of v1 scope to prevent speculative complexity. The ontology below is recorded
+for when a concrete need arises — not a v1 deliverable.
 
 **Node types:** student, module, class_session, work_shift, assignment, deadline, task, study_block, paper, note, concept, file, skill, decision, weekly_plan, daily_plan
 
@@ -242,8 +319,8 @@ shifts:
 assignments:
   - id: "e5f6g7h8-..."
     title: "Literature Review — AI in Education"
-    module: "CS7045"
-    deadline: "2024-11-20T23:59:00"
+    module_id: "CS7045"
+    due_date: "2024-11-20T23:59:00"
     estimated_hours: 12
     priority: "high"
     status: "in_progress"

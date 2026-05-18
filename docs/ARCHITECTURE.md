@@ -30,7 +30,7 @@ User (Telegram / Dashboard)
   ├── SQLite metadata
   ├── Markdown/YAML memory files
   ├── Keyword search
-  └── Embedding search (Phase 8+)
+  └── Embedding search (Phase 10+)
         │
         ▼
     LLM Router
@@ -53,6 +53,12 @@ User (Telegram / Dashboard)
   └── JSONL logs
 ```
 
+**Phase 1 reality:** the *Command Router* and *Intent Classifier* stages above
+are future components. They are not implemented as separate modules. In Phase 1
+the API layer calls `SkillRegistry.dispatch()` directly, which maps a command
+string to its registered handler. Natural-language intent classification arrives
+with the LLM router (Phase 3+).
+
 ---
 
 ## Component Responsibilities
@@ -66,19 +72,18 @@ User (Telegram / Dashboard)
 | `bot.py` | Telegram bot handler, allowlist, maps commands to router |
 | `dashboard.py` | Jinja2 dashboard routes (Phase 2+) |
 | `config.py` | Loads and validates environment config via pydantic-settings |
-| `scheduler.py` | APScheduler jobs — stub for Phase 6+ |
+| `scheduler.py` | APScheduler jobs — stub for Phase 8+ |
 
 ### Core Layer (`core/`)
 
 | File | Responsibility |
 |---|---|
-| `router.py` | Routes parsed commands to the correct skill |
-| `skill_registry.py` | Registers skills, indexes commands, resolves handlers |
+| `skill_registry.py` | Registers skills, indexes commands, resolves handlers, and dispatches commands to handlers (`SkillRegistry.dispatch`). There is no separate `router.py` — command routing lives here. |
 | `llm_router.py` | Decides local vs cloud; retries; logs calls |
 | `memory_manager.py` | Reads/writes Markdown memory files (Phase 4+) |
-| `retrieval_engine.py` | Stub for Phase 8 |
-| `graph_manager.py` | Stub for Phase 8 |
-| `embedding_manager.py` | Stub for Phase 8 |
+| `retrieval_engine.py` | Stub for Phase 9/10 |
+| `graph_manager.py` | Stub — graph deferred post-v1 (reserved, no v1 consumer) |
+| `embedding_manager.py` | Stub for Phase 10 |
 | `policy_engine.py` | Enforces action rules; blocks forbidden ops |
 | `action_executor.py` | Executes validated, approved actions |
 | `schemas.py` | All Pydantic models |
@@ -197,9 +202,18 @@ Is task in local_task_list?
 | 1 | FastAPI skeleton, SQLite init, config, logging, healthcheck, skill registry, policy engine, action executor, status skill, pytest scaffold |
 | 2 | Telegram bot, /ping /status /skills via Telegram, basic dashboard |
 | 3 | LLM router: Ollama provider, cloud adapter, Pydantic validation, fallback, LLM logging |
-| 4 | Memory skill |
+| 4 | Memory skill (incl. `sensitive` cloud gate) |
 | 5 | Work schedule skill |
-| 6 | Study planner skill |
-| 7 | Assignments skill |
-| 8 | Papers, PDF chunking, embeddings, graph |
-| 9 | Literature matrix |
+| 6 | Class timetable skill (FR-05) |
+| 7 | Assignments skill (deadline-risk scoring) |
+| 8 | Study planner skill — built after 5/6/7 (its inputs); code-authored slots, LLM assignment only; plan-quality suite is the exit gate |
+| 9 | Papers + PDF ingestion + chunking (no embeddings yet) |
+| 10 | Embeddings + brute-force cosine semantic search |
+| 11 | Literature matrix |
+| 12 | Flashcards (FR-10) |
+| post-v1 | Knowledge graph — reserved, no v1 consumer |
+
+Phase order reflects the dependency graph: the planner (8) is a consumer of
+work shifts (5), the timetable (6) and assignments (7), so it cannot precede
+them. Papers/embeddings are split (9/10) because "PDF + chunking + embeddings
++ graph" was one overloaded phase.

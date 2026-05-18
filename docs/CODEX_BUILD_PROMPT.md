@@ -22,8 +22,12 @@ docs/AGENT_POLICY.md      — LLM routing rules, planning rules, safety boundari
 docs/SECURITY.md          — forbidden actions, confirmation rules, prompt injection defence
 docs/DATA_MODEL.md        — SQLite schema v1 (corrected), entity definitions, YAML formats
 docs/SCHEMAS.md           — all LLM output schemas (corrected), action system
-docs/ROADMAP.md           — phase definitions and exit criteria
-docs/skills/status.md     — status skill spec (implement this in Phase 1)
+docs/ROADMAP.md           — phase definitions, dependency order, plan-quality rubric
+docs/status.md            — status skill spec (implement this in Phase 1)
+docs/work_schedule.md     — work schedule skill spec (Phase 5)
+docs/class_timetable.md   — class timetable skill spec (Phase 6)
+docs/study_planner.md     — study planner: availability algorithm, fatigue/risk math (Phase 8)
+docs/memory.md            — memory skill spec (Phase 4)
 ```
 
 ---
@@ -38,12 +42,16 @@ These were resolved during spec review. Do not deviate.
 | `fatigue_level` | `TEXT` enum: `low`, `medium`, `high` — not INTEGER 1-5 |
 | `work_shifts` table | Has a separate `date TEXT` column (YYYY-MM-DD) alongside `start_time`/`end_time` (HH:MM) |
 | `WorkShiftsExtracted` schema | Array wrapper: `{"shifts": [...], "needs_confirmation": bool}` — not single object |
-| `MemoryItemExtracted` schema | Includes `should_store`, `domain`, `importance`, `summary` — not just content/topic/tags |
-| `DailyPlanGenerated` schema | Includes `capacity`, `reason` per block, `warnings` — not just date/blocks |
-| Confidence threshold | `0.65` everywhere, from `config.MIN_CONFIDENCE_THRESHOLD` |
+| `MemoryItemExtracted` schema | Includes `should_store`, `domain`, `importance`, `summary`, `sensitive` — not just content/topic/tags |
+| `ClassSessionsExtracted` schema | Array wrapper `{"sessions": [...], "needs_confirmation": bool}` (mirrors WorkShiftsExtracted) |
+| Planner I/O | Code authors `AvailabilitySlot[]`; LLM returns `DailyPlanGenerated` with `BlockAssignment[]` keyed by `slot_id` — **no LLM-authored times** |
+| `ActionProposal` | Field is `user_confirmed: bool = False` (safe default) — NOT `requires_confirmation`. LLM never sets it |
+| Policy engine | **Allowlist + default-deny**: `FORBIDDEN` → block; `CONFIRMATION_REQUIRED` → block unless `user_confirmed`; `ALLOWED_ACTIONS` → allow; **else block** |
+| Confidence | Self-reported, uncalibrated. Secondary signal only; `0.65` = `config.MIN_CONFIDENCE_THRESHOLD` |
 | Cost control | `MAX_CLOUD_COST_PER_DAY_USD=1.00`, `MAX_CLOUD_CALLS_PER_DAY=50` in config |
+| Timezone | `TIMEZONE` config (IANA, default `UTC`) governs wall-clock math; stored timestamps stay UTC ISO |
 | Dashboard | FastAPI + Jinja + HTMX — no React |
-| Graph/embeddings | Empty stubs only in Phase 1 |
+| Graph/embeddings | Empty stubs only in Phase 1; graph deferred post-v1 |
 
 ---
 
@@ -119,7 +127,7 @@ atenas-core/
 Use `pydantic-settings`. Load from `.env`. All fields:
 
 ```
-app_env, app_name
+app_env, app_name, timezone (str, IANA, default "UTC")
 telegram_bot_token (optional), telegram_allowed_user_ids (comma-separated str → list[int])
 data_dir, memory_dir, output_dir, inbox_dir, logs_dir (all Path)
 local_llm_provider, ollama_base_url, ollama_small_model, ollama_embedding_model
@@ -149,11 +157,12 @@ Implement all Pydantic models matching `docs/SCHEMAS.md` exactly. Key models:
 
 **LLM output models (corrected):**
 - `WorkShiftItem` + `WorkShiftsExtracted` (array wrapper + needs_confirmation)
-- `MemoryItemExtracted` (should_store, domain, importance, summary)
-- `StudyBlockGenerated` (with reason field) + `DailyPlanGenerated` (with capacity, warnings)
+- `ClassSessionItem` + `ClassSessionsExtracted` (array wrapper + needs_confirmation)
+- `MemoryItemExtracted` (should_store, domain, importance, summary, `sensitive`)
+- `AvailabilitySlot` (code-authored input) + `BlockAssignment` + `DailyPlanGenerated` (capacity, warnings, assignments — **no LLM time fields**)
 - `PaperMetadataExtracted`, `LiteratureMatrixEntry`, `FlashcardSetGenerated`
 
-**Storage models:** `WorkShift`, `Assignment`, `Task`, `MemoryItem`, `LLMCallRecord`
+**Storage models:** `WorkShift`, `Assignment` (incl. `estimated_hours`), `Task`, `MemoryItem` (incl. `sensitive`), `LLMCallRecord`
 
 **Action system:** `ActionProposal`, `ActionResult`
 
@@ -161,11 +170,13 @@ All IDs default to `uuid4()`. All timestamps default to `utc_now()`.
 
 ### `core/policy_engine.py`
 
-- `FORBIDDEN_ACTIONS: frozenset[str]` — the exact set from `docs/SECURITY.md`.
-- `CONFIRMATION_REQUIRED: frozenset[str]` — the exact set.
+- `FORBIDDEN_ACTIONS`, `CONFIRMATION_REQUIRED`, `ALLOWED_ACTIONS` — the exact frozensets from `docs/SECURITY.md`.
 - `PolicyDecision` dataclass: `allowed`, `outcome`, `reason`.
 - `PolicyEngine.check(proposal) → PolicyDecision`. Stateless.
-- Forbidden → always blocked. Confirmation-required → blocked unless `requires_confirmation=True`.
+- **Allowlist, default-deny**, evaluated in order: forbidden → blocked;
+  confirmation-required → blocked unless `proposal.user_confirmed` is True;
+  allowlisted → allowed; **anything else → blocked** (unknown action types
+  must never fall through to allow).
 - Log every decision.
 
 ### `core/action_executor.py`
@@ -211,7 +222,7 @@ core/memory_manager.py — Memory file management. Phase 4.
 
 ### `skills/status/handler.py`
 
-Implement the status skill per `docs/skills/status.md`:
+Implement the status skill per `docs/status.md`:
 
 - `handle_ping() → str` — returns "🏓 pong"
 - `handle_status(db_path) → str` — reads SQLite counts (assignments, upcoming deadlines, this week's shifts). Handles empty DB gracefully.
@@ -255,16 +266,17 @@ Stubs. Single docstring.
 ### `tests/test_schemas.py`
 - `WorkShiftsExtracted` validates correct input.
 - `WorkShiftsExtracted` rejects missing `shifts` field.
-- `MemoryItemExtracted` validates with `should_store=false`.
-- `DailyPlanGenerated` validates with `capacity`, `warnings`, `reason`.
-- `ActionProposal` validates correctly.
+- `MemoryItemExtracted` validates with `should_store=false`; `sensitive` defaults False.
+- `DailyPlanGenerated` validates with `capacity`, `warnings`, `assignments` keyed by `slot_id`; an LLM-authored time field is rejected (`extra=forbid`).
+- `ActionProposal` validates correctly; `user_confirmed` defaults False.
 - `FatigueLevel` rejects invalid values.
 
 ### `tests/test_policy_engine.py`
-- Forbidden action (`shell_exec`) → blocked.
+- Forbidden action (`shell_exec`) → blocked even with `user_confirmed=True`.
 - Confirmation-required action without confirmation → blocked with `NEEDS_CONFIRMATION`.
-- Confirmation-required action with `requires_confirmation=True` → allowed.
-- Allowed action (`write_memory`) → passes.
+- Confirmation-required action with `user_confirmed=True` → allowed.
+- Every item in `ALLOWED_ACTIONS` → passes without confirmation.
+- Unknown action type → blocked by default-deny, and cannot be bypassed with `user_confirmed=True`.
 - Every item in `FORBIDDEN_ACTIONS` is tested.
 
 ### `tests/test_skill_registry.py`
@@ -297,6 +309,7 @@ Stubs. Single docstring.
 ```
 APP_ENV=development
 APP_NAME=Atenas
+TIMEZONE=UTC
 TELEGRAM_BOT_TOKEN=
 TELEGRAM_ALLOWED_USER_IDS=
 LOCAL_LLM_PROVIDER=ollama
@@ -397,8 +410,8 @@ Phase 1 is done when ALL of the following are true:
 4. `GET /skills` lists the status skill as registered.
 5. SQLite database is created at `data/atenas.sqlite` with all tables.
 6. Logs are written to `logs/events.jsonl`.
-7. Policy engine blocks every action in `FORBIDDEN_ACTIONS`.
-8. Policy engine requires confirmation for every action in `CONFIRMATION_REQUIRED`.
+7. Policy engine blocks every action in `FORBIDDEN_ACTIONS` (even with `user_confirmed=True`).
+8. Policy engine requires confirmation for every `CONFIRMATION_REQUIRED` action, and **blocks any action not in `ALLOWED_ACTIONS`/`CONFIRMATION_REQUIRED` by default** (default-deny; unknown actions never fall through to allow).
 9. Action executor catches handler exceptions without crashing.
 10. All Pydantic schemas validate correct input and reject invalid input.
 11. `pytest` passes all tests with zero failures.

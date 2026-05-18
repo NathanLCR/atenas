@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     app_env: str = "development"
     app_name: str = "Atenas"
 
+    # IANA timezone for all wall-clock scheduling (shifts, classes, plans,
+    # "today"/"this week" windows). Stored timestamps stay UTC ISO 8601;
+    # only user-facing scheduling math is interpreted in this zone.
+    timezone: str = "UTC"
+
     telegram_bot_token: str | None = None
     telegram_allowed_user_ids: list[int] = Field(default_factory=list)
 

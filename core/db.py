@@ -25,16 +25,18 @@ CREATE TABLE IF NOT EXISTS documents (
 );
 
 CREATE TABLE IF NOT EXISTS chunks (
-    id           TEXT PRIMARY KEY,
-    document_id  TEXT NOT NULL REFERENCES documents(id),
-    chunk_index  INTEGER NOT NULL,
-    text         TEXT NOT NULL,
-    summary      TEXT,
-    section      TEXT,
-    page_start   INTEGER,
-    page_end     INTEGER,
-    embedding_id TEXT,
-    created_at   TEXT NOT NULL
+    id            TEXT PRIMARY KEY,
+    document_id   TEXT NOT NULL REFERENCES documents(id),
+    chunk_index   INTEGER NOT NULL,
+    text          TEXT NOT NULL,
+    summary       TEXT,
+    section       TEXT,
+    page_start    INTEGER,
+    page_end      INTEGER,
+    embedding_id  TEXT,
+    embedding     TEXT,
+    embedding_dim INTEGER,
+    created_at    TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS nodes (
@@ -74,16 +76,17 @@ CREATE TABLE IF NOT EXISTS tasks (
 );
 
 CREATE TABLE IF NOT EXISTS assignments (
-    id          TEXT PRIMARY KEY,
-    title       TEXT NOT NULL,
-    module_id   TEXT,
-    description TEXT,
-    due_date    TEXT,
-    status      TEXT NOT NULL DEFAULT 'not_started',
-    priority    TEXT NOT NULL DEFAULT 'medium',
-    brief_path  TEXT,
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL
+    id              TEXT PRIMARY KEY,
+    title           TEXT NOT NULL,
+    module_id       TEXT,
+    description     TEXT,
+    due_date        TEXT,
+    estimated_hours REAL,
+    status          TEXT NOT NULL DEFAULT 'not_started',
+    priority        TEXT NOT NULL DEFAULT 'medium',
+    brief_path      TEXT,
+    created_at      TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
 );
 
 -- CORRECTION: added date column; fatigue_level is TEXT CHECK constraint

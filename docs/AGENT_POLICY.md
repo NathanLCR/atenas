@@ -39,7 +39,14 @@ Atenas should never:
 1. Memory items must have explicit source (`telegram`, `dashboard`, `inferred`).
 2. Inferred memory items must be flagged `inferred: true`.
 3. Memory items must never be silently overwritten. Log previous value before updating.
-4. Sensitive items must never be sent to cloud LLM without user confirmation.
+4. **Sensitivity is a concrete field, not a vibe.** `MemoryItemExtracted`
+   and `MemoryItem` carry `sensitive: bool`. The cloud gate MUST check it:
+   any item with `sensitive=true` is never included in a cloud LLM prompt
+   (as content or retrieved context) without explicit per-use confirmation
+   from the user. With no cloud fallback enabled this is moot; with it
+   enabled this check is mandatory and unit-tested. Default is `false`; the
+   extractor is instructed to set `true` for health, finances,
+   relationships, credentials, or anything off-device-private.
 5. LLM extraction must include `should_store` — model can decline to store noise.
 6. Memory files are owned by the user. Atenas writes but never deletes without confirmation.
 
@@ -74,13 +81,33 @@ Atenas should never:
 
 ### Escalation triggers
 
-Escalate from local to cloud when any of the following:
-1. Local output fails Pydantic validation on second attempt.
-2. Confidence field < 0.65 (from `MIN_CONFIDENCE_THRESHOLD` in config).
-3. Task type is in the cloud task list.
-4. User explicitly uses `--quality` flag or equivalent.
-5. Task involves more than 6 conflicting scheduling constraints.
-6. Multiple documents must be compared.
+Signals are ranked. Reliable signals decide; the confidence number only
+nudges, because it is model self-reported and uncalibrated (it is not a
+probability and can be gamed by the model).
+
+**Primary (reliable) — any one escalates:**
+1. Local output fails Pydantic schema validation on its second attempt.
+2. Task class is in the cloud task list (e.g. weekly planning, long synthesis, multi-document comparison).
+3. User explicitly requests quality (`--quality` flag or equivalent).
+4. Task involves more than 6 conflicting scheduling constraints.
+
+**Secondary (weak hint) — only with corroboration:**
+5. Self-reported `confidence` < `MIN_CONFIDENCE_THRESHOLD` (0.65) **and** the
+   output is structurally thin (e.g. empty/again-near-miss). Low confidence
+   alone, with a schema-valid useful answer, does not force escalation —
+   that just burns cloud budget on a fine local answer. The 0.65 value is a
+   tuning knob, not a calibrated boundary; document any change with the
+   reason.
+
+### Terminal failure (all attempts exhausted)
+
+Hard cap: 2 local attempts → at most 1 cloud attempt (≤ 3 total per task,
+matching cost-control). If the final attempt still fails schema validation:
+1. Do **not** act on unvalidated output, ever.
+2. Return a clear user-facing message: `⚠️ Couldn't produce a valid result for [task]. Nothing was saved. Try rephrasing, or retry later.`
+3. Log the full final output and the failure chain (NFR-03: writes are
+   confirmed or logged as failed — never silently lost).
+4. Do not auto-retry; require a fresh user action.
 
 ### Cost control rules
 
@@ -143,6 +170,13 @@ Escalate from local to cloud when any of the following:
 ---
 
 ## Planning Rules
+
+These rules are enforced in **code** as deterministic intensity caps and
+availability subtraction — not requested of the LLM. The LLM only assigns
+prioritised tasks into code-authored slots and may never author a time. The
+exact availability algorithm, fatigue → `max_intensity` mapping, and the
+`deadline_risk` formula live in `study_planner.md` (single source of truth);
+the table below is the human-readable summary of the same rules.
 
 | Condition | Rule |
 |---|---|
