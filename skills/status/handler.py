@@ -5,8 +5,9 @@ from __future__ import annotations
 import contextlib
 import logging
 import sqlite3
-from datetime import date, timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from core.db import get_connection
 from core.skill_registry import SkillInfo, SkillRegistry
@@ -21,10 +22,10 @@ def handle_ping() -> str:
     return "🏓 pong"
 
 
-def handle_status(db_path: Path | str) -> str:
+def handle_status(db_path: Path | str, timezone: str = "UTC") -> str:
     """Return a formatted system status from SQLite counts."""
 
-    counts = _load_status_counts(db_path)
+    counts = _load_status_counts(db_path, timezone)
     return "\n".join(
         [
             "🟢 Atenas — Online",
@@ -58,7 +59,8 @@ def get_status() -> str:
 
     from app.config import get_settings
 
-    return handle_status(get_settings().db_path)
+    settings = get_settings()
+    return handle_status(settings.db_path, settings.timezone)
 
 
 def get_skills() -> str:
@@ -69,14 +71,16 @@ def get_skills() -> str:
     return handle_skills(get_registry())
 
 
-def register_status_skill(registry: SkillRegistry, db_path: Path | str) -> None:
+def register_status_skill(
+    registry: SkillRegistry, db_path: Path | str, timezone: str = "UTC"
+) -> None:
     """Register the status skill with `/ping`, `/status`, and `/skills`."""
 
     async def command_handler(command: str, args: str, user_id: int) -> str:
         if command == "/ping":
             return handle_ping()
         if command == "/status":
-            return handle_status(db_path)
+            return handle_status(db_path, timezone)
         if command == "/skills":
             return handle_skills(registry)
         return f"Unknown status command: {command}"
@@ -96,10 +100,14 @@ def register_status_skill(registry: SkillRegistry, db_path: Path | str) -> None:
     )
 
 
-def _load_status_counts(db_path: Path | str) -> dict[str, int]:
-    """Read status counts from SQLite, returning zeros if unavailable."""
+def _load_status_counts(db_path: Path | str, timezone: str = "UTC") -> dict[str, int]:
+    """Read status counts from SQLite, returning zeros if unavailable.
 
-    today = date.today()
+    The day/week window is resolved in the configured IANA ``timezone`` so
+    deadline math respects NFR-07 instead of the server's local clock.
+    """
+
+    today = datetime.now(ZoneInfo(timezone)).date()
     week_start = today - timedelta(days=today.weekday())
     week_end = week_start + timedelta(days=6)
     next_week = today + timedelta(days=7)
