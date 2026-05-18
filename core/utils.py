@@ -124,6 +124,7 @@ _STANDARD_LOG_RECORD_KEYS = {
     "process",
     "message",
     "asctime",
+    "taskName",
 }
 
 _EXCEPTION_FORMATTER = logging.Formatter()

@@ -38,3 +38,27 @@ def test_jsonl_handler_writes_exception_payload(tmp_path: Path) -> None:
         logger.removeHandler(handler)
         handler.close()
         logger.propagate = True
+
+
+def test_jsonl_handler_excludes_task_name(tmp_path: Path) -> None:
+    """`taskName` (LogRecord attr since 3.12) must not leak into JSONL."""
+
+    log_path = tmp_path / "logs" / "events.jsonl"
+    handler = JSONLHandler(log_path)
+    record = logging.LogRecord(
+        name="tests.task_name",
+        level=logging.INFO,
+        pathname=__file__,
+        lineno=1,
+        msg="evt",
+        args=(),
+        exc_info=None,
+    )
+    record.taskName = "Task-1"
+    record.event_type = "evt"
+
+    handler.emit(record)
+    handler.close()
+
+    payload = json.loads(log_path.read_text(encoding="utf-8").splitlines()[0])
+    assert "taskName" not in payload

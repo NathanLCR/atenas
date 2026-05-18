@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -32,7 +33,7 @@ class Settings(BaseSettings):
     # IANA timezone for all wall-clock scheduling (shifts, classes, plans,
     # "today"/"this week" windows). Stored timestamps stay UTC ISO 8601;
     # only user-facing scheduling math is interpreted in this zone.
-    timezone: str = "UTC"
+    timezone: str = "Europe/Dublin"
 
     telegram_bot_token: str | None = None
     telegram_allowed_user_ids: list[int] = Field(default_factory=list)
@@ -42,7 +43,6 @@ class Settings(BaseSettings):
     output_dir: Path = Path("output")
     inbox_dir: Path = Path("inbox")
     logs_dir: Path = Path("logs")
-    timezone: str = "Europe/Dublin"
 
     local_llm_provider: str = "ollama"
     ollama_base_url: str = "http://localhost:11434"
@@ -81,6 +81,17 @@ class Settings(BaseSettings):
             if value == "" or value.upper() in _UNSET_OPTIONAL_SECRET_VALUES:
                 return None
             return value
+        return value
+
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, value: str) -> str:
+        """Fail fast on an invalid IANA timezone instead of much later."""
+
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"Invalid IANA timezone: {value!r}") from exc
         return value
 
     @field_validator("telegram_allowed_user_ids", mode="before")
