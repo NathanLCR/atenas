@@ -1,237 +1,287 @@
-# Atenas Handoff — Natural Language Interface
+# Atenas Handoff — Telegram LLM Tool Interface
 
 ## Date
 
-2026-05-18
+2026-05-19
 
-## Project identity
+## Status
+
+Spec rewrite only. This replaces the earlier "thin natural-language command
+router" handoff. The new direction is Telegram-first LLM agent with Atenas
+tools.
+
+Implementation is not claimed complete by this document. Use this as the next
+implementation contract.
+
+## Product Identity
 
 Name: Atenas
-Repo: `NathanLCR/atenas`
+Repo: `study-agent-cd`
 Language: Python 3.11
-Stack: FastAPI · python-telegram-bot 21.6 · SQLite · Ollama (local LLM)
+Stack: FastAPI, python-telegram-bot, SQLite, local Ollama-compatible LLM
 
-Atenas is a local-first AI study operating system for a working student.
-The primary user interface is a Telegram bot. All data is local — SQLite,
-no cloud services except an optional cloud LLM that is disabled by default.
+Atenas is a local-running, Telegram-first personal study assistant. The app,
+database, files, dashboard, and REST API stay local. Telegram is the main user
+interface. The LLM should answer naturally and call controlled tools for
+Atenas functionality.
 
----
+## What Changed
 
-## Repository state
+The previous NL spec treated natural language as a classifier that mapped text
+to existing slash-command handlers. That is no longer the intended product.
 
-- Branch to work from: `main`
-- HEAD: `70a3eaf` (fix: LLM status mock)
-- All tests passing: **383 passed**
+New target:
 
-```bash
-git clone https://github.com/NathanLCR/atenas
-cd atenas
-python3.11 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-.venv/bin/pytest -q          # must pass before you start
+```text
+Telegram message
+  -> allowlist auth
+  -> LLM agent
+  -> Atenas tool registry
+  -> core services
+  -> structured result
+  -> Telegram response
 ```
 
----
+Slash commands stay. They are shortcuts, not the only interface.
 
-## What is already built (do not rebuild)
+## Security Posture
 
-| Phase | What exists |
-|---|---|
-| 0–1 | FastAPI app, SQLite schema, config, JSONL logging, skill registry, policy engine |
-| 2 | Telegram bot with allowlist, dashboard (read-only) |
-| 3 | Work shifts, class sessions, academic availability |
-| 4 | Deterministic study planner |
-| 5 | Controlled data input (add/edit assignments, modules, shifts) |
-| 6 | Notes + files + keyword search |
-| 6.5 | Developer code map in `docs/code-map/` |
-| 7 | Local Ollama LLM over selected notes (summarise, explain, flashcards, etc.) |
-| 8 | Controlled RAG: retrieval over notes/files, explicit source IDs, `/ask_notes` |
-| 9 | Notifications + reminders (asyncio background loops, `/reminders` command) |
+- Local-only dashboard/API.
+- Telegram allowlist is mandatory.
+- Empty Telegram allowlist is a startup error when Telegram is enabled.
+- Local Ollama is the default LLM provider.
+- External LLM provider use is explicit opt-in and must be treated as data egress.
+- Write tools require confirmation and policy approval.
 
-**The bot has 38 slash commands.** They all work. Do not change their
-behaviour — only add on top of them.
+## Current Telegram Surface to Preserve
 
----
+Status:
 
-## Current Telegram command surface (reference)
+- `/ping`
+- `/status`
+- `/skills`
+- `/reminders`
 
-**Status / info**
-`/ping` `/status` `/skills` `/reminders`
+Schedule/planning:
 
-**Schedule / planning**
-`/today` `/week` `/deadlines` `/availability` `/plan` `/study`
+- `/today`
+- `/week`
+- `/deadlines`
+- `/availability`
+- `/plan`
+- `/study`
 
-**Data input (write)**
-`/add_module` `/add_class` `/add_shift` `/add_assignment`
-`/set_status` `/set_hours`
+Controlled data input/editing:
 
-**Data listing (read)**
-`/modules` `/classes` `/shifts` `/assignments`
+- `/add_module`
+- `/add_class`
+- `/add_shift`
+- `/add_assignment`
+- `/set_status`
+- `/set_hours`
+- `/modules`
+- `/classes`
+- `/shifts`
+- `/assignments`
 
-**Notes / files**
-`/add_note` `/notes` `/note` `/archive_note`
-`/add_file` `/files` `/search` `/link_note_file`
+Knowledge:
 
-**Local LLM over a note**
-`/summarize_note` `/explain_note` `/questions_note`
-`/flashcards_note` `/rewrite_note`
+- `/add_note`
+- `/notes`
+- `/note`
+- `/archive_note`
+- `/add_file`
+- `/files`
+- `/search`
+- `/link_note_file`
 
-**RAG retrieval**
-`/ask_notes` `/ask_note` `/sources`
+Selected-note local LLM:
 
----
+- `/summarize_note`
+- `/explain_note`
+- `/questions_note`
+- `/flashcards_note`
+- `/rewrite_note`
 
-## Key files
+Retrieval:
 
-| File | Purpose |
-|---|---|
-| `app/bot.py` | All Telegram command handlers (~1430 lines) |
-| `app/main.py` | FastAPI app factory + lifespan |
-| `app/config.py` | Settings loaded from `.env` |
-| `app/dashboard.py` | Read-only dashboard routes |
-| `core/academic/service.py` | Schedule, planning, CRUD |
-| `core/knowledge/service.py` | Notes, files, keyword search |
-| `core/llm/service.py` | Local Ollama note actions |
-| `core/llm/client.py` | Raw Ollama HTTP client (stdlib only) |
-| `core/retrieval/service.py` | RAG over registered notes/files |
-| `core/notifications/service.py` | Notification logic (deadlines, study blocks) |
-| `core/db.py` | SQLite schema + connection helper |
-| `skills/status/handler.py` | `/status`, `/ping`, `/skills` logic |
-| `docs/code-map/` | Architecture diagrams for each module |
+- `/ask_notes`
+- `/ask_note`
+- `/sources`
 
----
+Do not remove or change command behavior while adding the tool-agent path.
 
-## What to build next — Natural Language Interface
+## Target Tool Layer
 
-**Goal:** the user can send plain-text messages to the bot and get useful
-responses without knowing slash commands.
+The tool layer should be explicit and small. It may start inside an existing
+module, but the responsibilities must be clear.
 
-Examples that must work after this phase:
+Tool definition fields:
 
-```
-"what's my plan for today?"          → same output as /today
-"add an assignment: ML exam Friday"  → parse and confirm before inserting
-"how many study hours do I have?"    → /availability output
-"what do my notes say about CNNs?"  → /ask_notes q="CNNs"
-"summarise note 5"                   → /summarize_note 5
-```
+- `name`
+- `description`
+- `tool_class`: `read`, `planning`, `write`, or `system`
+- argument schema
+- result schema
+- handler function
+- required policy action for writes
 
-**Read the phase spec before starting:**
-`docs/phases/phase-natural-language-interface.md`
+The LLM sees tool schemas. It does not see service objects, repositories,
+database connections, filesystem paths, or shell access.
 
-### Architecture summary (from the spec)
+## Initial Tool Set
 
-Create `core/nl/` with four files:
+### Read tools
 
-```
-core/nl/
-  intent.py      # IntentMatch dataclass + intent name constants
-  classifier.py  # NLClassifier: sends text to Ollama, parses JSON intent+slots
-  slots.py       # extract_slots(): normalise date strings, priority labels, etc.
-  router.py      # NLRouter: maps IntentMatch -> existing service/command call
-  prompts.py     # classification prompt template
-```
+- `get_status`
+- `get_today_overview`
+- `get_week_overview`
+- `get_deadlines`
+- `get_availability`
+- `list_modules`
+- `list_assignments`
+- `list_notes`
+- `search_notes`
+- `retrieve_sources`
 
-In `app/bot.py`, add one new handler:
+### Planning tools
 
-```python
-async def natural_language_handler(update, context):
-    ...
-```
+- `generate_study_plan`
+- `suggest_next_task`
+- `explain_deadline_risk`
 
-Register it with `MessageHandler(filters.TEXT & ~filters.COMMAND & allowlist_filter, ...)`.
-This means it fires only on plain-text messages that are NOT slash commands.
+### Write proposal tools
 
-### Classification
+- `add_assignment`
+- `set_assignment_status`
+- `set_assignment_hours`
+- `add_note`
+- `archive_note`
+- `add_class_session`
+- `add_work_shift`
 
-Use `core/llm/client.py` (the existing `OllamaClient`) to classify intent.
-Return JSON: `{"intent": "...", "confidence": 0.85, "slots": {...}}`.
+### System tools
 
-If Ollama is unavailable → return a generic fallback message, do not crash.
-If confidence < 0.7 → reply with the closest slash command suggestion.
+- `get_local_llm_status`
+- `get_app_health`
+- `get_safe_config_summary`
 
-### Write intents need confirmation
+## Read Example
 
-Any intent that creates or modifies data (add assignment, set status, add note)
-MUST show parsed values and wait for "yes" / "no" before calling the service.
-Use `context.user_data` to hold pending confirmations per user.
+```text
+User: What should I work on today?
 
-### Fallback intent
+LLM tool calls:
+- get_today_overview()
+- list_assignments(status="active")
+- suggest_next_task()
 
-If nothing matches → route to `/ask_notes` with the original text as query.
-This turns any unrecognised message into a RAG search over the user's notes.
-
----
-
-## Hard constraints (do not violate)
-
-1. **All 383 existing tests must still pass** after this phase.
-2. All 38 slash commands must still work unchanged.
-3. No new external dependencies unless absolutely necessary.
-4. No cloud LLM calls. Classification uses the local Ollama instance only.
-5. If Ollama is offline, natural language handling degrades gracefully —
-   it does NOT block slash commands.
-6. Write operations require explicit user confirmation in the chat.
-7. The Telegram allowlist (`TELEGRAM_ALLOWED_USER_IDS`) still applies to
-   all messages, including natural language ones.
-8. No autonomous actions — the bot never initiates a data change without
-   the user confirming.
-
----
-
-## Environment
-
-```bash
-# Required: Ollama running locally with a model loaded
-ollama pull llama3.1:8b
-ollama serve
-
-# Start Atenas
-.venv/bin/uvicorn app.main:app --reload
-
-# Run tests
-.venv/bin/pytest -q
+Telegram reply:
+Concise recommendation with the next task, deadline context, and any capacity warning.
 ```
 
-`.env` file (minimum to run with Telegram):
+## Write Example
 
-```env
-TELEGRAM_BOT_TOKEN=<your token>
-TELEGRAM_ALLOWED_USER_IDS=<your Telegram user ID>
-OLLAMA_MODEL=llama3.1:8b
-OLLAMA_BASE_URL=http://localhost:11434
+```text
+User: Mark my ML essay as done
+
+LLM tool calls:
+- list_assignments(query="ML essay")
+- set_assignment_status(id="assignment_uuid", status="done") as proposal
+
+Bot:
+Confirm status change?
+Assignment: ML Essay
+New status: done
+Reply "yes" to confirm or "no" to cancel.
+
+User: yes
+
+Execution:
+- policy check
+- service update
+- audit log
+- Telegram result
 ```
 
----
+## Required Write Flow
 
-## Testing rule
+Every write must follow this sequence:
 
-Mock Ollama responses in tests. Do not call a real model in the test suite.
-Pattern: `patch("core.nl.classifier.OllamaClient")` returning a fixed JSON string.
+1. Authenticate Telegram user by allowlist.
+2. Validate tool arguments.
+3. Resolve titles/modules/labels to stable IDs.
+4. Create pending proposal in per-user conversation state.
+5. Show a Telegram confirmation summary.
+6. On `yes`, run policy check.
+7. Execute through core service.
+8. Log action and policy outcome.
+9. Return structured result to the LLM and user.
 
-New tests go in:
-- `tests/test_nl_classifier.py` — intent classification logic
-- `tests/test_nl_router.py` — routing to existing handlers
-- `tests/test_nl_commands.py` — Telegram handler integration
+Do not call a router/service write method directly from the LLM confirmation
+path.
 
----
+## Prompt and Tool Safety
 
-## Definition of done
+- Delimit user messages in prompts.
+- Delimit retrieved notes/files in prompts.
+- Tell the model source text is data, not instructions.
+- Tool calls must satisfy schema validation.
+- Retrieved content must never grant tool permissions.
+- Full prompt/response logging is off by default.
 
-The phase is complete when:
+## Architecture Boundaries
 
-1. `pytest -q` shows ≥ 383 passed (the current baseline) plus new NL tests.
-2. Sending "what's my schedule today?" in Telegram returns the same content as `/today`.
-3. Sending "add assignment ML exam due Friday" shows a confirmation message with parsed fields.
-4. Sending "what do my notes say about transformers?" returns a RAG answer with sources.
-5. All existing slash commands pass their existing tests unchanged.
+- `app/` wires Telegram, FastAPI, config, and dependencies.
+- `core/` owns services, policy, data, retrieval, and LLM clients.
+- `core/` must not import `app.config`; settings are injected.
+- Tool handlers call services; they do not duplicate Telegram formatting.
+- Telegram formatting should be shared where slash commands and agent replies
+  need the same content.
 
----
+## Implementation Notes
 
-## Docs to read first
+The existing `core/nl/` classifier/router work may be reused only if it moves
+toward the tool-agent contract:
 
-1. `docs/phases/phase-natural-language-interface.md` — full spec
-2. `docs/code-map/telegram.md` — how the bot is structured
-3. `docs/code-map/core-knowledge.md` — note/file data model
-4. `docs/AGENT_POLICY.md` — what the agent is and is not allowed to do
-5. `docs/codex/MASTER_CODEX_HANDOFF.md` — full project history
+- Intent classification alone is not the final architecture.
+- Natural-language writes must not bypass policy.
+- Title/module lookup must resolve to IDs before execution.
+- Tests must use real `Settings` test objects or isolated fixtures, not
+  `MagicMock` settings that fall back to local `.env`.
+
+## Tests Required
+
+- Telegram allowlist rejects unauthorized users before LLM/tool calls.
+- Empty allowlist fails startup when Telegram is enabled.
+- Plain Telegram message can call read tools and produce a response.
+- LLM write proposal asks for confirmation and does not mutate before `yes`.
+- Confirmation `yes` runs policy before service execution.
+- Confirmation `no` cancels without side effects.
+- Title-to-ID resolution works for assignment status changes.
+- Prompt templates delimit untrusted text.
+- LLM provider is mocked; tests do not call real Ollama/cloud providers.
+- Tests use isolated temp databases/config.
+
+## Definition of Done
+
+The Telegram LLM tool interface is complete when:
+
+1. A plain Telegram message can answer status/schedule/planning questions by
+   calling tools.
+2. A plain Telegram message can ask about notes/files and receive sourced retrieval output.
+3. A plain Telegram write request produces a confirmation prompt before mutation.
+4. Confirmed writes pass policy and audit logging.
+5. Slash commands still work.
+6. Dashboard/API remain local-only support surfaces.
+7. Tests pass in an isolated environment.
+
+## Docs to Read First
+
+1. `docs/PRODUCT_SPEC.md`
+2. `docs/ARCHITECTURE.md`
+3. `docs/SECURITY.md`
+4. `docs/AGENT_POLICY.md`
+5. `docs/REQUIREMENTS.md`
+6. `docs/code-map/telegram.md`
+7. `docs/code-map/core-knowledge.md`

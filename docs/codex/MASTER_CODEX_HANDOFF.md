@@ -1,11 +1,15 @@
 # Atenas — Master Codex Handoff
 
+> Historical handoff. The current product direction changed on 2026-05-19 to a
+> local-running, Telegram-first LLM tool agent. For current work, read
+> `docs/HANDOFF.md` and `docs/HANDOFF_NL_INTERFACE.md` first.
+
 ## Project identity
 
 Name: Atenas  
-Repo/framework name: `atenas-core`
+Repo/framework name: `study-agent-cd`
 
-Atenas is a local-first AI study operating system for working students.
+Atenas is a local-running, Telegram-first AI study assistant for working students.
 
 It helps manage:
 
@@ -16,7 +20,7 @@ It helps manage:
 - study plans
 - notes
 - files
-- local LLM assistance
+- LLM assistance through controlled tools
 - controlled source-grounded retrieval
 
 ## Build method
@@ -43,14 +47,10 @@ read spec -> inspect repo -> implement minimal scope -> add tests -> run full te
 - Phase 8 — controlled retrieval/RAG foundation
 - Phase 9 — notifications + reminders
 
-## Current test baseline
+## Historical test baseline
 
-Latest verified checkpoint after Phase 9 on 2026-05-18:
-
-```text
-.venv/bin/pytest -q
-383 passed
-```
+This section intentionally avoids carrying a numeric pass count. Re-run tests
+in the current workspace before implementation work.
 
 Warnings from `pytest-asyncio` deprecations may exist and are pre-existing unless new warnings appear.
 
@@ -95,7 +95,7 @@ Implemented:
 Do not add unless the active phase explicitly requires it:
 
 - uncontrolled LLM features
-- agents
+- autonomous agents outside the approved Telegram tool-agent flow
 - cloud fallback
 - external APIs
 - Google Calendar sync
@@ -107,7 +107,8 @@ Controlled RAG now exists, but it is limited to registered local notes/files, lo
 
 ## Security notes
 
-- Telegram write commands must remain allowlist-protected.
+- Telegram commands, plain messages, LLM calls, and tools must remain allowlist-protected.
+- Dashboard/API surfaces are local-only by default.
 - Dashboard is read-only unless auth or disabled-by-default write flag exists.
 - `.env` must not be tracked.
 - Secrets must never be committed.
@@ -116,9 +117,8 @@ Controlled RAG now exists, but it is limited to registered local notes/files, lo
 ## Recommended next work
 
 ```text
-Post-MVP Phase 10 (Learning Analytics) or Post-MVP Phase 12 (Production Hardening).
-Phase 10 adds dashboard analytics: planned vs completed hours, assignment risk scores, module workload summaries.
-Phase 12 hardens the deployment: API auth, dashboard auth, backup/restore, Docker hardening.
+Telegram LLM Tool Interface.
+See docs/HANDOFF_NL_INTERFACE.md and docs/phases/phase-natural-language-interface.md.
 ```
 
 ## Final response format for every phase

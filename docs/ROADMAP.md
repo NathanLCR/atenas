@@ -1,19 +1,25 @@
-# Atenas — Roadmap v0.1
+# Atenas — Roadmap
 
-## Current Snapshot - 2026-05-18
+## Status
 
-This file is the original high-level roadmap. The current operating roadmap now
-lives in `docs/phases/README.md`.
+This file is historical. It is useful for understanding the original phase
+sequence, but the current operating direction lives in:
 
-Verified after pulling `origin/main`:
+- `docs/HANDOFF.md`
+- `docs/HANDOFF_NL_INTERFACE.md`
+- `docs/phases/phase-natural-language-interface.md`
+- `docs/phases/README.md`
 
-- Branch: `main`
-- HEAD: `cb72413`
-- Tests: `328 passed`
-- Completed: Phases 0-7 plus Phase 6.5 code-map docs
-- Next recommended phase: Phase 8 - Controlled Retrieval/RAG Foundation
+Current product posture as of 2026-05-19:
 
-See `docs/HANDOFF.md` for the working handoff.
+- Local-running app.
+- Telegram-first interface.
+- LLM agent with controlled Atenas tools.
+- Slash commands preserved as shortcuts.
+- Local dashboard/API only.
+
+Do not rely on old test counts in this file. Run `pytest` in the current
+workspace.
 
 ---
 

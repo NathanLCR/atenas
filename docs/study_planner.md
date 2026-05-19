@@ -113,9 +113,8 @@ independently of the LLM.
 
 ## LLM Usage
 - Daily: local LLM default. Schema: `DailyPlanGenerated`.
-- Weekly: cloud LLM default (more conflicting constraints) when the cloud
-  fallback is enabled; otherwise the deterministic fallback runs locally.
-- Escalation/terminal-failure behaviour: see AGENT_POLICY "LLM Routing".
+- Weekly: local LLM or deterministic fallback by default.
+- External LLM providers are opt-in only; see `AGENT_POLICY.md`.
 
 ## Acceptance
 The plan must pass every invariant in ROADMAP "PLAN QUALITY" on the seeded

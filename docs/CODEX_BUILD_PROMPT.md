@@ -1,5 +1,10 @@
 # Atenas Phase 1 — Claude Code Build Prompt
 
+> Historical prompt. This was the original Phase 1 build brief, not the
+> current product contract. For current work, read `docs/HANDOFF.md`,
+> `docs/HANDOFF_NL_INTERFACE.md`, `docs/ARCHITECTURE.md`, and
+> `docs/SECURITY.md`.
+
 ## Context
 
 You are building Phase 1 of **Atenas Core** from scratch.
@@ -350,7 +355,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 RUN mkdir -p data logs memory inbox output
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"]
 ```
 
 ### `docker-compose.yml`
@@ -359,7 +364,7 @@ services:
   atenas:
     build: .
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs

@@ -1,59 +1,60 @@
-# Atenas — Handoff Package
+# Atenas — Documentation
 
 ## What's in this folder
 
-Core spec docs are in `docs/`, with newer phase/code-map handoff material in
+Core spec docs are in `docs/`, with phase and code-map material in
 subdirectories:
 
-```
+```text
 docs/
-├── HANDOFF.md                 ← Current verified state and next-phase handoff
-├── CODEX_BUILD_PROMPT.md      ← Original Phase 1 build prompt
-├── PRODUCT_SPEC.md            ← What Atenas is
-├── REQUIREMENTS.md            ← FRs and NFRs
-├── ARCHITECTURE.md            ← Component map, decisions
-├── AGENT_POLICY.md            ← LLM routing, planning rules, safety
-├── SECURITY.md                ← Forbidden actions, prompt injection
-├── DATA_MODEL.md              ← SQLite schema (corrected), entities
-├── SCHEMAS.md                 ← LLM output schemas (corrected)
-├── ROADMAP.md                 ← Build phases
-├── status.md                  ← Status skill spec — Phase 1
-├── memory.md                  ← Memory skill spec — Phase 4
-├── work_schedule.md           ← Work schedule skill spec — Phase 5
-├── class_timetable.md         ← Class timetable skill spec — Phase 6
-├── study_planner.md           ← Study planner skill spec — legacy Phase 8
-├── phases/                    ← Current phase-by-phase roadmap
-├── codex/                     ← Codex handoff and next-phase prompts
-└── code-map/                  ← Developer architecture map
+├── HANDOFF.md                 Current handoff and next implementation target
+├── HANDOFF_NL_INTERFACE.md    Telegram LLM tool interface handoff
+├── PRODUCT_SPEC.md            Product posture
+├── REQUIREMENTS.md            Functional and non-functional requirements
+├── ARCHITECTURE.md            Target tool-agent architecture
+├── AGENT_POLICY.md            LLM tool-agent behavior and safety
+├── SECURITY.md                Local-only, Telegram, and tool security
+├── DATA_MODEL.md              SQLite schema and data entities
+├── SCHEMAS.md                 LLM/action schemas
+├── ROADMAP.md                 Historical phase roadmap
+├── phases/                    Phase specs
+├── codex/                     Older Codex handoffs/prompts
+└── code-map/                  Developer architecture map
 ```
 
-## How to use
+## Current Direction
 
-The current implementation is beyond the original Phase 1 skeleton. To work
-with it:
+Atenas is local-running and Telegram-first. Plain Telegram messages should be
+handled by an LLM agent with controlled Atenas tools. Slash commands remain
+supported as shortcuts.
 
-1. Read `HANDOFF.md`.
-2. Read `codex/MASTER_CODEX_HANDOFF.md`.
-3. Read the active next phase spec in `phases/`.
-4. Create or refresh a Python 3.11 environment.
-5. `pip install -r requirements.txt`
-6. Run `pytest` - all tests must pass before and after changes.
-7. Run `docker-compose up` or `uvicorn app.main:app --reload`.
+Dashboard and REST API routes are local support surfaces and should not be
+exposed directly on a LAN or public host.
 
-For future phases, prefer the newer `docs/phases/`, `docs/codex/`, and
-`docs/code-map/` docs over the original Phase 1 prompt.
+## How to Use These Docs
 
-## What was corrected
+For implementation work, read in this order:
 
-The PDF spec (`atenas_framework_spec.pdf`) and the generated spec pack had conflicts.
-All conflicts were resolved before generating these docs:
+1. `HANDOFF.md`
+2. `PRODUCT_SPEC.md`
+3. `ARCHITECTURE.md`
+4. `SECURITY.md`
+5. `AGENT_POLICY.md`
+6. `REQUIREMENTS.md`
+7. `HANDOFF_NL_INTERFACE.md`
+8. Relevant `docs/code-map/` files
 
-| Conflict | Resolution |
-|---|---|
-| PK types (INTEGER vs TEXT) | TEXT UUIDs — matches PDF |
-| fatigue_level (int 1-5 vs text enum) | TEXT: low/medium/high — matches PDF |
-| Work shift schema (single vs array) | Array wrapper + needs_confirmation — matches PDF |
-| Memory schema (minimal vs structured) | should_store + domain + importance — matches PDF |
-| Plan schema (missing fields) | capacity + reason + warnings — matches PDF |
-| Confidence threshold (0.5/0.6/0.65) | 0.65 everywhere — matches PDF |
-| work_shifts missing date column | Added separate date column — improvement over PDF |
+Do not rely on historical test counts. Run the suite in the current workspace.
+
+```bash
+python3.11 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/pytest -q
+.venv/bin/uvicorn app.main:app --reload
+```
+
+## Historical Material
+
+Some older docs remain useful for context, especially the phase specs and the
+original build prompt. When older docs conflict with the 2026-05-19 product
+posture, the current canonical docs listed above win.
