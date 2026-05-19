@@ -73,6 +73,7 @@ class Settings(BaseSettings):
         "openai_api_key",
         "openrouter_api_key",
         "openrouter_model",
+        "notifications_chat_id",
         mode="before",
     )
     @classmethod
