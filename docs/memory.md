@@ -14,13 +14,12 @@ Store, retrieve, and search memory items. Memory is the foundation of Atenas's c
 ## LLM Usage
 - `/memory add`: local LLM extracts structured fields. Schema: `MemoryItemExtracted`.
 - `should_store=false` → model declines to store noise.
-- `sensitive=true` → item is stored but flagged; the cloud gate refuses to
-  include it in any cloud LLM prompt without explicit per-use confirmation
-  (AGENT_POLICY Memory Rule 4). This is unit-tested when cloud fallback is on.
+- `sensitive=true` → item is stored but flagged; external LLM providers refuse
+  to include it without explicit per-use confirmation.
 - `confidence < MIN_CONFIDENCE_THRESHOLD` → ask user to clarify before
   storing (secondary signal only; see AGENT_POLICY "LLM Routing").
-- Fallback: cloud LLM if local fails schema validation twice; terminal
-  failure → save nothing, tell the user, log it (AGENT_POLICY).
+- External LLM fallback is disabled by default. If explicitly enabled, terminal
+  failure still saves nothing, tells the user, and logs it.
 
 ## Storage
 - Write: `memory/notes/<domain>/<YYYY-MM-DD>-<slug>.md` + SQLite `memory_items`
@@ -29,7 +28,7 @@ Store, retrieve, and search memory items. Memory is the foundation of Atenas's c
 ## Safety Rules
 1. Never overwrite silently. `overwrite_memory` is in `CONFIRMATION_REQUIRED`;
    log the previous value before applying.
-2. `sensitive=true` content never sent to cloud without explicit per-use
+2. `sensitive=true` content never sent to an external provider without explicit per-use
    confirmation (enforced via the `sensitive` field, not vibes).
 3. Low (self-reported) confidence triggers a clarify prompt — it is a weak
    secondary signal, never a sole safety basis.

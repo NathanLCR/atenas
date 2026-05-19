@@ -1,104 +1,65 @@
-# Atenas Handoff - 2026-05-18
+# Atenas Handoff - 2026-05-19
 
-This handoff reflects the local state after pulling GitHub `origin/main` on
-2026-05-18.
+## Status
 
-## Repository State
+This handoff reflects the documentation refactor after the Atenas Core code
+review. It is not a verified implementation baseline.
 
-- Branch: `main`
-- HEAD: `cb72413` (`Merge pull request #8 from NathanLCR/claude/compassionate-hawking-f6b968`)
-- Remote status: aligned with `origin/main`
-- Untracked local state: `.claude/`
-- Runtime/ignored local state may exist: `.venv/`, `data/`, `logs/`,
-  `.pytest_cache/`, `__pycache__/`, `.DS_Store`
+The product direction is now:
 
-During the pull, a stale `.git/index.lock`/partial worktree update occurred.
-The checkout was recovered by aligning `main` to `origin/main`; the versioned
-tree is now clean except for local `.claude/`.
+```text
+local-running app + Telegram-first LLM tool agent
+```
+
+Dashboard and REST API are local support surfaces. Telegram remains the main
+interface.
 
 ## Verification
 
-Dependencies were synced in a temporary Python 3.11 venv and the full suite was
-run:
+Do not rely on old test counts from historical docs. The latest review attempt
+reported that `.venv/bin/pytest -q` and even importing `pytest` hung locally.
+
+Before implementation work:
 
 ```bash
-/private/tmp/atenas-test-venv/bin/pip install -r requirements.txt
-/private/tmp/atenas-test-venv/bin/pytest -q
+python3.11 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+.venv/bin/pytest -q
 ```
 
-Result:
+If pytest still hangs, debug the environment before treating the suite as a
+valid baseline.
 
-```text
-328 passed
-```
+## Current Product Contract
 
-Notes:
+- Single-user, local-running assistant.
+- Telegram is the primary user interface.
+- Plain Telegram messages should route to an LLM agent with Atenas tools.
+- Slash commands remain deterministic shortcuts.
+- Local dashboard/API must bind to localhost and are not remote product
+  surfaces.
+- Local Ollama is the default LLM provider.
+- External LLM providers are opt-in data egress.
+- Telegram allowlist is mandatory.
+- Writes require confirmation and policy approval.
 
-- `jinja2==3.1.6` is now required for dashboard templates.
-- The repo-local `.venv` still appears to use Python 3.13 from the previous
-  environment. Prefer recreating it with Python 3.11 before new work.
-- `pytest-asyncio` emits the known `asyncio_default_fixture_loop_scope`
-  deprecation warning.
+Read these docs first:
 
-## Completed Scope
+1. `docs/PRODUCT_SPEC.md`
+2. `docs/ARCHITECTURE.md`
+3. `docs/SECURITY.md`
+4. `docs/AGENT_POLICY.md`
+5. `docs/REQUIREMENTS.md`
+6. `docs/HANDOFF_NL_INTERFACE.md`
 
-The implementation is no longer just the original Phase 1 skeleton.
-
-Completed:
-
-- Phase 0 - spec foundation
-- Phase 1 - core FastAPI/SQLite/app skeleton
-- Phase 2 - Telegram bot + dashboard foundation
-- Phase 3 - academic/work scheduling + availability
-- Phase 4 - deterministic study planner
-- Phase 5 - controlled data input/editing + imports
-- Phase 6 - notes + files foundation
-- Phase 6.5 - developer code map
-- Phase 7 - local LLM over selected notes
-
-Key implemented areas:
-
-- `app/main.py` lazily builds the ASGI app and starts Telegram only when a token
-  is configured.
-- `app/bot.py` contains allowlisted Telegram commands for status, scheduling,
-  planning, academic data input, notes/files/search, and selected-note LLM
-  actions.
-- `app/dashboard.py` exposes read-only dashboard pages.
-- `core/academic/` owns modules, classes, shifts, assignments, availability,
-  deterministic plans, and imports.
-- `core/knowledge/` owns notes, file metadata, note-file links, validation, and
-  deterministic keyword search.
-- `core/llm/` owns local Ollama-compatible selected-note actions.
-- `docs/code-map/` gives future agents a compact architecture map.
-
-## Current Routes
-
-API:
-
-- `GET /health`
-- `GET /status`
-- `GET /skills`
-
-Dashboard:
-
-- `GET /dashboard/`
-- `GET /dashboard/week`
-- `GET /dashboard/deadlines`
-- `GET /dashboard/plan`
-- `GET /dashboard/data`
-- `GET /dashboard/notes`
-- `GET /dashboard/files`
-- `GET /dashboard/search`
-- `GET /dashboard/logs`
-- `GET /dashboard/llm`
-
-## Current Telegram Surface
+## Existing Telegram Surface to Preserve
 
 Status:
 
 - `/ping`
 - `/status`
 - `/skills`
+- `/reminders`
 
 Schedule/planning:
 
@@ -141,51 +102,57 @@ Selected-note local LLM:
 - `/flashcards_note`
 - `/rewrite_note`
 
-## Next Phase
+Retrieval:
 
-Proceed with **Phase 8 - Controlled Retrieval/RAG Foundation**.
+- `/ask_notes`
+- `/ask_note`
+- `/sources`
 
-Read first:
+## Next Implementation Target
 
-1. `docs/phases/phase-08-controlled-rag-foundation.md`
-2. `docs/code-map/architecture-map.md`
-3. `docs/code-map/core-knowledge.md`
-4. `docs/code-map/telegram.md`
-5. `docs/code-map/dashboard.md`
-6. `docs/codex/MASTER_CODEX_HANDOFF.md`
+Implement the Telegram LLM tool interface described in
+`docs/HANDOFF_NL_INTERFACE.md` and
+`docs/phases/phase-natural-language-interface.md`.
 
-Recommended start:
+The core flow should be:
 
-1. Recreate `.venv` with Python 3.11.
-2. Run `pytest -q` before changes.
-3. Create a branch, for example `codex/phase-08-controlled-rag`.
-4. Implement a small retrieval layer over registered notes/files only.
-5. Keep embeddings/LLM calls controlled and local.
-6. Add source display and no-source fallback before any answer generation.
-7. Add tests for chunking, indexing, retrieval, archived exclusion, source
-   display, no-source fallback, Telegram commands, and dashboard read-only view
-   if added.
+```text
+Telegram user
+  -> allowlist auth
+  -> LLM agent
+  -> Atenas tool registry
+  -> core services
+  -> structured result
+  -> Telegram reply
+```
 
-## Phase 8 Boundaries
+Write flow:
 
-In scope:
+```text
+Telegram user
+  -> LLM write proposal
+  -> validated args and ID resolution
+  -> confirmation prompt
+  -> policy check
+  -> service execution
+  -> audit log
+```
 
-- Retrieval over registered notes/file text
-- Chunking selected notes and optionally registered text files
-- Local embeddings or a SQLite-friendly retrieval strategy
-- Explicit source IDs in answers
-- Telegram commands for controlled question answering
-- Optional read-only dashboard retrieval page
+## Review-Driven Fix Targets
 
-Out of scope:
+These are implementation issues discovered in review and reflected in the new
+docs. They are not fixed by this docs-only pass.
 
-- Autonomous agents
-- Web search
-- Cloud fallback
-- Automatic filesystem ingestion
-- OCR
-- Complex PDF parsing unless separately scoped
-- Dashboard write routes without auth
+- Dashboard/API should be localhost-only by default.
+- Docker publishing should bind to localhost only.
+- Empty Telegram allowlist should fail startup when Telegram is enabled.
+- REST endpoints must not use fake `user_id=0` actor semantics.
+- LLM/NL writes must not bypass the policy engine.
+- Dead/fake LLM telemetry modules should be removed or quarantined.
+- Retrieval should not rebuild the entire chunks table on every query.
+- `core/` should not import `app.config`; inject settings instead.
+- Prompt templates should delimit untrusted input.
+- Tests should use isolated settings/database fixtures.
 
 ## Useful Commands
 
@@ -196,3 +163,5 @@ python3.11 -m venv .venv
 .venv/bin/uvicorn app.main:app --reload
 docker-compose up
 ```
+
+For local web access, use `http://127.0.0.1:8000`.

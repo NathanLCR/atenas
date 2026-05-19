@@ -11,3 +11,9 @@ output/
 dist/
 build/
 .DS_Store
+.claude/
+.claude-flow/
+.mcp.json
+.swarm/
+.understand-anything/
+ruvector.db

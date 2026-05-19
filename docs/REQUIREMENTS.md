@@ -1,175 +1,157 @@
-# Atenas — Requirements v0.1
+# Atenas — Requirements
+
+## Status
+
+Target requirements as of 2026-05-19. These requirements supersede older
+phase-order assumptions where they conflict.
 
 ## Functional Requirements
 
-### FR-01 — Telegram Interface
-- System MUST accept commands via Telegram bot.
-- System MUST respond with structured, readable output.
-- System MUST reject unrecognised commands with a helpful message.
-- System MUST NOT execute dangerous actions without confirmation.
+### FR-01 — Telegram-First Interface
 
-### FR-02 — Web Dashboard
-- System MUST expose a read-only web dashboard at minimum.
-- Dashboard MUST show: tasks, assignments, work schedule, daily plan, papers, memory, logs.
-- Dashboard SHOULD allow basic editing of assignments and work shifts.
-- Dashboard MUST NOT expose raw database or filesystem paths to the browser.
+- System MUST accept Telegram slash commands.
+- System MUST accept plain Telegram messages through the LLM tool agent.
+- System MUST enforce `TELEGRAM_ALLOWED_USER_IDS` before commands, LLM calls,
+  retrieval, or tools run.
+- System MUST fail startup when Telegram is enabled with an empty allowlist.
+- System MUST respond with compact, readable Telegram output.
+- System MUST preserve slash commands as deterministic shortcuts.
 
-### FR-03 — Memory
-- System MUST allow storing free-text memory items via `/memory add`.
-- System MUST allow searching memory via `/memory search <query>`.
-- Memory MUST be persisted to human-readable Markdown files.
-- Memory MUST also be indexed in SQLite for fast retrieval.
-- Memory items MUST have: content, summary, domain, topic, tags, importance, `sensitive`, source, created_at, updated_at.
-- LLM extraction schema MUST include `should_store` boolean so the model can decline to store noise.
-- LLM extraction schema MUST include `sensitive` boolean. Items marked
-  `sensitive` MUST NOT be sent to a cloud LLM (as content or retrieved
-  context) without explicit per-use user confirmation.
+### FR-02 — Local Dashboard and REST API
 
-### FR-04 — Work Schedule
-- System MUST accept work shift entries: date, start_time, end_time, workplace, fatigue_level.
-- Fatigue level MUST be a TEXT enum: `low`, `medium`, `high`.
-- LLM extraction MUST support multiple shifts from one message (array wrapper).
-- LLM extraction MUST include `needs_confirmation` boolean for ambiguous input.
-- System MUST store shifts and expose them for planning.
-- System MUST treat shifts as hard blocks in the planner.
-- System MUST apply fatigue rules to adjacent study blocks.
-- System MUST support `/work add`, `/work week`, `/work clear`.
+- System MUST expose dashboard/API surfaces only as local support tools.
+- Dashboard/API MUST bind to `127.0.0.1` by default.
+- Docker Compose publishing MUST bind to localhost only.
+- Dashboard MUST be read-only unless a later authenticated write spec is
+  approved.
+- REST endpoints MUST NOT use fake authentication such as `user_id=0` for
+  privileged behavior.
 
-### FR-05 — Class Timetable
-- System MUST accept a recurring class timetable.
-- Class sessions MUST be treated as hard blocks equivalent to work shifts.
-- Timetable MUST be storable as YAML and queryable from SQLite.
+### FR-03 — LLM Tool Agent
 
-### FR-06 — Assignments and Deadlines
-- System MUST accept assignment entries with: title, module, deadline, estimated_hours, priority.
-- System MUST track tasks within assignments.
-- System MUST calculate deadline risk score.
-- System MUST support `/assignment add`, `/assignment list`, `/assignment plan`, `/assignment risk`.
+- System MUST provide the LLM with explicit Atenas tools.
+- Tools MUST have validated argument schemas and structured result schemas.
+- Tools MUST call application/core services; the LLM MUST NOT access services,
+  repositories, files, or shell commands directly.
+- Tools MUST be classified as read, planning, write, or system.
+- Read tools MAY execute after Telegram allowlist validation.
+- Write tools MUST create pending action proposals instead of mutating directly.
 
-### FR-07 — Study Planner
-- System MUST generate a daily study plan given: available blocks, assignments, fatigue state.
-- System MUST generate a weekly study plan.
-- Plans MUST respect work shift blocks and class session blocks.
-- Plans MUST apply fatigue rules (see AGENT_POLICY.md / study_planner.md).
-- Plans MUST include `capacity` (low/medium/high), `reason` per block, and `warnings` array.
-- All block times MUST be authored by deterministic code. The LLM MUST only
-  assign prioritised tasks to code-computed slots (`slot_id`) and MUST NOT
-  emit or modify any time. Code MUST reject any assignment referencing an
-  unknown slot or exceeding the slot's intensity cap.
-- The planner MUST pass every invariant in the ROADMAP "PLAN QUALITY" rubric
-  automatically on a seeded fixture week; that suite is its definition of done.
-- Plans MUST be saved to `memory/plans/daily/` and `memory/plans/weekly/`.
+### FR-04 — Write Confirmation and Policy
 
-### FR-08 — PDF and Paper Ingestion
-- System MUST accept PDF uploads via Telegram or dashboard.
-- System MUST extract and store: title, authors, year, abstract, keywords, file path.
-- System MUST chunk PDFs into overlapping text segments.
-- System MUST embed chunks and store embeddings for retrieval.
-- System MUST support `/papers add`, `/papers list`, `/papers search`, `/papers summarize`.
+- System MUST require explicit Telegram confirmation before LLM-initiated writes.
+- System MUST resolve natural-language titles/modules to stable IDs before write execution.
+- System MUST validate all write proposals before policy evaluation.
+- System MUST pass every write through the policy engine before execution.
+- System MUST log policy decisions and action outcomes.
+- System MUST report failed writes clearly and MUST NOT silently drop them.
 
-### FR-09 — Literature Matrix
-- System MUST extract structured fields from papers: research question, methodology, findings, limitations.
-- System MUST aggregate extracted fields into a matrix (CSV or Markdown table).
-- System MUST support `/matrix update`, `/matrix export`.
+### FR-05 — Academic Scheduling
 
-### FR-10 — Flashcards
-- System MUST generate simple Q&A flashcards from notes or paper summaries.
-- System MUST support `/flashcards make <topic>`.
+- System MUST accept modules, class sessions, work shifts, assignments, and deadlines.
+- Work shifts and class sessions MUST be treated as hard planning blocks.
+- Fatigue level MUST affect planning intensity.
+- System MUST list and update assignment status and estimated hours.
 
-### FR-11 — LLM Routing
-- System MUST route routine tasks to local LLM (Ollama).
-- System MUST escalate to cloud LLM when: local output fails schema validation twice, task is complex, user requests high quality.
-- Primary escalation signals MUST be reliable ones: schema-validation
-  failure, explicit cloud task class, explicit user quality request,
-  >6 conflicting constraints.
-- Self-reported `confidence` is a SECONDARY hint only (uncalibrated, model-
-  authored). `MIN_CONFIDENCE_THRESHOLD` (0.65) MUST NOT be the sole basis
-  for any safety or correctness decision.
-- System MUST define terminal-failure behaviour: after the attempt cap
-  (≤ 3 total), it MUST NOT act on unvalidated output, MUST tell the user
-  nothing was saved, and MUST log the failure (no silent loss).
-- System MUST log every LLM call: model, prompt_tokens, response_tokens, latency, provider, task_type, estimated_cost.
+### FR-06 — Study Planning
 
-### FR-12 — Logging
-- System MUST write structured JSONL logs for: every command, every LLM call, every action, every policy decision.
-- Logs MUST include: timestamp, event_type, source, payload_summary, outcome.
-- Logs MUST be stored in `logs/`.
+- System MUST generate daily and weekly study plans from available blocks,
+  active assignments, deadlines, class sessions, work shifts, and fatigue.
+- Plans MUST respect hard blocks and fatigue caps.
+- Deterministic code MUST author time slots and enforce collision checks.
+- The LLM MAY choose or explain tasks inside code-authored slots, but MUST NOT
+  invent arbitrary times.
+- Plans MUST surface warnings when demand exceeds capacity.
 
-### FR-13 — Safety and Policy
-- System MUST validate all LLM output against Pydantic schema before acting.
-- System MUST pass validated output through the policy engine.
-- System MUST block forbidden actions unconditionally.
-- System MUST require confirmation for destructive actions.
+### FR-07 — Notes, Files, and Retrieval
 
----
+- System MUST store notes and registered files locally.
+- System MUST search notes/files.
+- System MUST retrieve sources from registered, non-archived content.
+- Retrieval answers MUST include source labels or a no-source fallback.
+- Querying retrieval MUST NOT rebuild the full chunks table every time.
+- `retrieval_chunks` schema MUST have one canonical owner.
+
+### FR-08 — LLM Study Assistance
+
+- System MUST support LLM help over selected local context, such as summarize,
+  explain, questions, flashcards, rewrite, and note/file Q&A.
+- Prompt templates MUST delimit untrusted user/source text.
+- Retrieved content MUST never grant tool permissions.
+- LLM unavailable states MUST degrade gracefully without breaking slash commands.
+
+### FR-09 — LLM Provider Policy
+
+- Local Ollama MUST be the default provider.
+- External LLM providers MUST be disabled by default.
+- Enabling an external provider MUST be explicit and documented as data egress.
+- Sensitive content MUST NOT be sent to external providers without explicit
+  per-use consent.
+
+### FR-10 — Logging
+
+- System MUST log commands, LLM calls, tool calls, policy decisions, and action outcomes.
+- Logs MUST include timestamp, actor, tool/command, provider/model where
+  relevant, outcome, and a short payload summary.
+- Logs MUST NOT include secrets.
+- Full prompt/response logging MUST be disabled by default.
+
+### FR-11 — Architecture Boundaries
+
+- Dependencies MUST flow from `app/` to `core/`, not from `core/` to `app/`.
+- Settings/config MUST be injected into core services instead of imported from
+  `app.config`.
+- Dead placeholder modules MUST be implemented, documented as intentionally
+  reserved, or removed.
+- Fake LLM telemetry MUST NOT be written as real LLM calls.
 
 ## Non-Functional Requirements
 
-### NFR-01 — Local-First
-- Core functionality MUST work without internet access.
-- Cloud LLM is optional and must degrade gracefully if unavailable.
+### NFR-01 — Local-Running
 
-### NFR-02 — Performance (budgeted against the actual pipeline)
+- Core app data MUST remain local.
+- The app MUST work without public dashboard/API exposure.
+- Telegram and optional external LLM providers are the only expected remote
+  transports.
 
-The old flat "10 s for simple queries" ignored that an LLM path is
-local-attempt → validate → maybe-retry → maybe-escalate → cloud round-trip
-on commodity hardware. Budgets are per path:
+### NFR-02 — Reliability
 
-- **Deterministic commands** (`/ping`, `/status`, `/skills`, `/work week`,
-  `/timetable week`, listing, reading): MUST complete < 2 s.
-- **Single local-LLM commands** (memory add, shift/class extraction):
-  TARGET < 12 s; HARD timeout 20 s. On timeout: abort cleanly, tell the
-  user, save nothing (NFR-03), no partial write.
-- **Escalating / cloud commands** (weekly plan, synthesis): MAY take up to
-  45 s. The user MUST get an immediate "working…" acknowledgement so the
-  channel never appears hung.
-- **PDF ingestion**: MAY take up to 2 min/document; runs async with progress,
-  never blocking the command channel.
-- Every LLM path MUST have an enforced timeout and a deterministic or
-  cached fallback (NFR-01) so a slow/absent model degrades, not hangs.
+- System MUST use transactions for multi-step writes.
+- System MUST not silently lose writes.
+- System MUST produce clear user-facing errors for blocked or failed actions.
 
-### NFR-03 — Reliability
-- System MUST NOT silently lose memory writes. All writes confirmed or logged as failed.
-- System MUST NOT corrupt SQLite on partial writes. Use transactions.
-- System MUST NOT overwrite existing memory without explicit user confirmation.
+### NFR-03 — Performance
 
-### NFR-04 — Inspectability
-- All memory files MUST be human-readable without tooling.
-- All logs MUST be readable with a text editor or `jq`.
-- Database schema MUST be documented.
+- Deterministic read commands SHOULD complete in under 2 seconds.
+- Local LLM commands SHOULD acknowledge quickly and enforce timeouts.
+- Retrieval queries SHOULD avoid full reindexing on every request.
+- Slow LLM/provider failures MUST not block unrelated slash commands.
 
-### NFR-05 — Portability
-- System MUST run via Docker Compose on a standard development machine.
-- System MUST work on macOS and Linux.
+### NFR-04 — Testability
 
-### NFR-06 — Testability
-- All core logic (planner, policy engine, schema validation, routing) MUST have unit tests.
-- Integration tests MUST cover: command → LLM → schema validation → storage path.
-- Tests MUST be runnable with `pytest` with no external dependencies.
-- The deterministic planner core (availability, fatigue caps, deadline-risk
-  formula) MUST be unit-tested independently of any LLM, and the plan-quality
-  rubric MUST run as an automated suite on a seeded fixture week.
+- Core services, tool schemas, policy checks, and confirmation flows MUST have tests.
+- Tests MUST mock LLM providers and MUST NOT require a real model.
+- Tests MUST avoid reading real local `.env` or production database state.
+- The full suite MUST be runnable with `pytest`.
 
-### NFR-07 — Time correctness
-- A configurable IANA timezone (`TIMEZONE`, default `UTC`) MUST govern all
-  wall-clock scheduling math.
-- Stored timestamps MUST be UTC ISO 8601; wall-clock fields are interpreted
-  in the configured zone.
-- Availability, fatigue, and deadline math MUST use the zone's real offset
-  for the date in question (DST-correct). Naive local-time arithmetic that
-  ignores the zone is a defect, not acceptable behaviour.
+### NFR-05 — Inspectability
 
----
+- SQLite schema MUST be documented.
+- Logs MUST be readable with a text editor or `jq`.
+- Tool/action audit trails MUST be sufficient to reconstruct what changed.
+
+### NFR-06 — Portability
+
+- System SHOULD run on macOS and Linux.
+- System SHOULD run in Docker Compose for local development.
+- Docker images MUST NOT include generated tool junk or local secrets.
 
 ## Out of Scope for v1
 
-- LMS or calendar integration
-- Email integration
-- Multi-user support
-- Payments
-- Mobile app
-- Browser automation
-- Autonomous shell
-- Self-modifying code
-- WhatsApp
-- Neo4j, Qdrant, PostgreSQL
+- Multi-user SaaS operation.
+- Public web deployment.
+- Unauthenticated LAN access.
+- Autonomous shell execution.
+- Self-modifying code.
+- Browser automation as a product feature.
+- Calendar/email integrations unless separately scoped.

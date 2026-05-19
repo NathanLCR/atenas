@@ -1,150 +1,169 @@
-# Phase: Natural Language Interface
+# Phase: Telegram LLM Tool Interface
 
 ## Status
 
-Next phase.
+Next implementation target. Supersedes the older thin natural-language
+classifier/router phase.
 
 ## Goal
 
-Allow the user to send plain-text messages to Atenas on Telegram and get
-useful responses — without needing to know slash-command syntax.
+Allow Nathan to use Atenas primarily by talking to the Telegram bot. The LLM
+should understand the request, call controlled Atenas tools, and reply in
+Telegram.
 
 The user should be able to write:
 
-```
-what's my schedule today?
-add an assignment: NLP Essay due Friday at 5pm, priority high
-how many hours do I have to study this week?
+```text
+what should I work on today?
+mark my ML essay as done
+how many study hours do I have this week?
 summarise note 3
 what do my notes say about attention mechanisms?
+add assignment: NLP Essay due Friday at 5pm, priority high
 ```
 
-And Atenas should understand, route to the right handler, and reply.
-
-## Product question
+## Product Question
 
 ```text
-Can I use Atenas by just talking to it naturally?
+Can I use Atenas from Telegram without memorising commands?
 ```
 
-## In scope
+## In Scope
 
-- Plain-text message handler that routes to existing command logic
-- Intent classification using local Ollama (same model already in use)
-- Slot extraction for structured commands (date, title, priority, module)
-- Fallback to RAG (`/ask_notes`) when no intent matches
-- Confidence threshold: if intent is unclear, ask the user to clarify or
-  suggest the right slash command
-- Read-only intents first (status, schedule, plan, deadlines, availability)
-- Write intents second (add assignment, set status, add note) with explicit
-  confirmation before mutation
+- Plain Telegram message handler.
+- Allowlist validation before LLM/tool execution.
+- LLM agent with Atenas tool schemas.
+- Read tools for status, schedule, planning, notes, files, and retrieval.
+- Write proposal tools for assignments, notes, shifts, classes, and statuses.
+- Per-user pending confirmation state for writes.
+- Policy engine execution after confirmation.
+- Slash commands preserved unchanged.
+- Local Ollama as default provider.
+- Mocked LLM/tool tests.
 
-## Out of scope
+## Out of Scope
 
-- Autonomous multi-turn planning sessions
-- Web search or internet retrieval
-- Cloud LLM fallback for NL understanding
-- Replacing slash commands (they stay and remain the primary interface)
-- Anything that creates, edits, or deletes data without user confirmation
-
-## Suggested Telegram commands to preserve (do not remove)
-
-All existing slash commands must keep working. Natural language is an
-additive layer on top, not a replacement.
+- Replacing slash commands.
+- Public dashboard/API exposure.
+- Web search.
+- Autonomous shell/filesystem access.
+- External LLM providers unless explicitly enabled by a separate config/spec.
+- Multi-user behavior.
+- Writes without confirmation.
 
 ## Architecture
 
 ```text
-core/nl/
-  intent.py        # IntentMatch dataclass, intent registry
-  classifier.py    # NLClassifier: prompt -> IntentMatch via Ollama
-  slots.py         # extract_slots(): parse date/priority/title from text
-  router.py        # NLRouter: IntentMatch -> existing service call
-  prompts.py       # prompt templates for classification and slot extraction
+Telegram text message
+  -> allowlist check
+  -> LLM agent
+  -> tool registry
+  -> core service
+  -> structured tool result
+  -> LLM response
+  -> Telegram reply
 ```
 
-Key design rules:
+Write path:
 
-1. The NL layer is a thin translation layer. It maps natural language to
-   existing service calls — it does NOT reimplement scheduling, planning,
-   or retrieval logic.
-2. Classification uses the local Ollama model. If Ollama is unavailable,
-   fall back to: "I could not process that. Try /status or /help."
-3. Write intents (add, update, delete) MUST show the parsed slot values
-   and ask for confirmation before calling the service. Example:
-   ```
-   I understood: add assignment "NLP Essay" due 2026-05-22 17:00,
-   priority high, module: NLP
-   Confirm? (yes / no)
-   ```
-4. Confidence threshold: if the classifier returns confidence < 0.7,
-   reply with the closest slash command suggestion rather than guessing.
-5. No multi-turn state for now — each message is processed independently.
-
-## Intent map (first implementation)
-
-| Natural intent | Routes to |
-|---|---|
-| "what's my schedule / today / plan" | `today_command` |
-| "show my week / weekly schedule" | `week_command` |
-| "what are my deadlines" | `deadlines_command` |
-| "how available am I / study time" | `availability_command` |
-| "give me a study plan" | `plan_command` |
-| "what should I study now / next" | `study_command` |
-| "add assignment <...>" | `add_assignment_command` (with confirmation) |
-| "set assignment status / mark done" | `set_status_command` (with confirmation) |
-| "list my assignments / modules / shifts" | `assignments_command` / `modules_command` |
-| "add note <...>" | `add_note_command` (with confirmation) |
-| "summarise / explain note <n>" | `summarize_note_command` / `explain_note_command` |
-| "what do my notes say about <topic>" | `ask_notes_command` |
-| fallback (no match) | `ask_notes_command` with original text as query |
-
-## Classifier prompt design
-
-Classify the user's message into one of the intents. Return JSON only:
-
-```json
-{"intent": "<name>", "confidence": 0.0-1.0, "slots": {...}}
+```text
+Telegram text message
+  -> allowlist check
+  -> LLM proposes write tool
+  -> validate args and resolve stable IDs
+  -> pending confirmation
+  -> user replies yes/no
+  -> policy engine
+  -> service execution
+  -> audit log
+  -> Telegram result
 ```
 
-Slots to extract per intent (examples):
-- add_assignment: `{title, due_at, priority, module, estimated_hours}`
-- set_status: `{assignment_id_or_title, status}`
-- add_note: `{title, content}`
-- note_action: `{note_id_or_title, action}`
-- ask_notes: `{query, module}`
+## Design Rules
 
-## Confirmation flow for write intents
+1. The LLM receives tool schemas, not service objects.
+2. Tools call existing services and do not duplicate business logic.
+3. Read tools may run after allowlist auth.
+4. Write tools create proposals; they do not mutate directly.
+5. Confirmation is set by code after the user replies `yes`.
+6. Policy runs before every confirmed write.
+7. Natural-language labels are resolved to stable IDs before writes.
+8. Prompt templates delimit user text and retrieved source text.
 
+## Initial Tools
+
+| Tool | Class | Purpose |
+|---|---|---|
+| `get_status` | read | App/student status |
+| `get_today_overview` | read | Today's schedule and study context |
+| `get_week_overview` | read | Weekly schedule overview |
+| `get_deadlines` | read | Upcoming deadlines |
+| `get_availability` | read | Available study time |
+| `list_assignments` | read | Assignment lookup/listing |
+| `list_modules` | read | Module lookup/listing |
+| `search_notes` | read | Keyword note/file search |
+| `retrieve_sources` | read | Source retrieval for note/file Q&A |
+| `generate_study_plan` | planning | Daily/weekly plan generation |
+| `suggest_next_task` | planning | Next best study action |
+| `add_assignment` | write | Create assignment proposal |
+| `set_assignment_status` | write | Status-change proposal |
+| `set_assignment_hours` | write | Estimated-hours proposal |
+| `add_note` | write | Note creation proposal |
+| `archive_note` | write | Note archive proposal |
+| `add_class_session` | write | Class-session proposal |
+| `add_work_shift` | write | Work-shift proposal |
+
+## Conversation Examples
+
+### Read
+
+```text
+User: what's my plan today?
+Agent tools: get_today_overview, suggest_next_task
+Bot: You have 2 useful study blocks today...
 ```
-user: add assignment linear algebra exam due next monday 9am
-bot:  Add assignment?
-      Title: Linear Algebra Exam
-      Due: 2026-05-25 09:00
-      Priority: normal (inferred)
-      Module: not specified
-      Reply "yes" to confirm or "no" to cancel.
-user: yes
-bot:  ✅ Assignment added: Linear Algebra Exam (due Mon 09:00)
+
+### Retrieval
+
+```text
+User: what do my notes say about CNNs?
+Agent tools: retrieve_sources(query="CNNs")
+Bot: Your notes mostly frame CNNs as... Sources: note:5, file:2
+```
+
+### Write
+
+```text
+User: mark ML essay done
+Agent tools: list_assignments(query="ML essay"), set_assignment_status(...)
+Bot: Confirm status change? Assignment: ML Essay. New status: done.
+User: yes
+Bot: Updated ML Essay to done.
 ```
 
 ## Tests
 
-Test with mock Ollama responses. Do not call a real LLM in tests.
+Use mocked LLM responses and isolated app settings.
 
-Test:
-- Intent classification returns correct intent and slots
-- Confidence below threshold returns clarification message
-- Read intents route to correct service without confirmation
-- Write intents trigger confirmation message before service call
-- Confirmation "yes" executes the service call
-- Confirmation "no" cancels without side effects
-- Ollama unavailable returns graceful fallback
-- Non-command Telegram message is handled (not silently dropped)
+Required coverage:
 
-## Exit criteria
+- Unauthorized Telegram user does not trigger LLM/tools.
+- Empty allowlist startup validation.
+- Plain message invokes read tools.
+- Retrieval path returns source labels or no-source fallback.
+- Write proposal does not mutate before confirmation.
+- `yes` executes only after policy approval.
+- `no` cancels pending write.
+- Assignment title resolution maps to stable ID.
+- Prompt templates delimit untrusted input.
+- LLM unavailable path degrades without breaking slash commands.
 
-Phase is complete when the user can:
-1. Send a plain-text message and get a useful response
-2. Add an assignment, note, or check schedule in natural language
-3. All existing slash commands still pass all existing tests
+## Exit Criteria
+
+The phase is complete when:
+
+1. Plain Telegram messages can read status/schedule/planning data through tools.
+2. Plain Telegram messages can answer note/file questions with sources.
+3. Plain Telegram write requests require confirmation and policy.
+4. Slash commands still pass their tests.
+5. No test depends on a real local database, `.env`, or live LLM.

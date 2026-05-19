@@ -2,14 +2,20 @@
 
 ## System overview
 
-Atenas is a local-first study operating system for working students. It combines deterministic scheduling, Telegram bot interaction, controlled notes/files retrieval, and a read-only web dashboard.
+Atenas is a local-running, Telegram-first study assistant for working students.
+It combines deterministic scheduling, Telegram bot interaction, an LLM agent
+with controlled tools, notes/files retrieval, and a read-only local dashboard.
 
 ## Core layers
 
 ```text
 Telegram Bot (python-telegram-bot)
         ↓
-    Commands (app/bot.py)
+    Allowlist check
+        ↓
+    Slash commands OR LLM tool agent
+        ↓
+    Tool registry / command handlers
         ↓
     Services (core/academic/service.py, core/knowledge/service.py, core/retrieval/service.py)
         ↓
@@ -27,16 +33,18 @@ FastAPI Dashboard (app/dashboard.py)
 ## Key design principles
 
 1. **Deterministic** — no randomness in scheduling/planning.
-2. **Local-first** — SQLite only, no cloud sync.
-3. **Telegram write, dashboard read** — write commands via allowlisted Telegram; dashboard is read-only.
-4. **Local LLM only** — Ollama-backed LLM features have no cloud fallback.
+2. **Local-running** — SQLite/files/dashboard/API stay local.
+3. **Telegram first** — Telegram is the main product surface.
+4. **Tool-mediated LLM** — the LLM calls schemas, not services directly.
 5. **Soft archive** — notes/files use `archived=1` instead of hard delete.
 6. **Source-grounded retrieval** — RAG answers are generated only after sources are found; otherwise they return the no-source fallback.
+7. **Policy-checked writes** — LLM-initiated writes require confirmation and policy.
 
 ## Data flow
 
 ```text
 User → Telegram command → parse_kv_args → Service validation → Repository SQL → Response
+User → Telegram plain text → LLM agent → Tool registry → Service validation → Repository SQL → Response
 User → Dashboard URL → Service query → Jinja template → HTML
 User → /ask_notes or /dashboard/retrieval → RetrievalService → retrieval_chunks → Ollama answer with sources
 ```
@@ -45,10 +53,12 @@ User → /ask_notes or /dashboard/retrieval → RetrievalService → retrieval_c
 
 - Services handle validation and business logic.
 - Repositories handle only SQL CRUD.
-- Telegram handlers parse messages and format responses.
-- Dashboard routes render templates; no write forms.
+- Telegram handlers authenticate, parse commands, orchestrate tools, and format responses.
+- Dashboard routes render local read-only templates; no write forms.
 - Retrieval indexes only registered, non-archived notes and supported text files.
-- No web search, cloud fallback, OCR/PDF parsing, or automatic filesystem ingestion.
+- No web search, OCR/PDF parsing, automatic filesystem ingestion, or external LLM fallback by default.
+- `app/` may import `core/`; `core/` must not import `app/`.
+- Settings are injected into services rather than hidden behind `app.config` imports.
 
 ## Related docs
 

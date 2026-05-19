@@ -1,219 +1,201 @@
-# Atenas — Architecture v0.1
+# Atenas — Architecture
+
+## Status
+
+Target architecture as of 2026-05-19. This is the contract the code should be
+refactored toward. It does not claim every path is already implemented.
 
 ## Guiding Principle
 
-> LLM decides meaning. Code controls structure and actions.
+> The LLM decides meaning. Tools expose capabilities. Code controls actions.
 
-The LLM is never trusted to directly execute anything. All LLM output passes through schema validation, Pydantic validation, and the policy engine before any action is taken.
+The LLM is never trusted to execute application logic directly. It receives a
+small set of structured tools. Tool arguments are validated, write proposals
+are confirmed by the user, the policy engine runs before mutation, and services
+own the actual business logic.
 
----
+## Deployment Posture
+
+Atenas is local-running and single-user by default.
+
+- Telegram is the primary user interface.
+- Dashboard and REST API are local support surfaces and should bind to
+  `127.0.0.1`.
+- SQLite, files, and logs stay on the local machine.
+- Local Ollama is the default LLM provider.
+- External LLM providers are opt-in and must be treated as data egress.
 
 ## High-Level Flow
 
-```
-User (Telegram / Dashboard)
-        │
-        ▼
-    Atenas API  (FastAPI)
-        │
-        ▼
-  Command Router
-        │
-        ▼
-  Intent Classifier
-        │
-        ▼
-  Skill Registry  ──► Skill Handler
-        │
-        ▼
-  Retrieval Engine
-  ├── SQLite metadata
-  ├── Markdown/YAML memory files
-  ├── Keyword search
-  └── Embedding search (Phase 10+)
-        │
-        ▼
-    LLM Router
-    ├── Local LLM (Ollama)
-    └── Cloud LLM fallback (OpenAI / OpenRouter)
-        │
-        ▼
-  Pydantic Validator
-        │
-        ▼
-  Policy Engine
-        │
-        ▼
-  Action Executor
-        │
-        ▼
-  Storage Layer
-  ├── Filesystem (Markdown / YAML — source of truth)
-  ├── SQLite (metadata, state, graph, logs)
-  └── JSONL logs
+```text
+Telegram user
+    |
+    v
+Telegram bot allowlist
+    |
+    v
+Conversation orchestrator
+    |
+    +-- Slash command router --------------------+
+    |                                            |
+    v                                            v
+LLM agent with Atenas tools                Existing command handlers
+    |
+    v
+Tool registry
+    |
+    +-- read tools ------------------------------+
+    |                                            |
+    +-- write proposal tools                     |
+         |
+         v
+    Confirmation manager
+         |
+         v
+    Policy engine
+         |
+         v
+Application services in core/
+    |
+    v
+Repositories
+    |
+    v
+SQLite / local files / JSONL logs
 ```
 
-**Phase 1 reality:** the *Command Router* and *Intent Classifier* stages above
-are future components. They are not implemented as separate modules. In Phase 1
-the API layer calls `SkillRegistry.dispatch()` directly, which maps a command
-string to its registered handler. Natural-language intent classification arrives
-with the LLM router (Phase 3+).
+Local dashboard/API paths are side channels into the same services. They are
+not the primary product interface and must not become unauthenticated remote
+surfaces.
 
----
+## Layer Responsibilities
 
-## Component Responsibilities
+### `app/`
 
-### API Layer (`app/`)
+Application shell only:
 
-| File | Responsibility |
-|---|---|
-| `main.py` | Application entry point, startup/shutdown, lifespan |
-| `api.py` | FastAPI routes: /health, /status, API endpoints |
-| `bot.py` | Telegram bot handler, allowlist, maps commands to router |
-| `dashboard.py` | Jinja2 dashboard routes (Phase 2+) |
-| `config.py` | Loads and validates environment config via pydantic-settings |
-| `scheduler.py` | APScheduler jobs — stub for Phase 8+ |
+- Telegram update handling and response formatting.
+- Local FastAPI routes and dashboard rendering.
+- Configuration loading and dependency wiring.
+- Startup validation for enabled transports, especially Telegram allowlist.
 
-### Core Layer (`core/`)
+`app/` may depend on `core/`. `core/` must not depend on `app/`.
 
-| File | Responsibility |
-|---|---|
-| `skill_registry.py` | Registers skills, indexes commands, resolves handlers, and dispatches commands to handlers (`SkillRegistry.dispatch`). There is no separate `router.py` — command routing lives here. |
-| `llm_router.py` | Decides local vs cloud; retries; logs calls |
-| `memory_manager.py` | Reads/writes Markdown memory files (Phase 4+) |
-| `retrieval_engine.py` | Stub for Phase 9/10 |
-| `graph_manager.py` | Stub — graph deferred post-v1 (reserved, no v1 consumer) |
-| `embedding_manager.py` | Stub for Phase 10 |
-| `policy_engine.py` | Enforces action rules; blocks forbidden ops |
-| `action_executor.py` | Executes validated, approved actions |
-| `schemas.py` | All Pydantic models |
-| `db.py` | SQLite schema init and connection |
-| `utils.py` | Timestamps, slugs, JSONL logging handler |
+### `core/`
 
-**Phase 1 note:** `retrieval_engine.py`, `graph_manager.py`, `embedding_manager.py`, and `memory_manager.py` are empty stubs. Do not implement internals until their respective phases.
+Domain and application logic:
 
-### Skills Layer (`skills/`)
+- Academic scheduling, assignments, availability, and planning.
+- Knowledge notes/files/search/retrieval.
+- LLM client/service abstractions.
+- Policy engine and action execution.
+- Database schema and repository access.
 
-Each skill is a directory:
-```
-skills/<name>/
-├── __init__.py
-├── handler.py     # Command handler logic
-├── prompts.py     # LLM prompt templates (when skill uses LLM)
-└── schemas.py     # Skill-specific Pydantic models (if any)
-```
+Core services receive configuration and dependencies through constructors or
+method parameters. They do not import `app.config`.
 
-Tests live in `tests/`, not inside skill directories.
+### `tools/` or equivalent tool layer
 
-### Storage Layer
+The LLM-facing tool layer is the bridge between conversation and capabilities.
+It should be thin and explicit:
 
-```
-memory/                  ← human-readable source of truth
-├── profile.md
-├── preferences.yaml
-├── studies/
-│   ├── modules.yaml
-│   ├── timetable.yaml
-│   └── notes/
-├── work/
-│   ├── shifts.yaml
-│   └── workplaces.yaml
-├── assignments/
-│   ├── active.yaml
-│   └── archive/
-├── papers/
-│   ├── reading_list.yaml
-│   └── notes/
-├── plans/
-│   ├── daily/
-│   └── weekly/
-└── archive/
+- Defines tool names, descriptions, argument schemas, and result schemas.
+- Calls existing services; it does not duplicate service behavior.
+- Marks tools as read or write.
+- Produces write proposals instead of mutating directly.
+- Resolves natural-language labels to stable IDs before execution.
 
-data/
-└── atenas.sqlite        ← SQLite: metadata, state, graph, logs
+If this layer lives under an existing package initially, keep the same
+responsibilities and dependency direction.
 
-logs/
-├── events.jsonl
-├── llm_calls.jsonl
-└── errors.jsonl
-```
+### `skills/`
 
----
+Legacy command handlers and reusable command surfaces. They may remain as
+slash-command implementations, but shared behavior should migrate toward
+services/tools instead of being copied into Telegram-specific formatting.
 
-## Storage Responsibility Split
+## Tool Categories
 
-| Data type | Location | Why |
+| Category | Examples | Execution rule |
 |---|---|---|
-| Notes, preferences, shifts, plans | `memory/` Markdown/YAML | Human-readable, editable, inspectable |
-| Document metadata | SQLite `documents` table | Fast querying |
-| Chunks | SQLite `chunks` table | Fast retrieval |
-| Graph nodes/edges | SQLite `nodes`, `edges` tables | Lightweight; no Neo4j in v1 |
-| Assignment/task state | SQLite + `memory/assignments/active.yaml` | SQLite for queries; YAML as readable backup |
-| LLM call logs | SQLite `llm_calls` table + `logs/llm_calls.jsonl` | Structured analysis |
-| Action logs | `logs/events.jsonl` | JSONL for audit trail |
+| Read tools | status, today, week, deadlines, modules, assignments, notes, files, retrieval sources | May run after Telegram allowlist auth |
+| Planning tools | generate plan, suggest next task, explain deadline risk | May run after auth; must use deterministic service inputs |
+| Write tools | add assignment, set status, add note, add class, add shift, archive note | Must create a pending proposal, require confirmation, pass policy |
+| System tools | local LLM status, app health, configuration summary | Read-only; never reveal secrets |
 
-**Rule:** SQLite is never the only copy of user data. The `memory/` files are the source of truth. SQLite can be rebuilt from files if corrupted.
+## Read Flow
 
----
-
-## Key Design Decisions
-
-| Decision | Choice | Rationale |
-|---|---|---|
-| Primary keys | TEXT (UUID strings) | Matches PDF spec; future multi-user safe |
-| fatigue_level | TEXT enum (low/medium/high) | Matches PDF spec; simpler than integer 1-5 |
-| work_shifts.date | Separate column (YYYY-MM-DD) | Enables easy range queries without datetime parsing |
-| Work shift extraction | Array wrapper + needs_confirmation | Supports "I work Mon and Thu" in one message |
-| Memory extraction | should_store + domain + importance | LLM can decline noise; structured classification |
-| Study plan output | capacity + reason per block + warnings | Auditable decisions; visible constraint violations |
-| Confidence threshold | 0.65 everywhere | Single source in config.MIN_CONFIDENCE_THRESHOLD |
-| Dashboard | FastAPI + Jinja + HTMX | No JS build step; faster for v1 |
-
----
-
-## LLM Router Logic
-
-```
-Incoming task
-    │
-    ▼
-Is task in local_task_list?
-    │
-   Yes ──► Call local LLM (Ollama)
-    │          │
-    │      Validate with Pydantic
-    │          │
-    │      Pass? ──► Continue
-    │          │
-    │      Fail? ──► Retry local once
-    │                  │
-    │              Fail again? ──► Escalate to cloud
-    │
-   No ──► Call cloud LLM
+```text
+User: "what should I study today?"
+  -> allowlist check
+  -> LLM chooses get_today_overview + list_due_assignments
+  -> tools return structured results
+  -> LLM writes concise Telegram answer
 ```
 
----
+Read tools return structured data. The LLM can decide presentation, but it
+cannot bypass service validation or fetch arbitrary filesystem content.
 
-## Build Phase Mapping
+## Write Flow
 
-| Phase | Components built |
+```text
+User: "mark my ML essay done"
+  -> allowlist check
+  -> LLM calls find_assignment(title="ML essay")
+  -> LLM proposes set_assignment_status(id="...", status="done")
+  -> bot asks for confirmation
+  -> user replies "yes"
+  -> policy engine validates the action
+  -> service executes the update
+  -> audit log records outcome
+```
+
+Writes must never execute directly from the LLM response. Confirmation text is
+not enough by itself; execution must pass through a policy-checked path.
+
+## Retrieval Flow
+
+```text
+User: "what do my notes say about CNNs?"
+  -> retrieve sources from registered, non-archived notes/files
+  -> if no sources, return no-source fallback
+  -> if sources exist, call local LLM with delimited sources
+  -> return answer with source labels
+```
+
+Retrieval indexing should be incremental, explicit, or dirty-flagged. Querying
+must not rebuild the full chunks table on every request.
+
+## Storage
+
+| Data | Location |
 |---|---|
-| 0 | Specs only |
-| 1 | FastAPI skeleton, SQLite init, config, logging, healthcheck, skill registry, policy engine, action executor, status skill, pytest scaffold |
-| 2 | Telegram bot, /ping /status /skills via Telegram, basic dashboard |
-| 3 | LLM router: Ollama provider, cloud adapter, Pydantic validation, fallback, LLM logging |
-| 4 | Memory skill (incl. `sensitive` cloud gate) |
-| 5 | Work schedule skill |
-| 6 | Class timetable skill (FR-05) |
-| 7 | Assignments skill (deadline-risk scoring) |
-| 8 | Study planner skill — built after 5/6/7 (its inputs); code-authored slots, LLM assignment only; plan-quality suite is the exit gate |
-| 9 | Papers + PDF ingestion + chunking (no embeddings yet) |
-| 10 | Embeddings + brute-force cosine semantic search |
-| 11 | Literature matrix |
-| 12 | Flashcards (FR-10) |
-| post-v1 | Knowledge graph — reserved, no v1 consumer |
+| Academic state | SQLite |
+| Notes/files metadata | SQLite plus local registered files |
+| Retrieval chunks | SQLite, single canonical schema |
+| LLM calls | JSONL/SQLite audit logs |
+| Tool/action events | JSONL audit logs |
 
-Phase order reflects the dependency graph: the planner (8) is a consumer of
-work shifts (5), the timetable (6) and assignments (7), so it cannot precede
-them. Papers/embeddings are split (9/10) because "PDF + chunking + embeddings
-+ graph" was one overloaded phase.
+Do not maintain duplicate schema definitions for the same table. Schema changes
+belong in one canonical migration/schema owner.
+
+## Configuration
+
+Configuration is loaded in the application shell and passed down. Avoid hidden
+imports from `core/` into `app.config`.
+
+Required startup validation:
+
+- If Telegram is enabled, `TELEGRAM_ALLOWED_USER_IDS` must be non-empty.
+- Dashboard/API bind host must default to `127.0.0.1`.
+- External LLM provider settings must be explicit opt-in.
+
+## Implementation Priorities
+
+1. Lock the local-only transport posture.
+2. Make Telegram allowlist failure loud at startup.
+3. Introduce the LLM tool registry and shared read/write tool contracts.
+4. Route all writes through confirmation and policy.
+5. Remove or quarantine dead modules and fake LLM telemetry.
+6. Fix retrieval indexing so queries do not rebuild everything.
+7. Push dependency direction to `app -> core`, never `core -> app`.

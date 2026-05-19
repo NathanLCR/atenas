@@ -2,7 +2,9 @@
 
 ## Purpose
 
-Telegram interface for all write operations and quick read queries. Commands are allowlist-protected.
+Telegram is the primary product interface. It supports slash commands for fast
+deterministic actions and is the target surface for the LLM tool agent. All
+commands, plain messages, LLM calls, and tools are allowlist-protected.
 
 ## Files
 
@@ -11,6 +13,9 @@ Telegram interface for all write operations and quick read queries. Commands are
 | `app/bot.py` | All command handlers, allowlist filter, application builder |
 
 ## Command categories
+
+Plain text messages should route through the LLM tool-agent path described in
+`docs/HANDOFF_NL_INTERFACE.md`. Slash commands below must remain supported.
 
 ### Read commands (no data modification)
 - `/ping` — health check
@@ -56,18 +61,21 @@ Telegram interface for all write operations and quick read queries. Commands are
 
 ## Important constraints
 
-- All commands go through `AllowlistFilter`.
-- Write commands use the same filter as read commands.
+- All commands and plain messages go through allowlist validation.
+- Write commands and LLM write tools use the same authentication boundary.
 - `parse_kv_args` supports quoted values with spaces: `title="My Note"`.
 - Handlers use `_get_bot_settings(context)` to get settings from `bot_data`.
 - Retrieval commands accept optional `module`, `assignment`, and `limit` filters.
 - `/ask_notes` and `/ask_note` call local Ollama only after sources are found.
 - `/sources` never calls the LLM; it only returns source labels and snippets.
 - If no sources are found, retrieval commands return the no-source fallback.
+- LLM-initiated writes must create a pending proposal, require confirmation,
+  pass policy, and then call services.
 
 ## Pitfalls
 
 - Do not remove allowlist filter from write commands.
+- Do not route plain Telegram writes directly to services.
 - Command handlers expect `update.effective_message.text`; guard against None.
 - `_reply()` silently returns if no effective message exists.
 - Date parsing is strict; work shifts require time component.

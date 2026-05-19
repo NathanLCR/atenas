@@ -1,21 +1,23 @@
 # Atenas Core
 
-Atenas is a local-first AI study operating system for working students. It now
-includes the core app skeleton, Telegram command surface, read-only dashboard,
-academic scheduling, deterministic planning, notes/files/search, code-map docs,
-and local LLM actions over explicitly selected notes.
+Atenas is a Telegram-first, local-running LLM study assistant for a working
+student. The app, database, files, dashboard, and REST API are local developer
+surfaces. Telegram is the primary product interface.
 
-## Current State
+The current target is an LLM agent that can answer in Telegram and call
+controlled Atenas tools for scheduling, planning, notes, retrieval, and data
+updates. Slash commands remain supported as fast shortcuts.
 
-Latest verified local baseline, after pulling `origin/main` on 2026-05-18:
+## Product Posture
 
-- Branch: `main`
-- HEAD: `cb72413`
-- Tests: `328 passed`
-- Next phase: Phase 8 - Controlled Retrieval/RAG Foundation
-
-See `docs/HANDOFF.md` and `docs/codex/MASTER_CODEX_HANDOFF.md` before starting
-the next implementation phase.
+- Single-user and local-only by default.
+- Telegram is the main interface and must be allowlist-protected.
+- Dashboard and REST API are local support surfaces, not remote services.
+- Local Ollama is the default LLM provider. Any external LLM provider is
+  explicit opt-in because prompt and tool-result data leave the machine.
+- Read tools may run after Telegram allowlist validation.
+- Write tools must resolve stable IDs, show a pending action, require explicit
+  confirmation, pass the policy engine, and log the result.
 
 ## Run
 
@@ -25,13 +27,22 @@ python3.11 -m venv .venv
 .venv/bin/uvicorn app.main:app --reload
 ```
 
+The intended local URL is `http://127.0.0.1:8000`. Do not expose the dashboard
+or REST API directly on a LAN or public host.
+
 ## Test
 
 ```bash
 .venv/bin/pytest -q
 ```
 
+Do not rely on historical test counts in docs. Re-run the suite in the current
+workspace before implementation work.
+
 ## Docker
+
+Docker is for local development. Compose publishing should bind to localhost
+only, for example `127.0.0.1:8000:8000`.
 
 ```bash
 docker-compose up
@@ -39,9 +50,16 @@ docker-compose up
 
 ## Main Surfaces
 
-- API: `/health`, `/status`, `/skills`
-- Dashboard: `/dashboard/`, `/dashboard/week`, `/dashboard/deadlines`,
+- Telegram: slash commands plus the planned LLM tool-agent conversation path.
+- Local API: `/health`, `/status`, `/skills`.
+- Local dashboard: `/dashboard/`, `/dashboard/week`, `/dashboard/deadlines`,
   `/dashboard/plan`, `/dashboard/data`, `/dashboard/notes`,
-  `/dashboard/files`, `/dashboard/search`, `/dashboard/logs`, `/dashboard/llm`
-- Telegram: status, scheduling, planning, data input, notes/files/search, and
-  selected-note local LLM commands
+  `/dashboard/files`, `/dashboard/search`, `/dashboard/logs`, `/dashboard/llm`.
+
+## Current Docs
+
+- `docs/PRODUCT_SPEC.md` defines the product posture.
+- `docs/ARCHITECTURE.md` defines the target tool-agent architecture.
+- `docs/SECURITY.md` defines the local-only and Telegram security contract.
+- `docs/HANDOFF_NL_INTERFACE.md` is the active implementation handoff for the
+  Telegram LLM tool interface.

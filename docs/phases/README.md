@@ -1,6 +1,6 @@
 # Atenas Phases Roadmap
 
-Atenas is a local-first AI study operating system for working students.
+Atenas is a local-running, Telegram-first LLM study assistant for working students.
 
 It is being built with spec-driven development:
 
@@ -10,7 +10,15 @@ spec -> implementation -> tests -> audit -> next phase
 
 ## Current Status
 
-As of the 2026-05-18 checkpoint after pulling `origin/main`:
+As of the 2026-05-19 docs refresh, the next implementation target is the
+Telegram LLM tool interface. Historical phase status below is retained for
+context, but current implementation work should follow:
+
+- `docs/HANDOFF.md`
+- `docs/HANDOFF_NL_INTERFACE.md`
+- `docs/phases/phase-natural-language-interface.md`
+
+Historical checkpoint from 2026-05-18:
 
 | Phase | Status | Summary |
 |---:|---|---|
@@ -24,13 +32,9 @@ As of the 2026-05-18 checkpoint after pulling `origin/main`:
 | 6.5 | Complete | Developer code map |
 | 7 | Complete | Local LLM over selected notes |
 | 8 | Complete | Controlled retrieval/RAG foundation |
-| 9 | Complete | Notifications + reminders |
+| 9 | Reported complete | Notifications + reminders |
 
-Current verified test baseline:
-
-```text
-383 passed
-```
+Do not rely on historical test counts. Run `pytest` in the current workspace.
 
 ## MVP target
 
@@ -54,7 +58,7 @@ Until explicitly allowed by a phase spec, do not add:
 - RAG
 - Google Calendar sync
 - iCloud/Drive sync
-- dashboard write routes without auth
+- dashboard write routes without an authenticated local-write spec
 - unnecessary dependencies
 
 ## Testing rule
@@ -69,9 +73,11 @@ python3 -m pytest
 
 ## Security rule
 
-Telegram write commands must remain allowlist-protected.
+Telegram commands, plain messages, LLM calls, and tools must remain
+allowlist-protected.
 
-Dashboard write routes are deferred unless authentication or a disabled-by-default feature flag exists.
+Dashboard/API surfaces are local-only support surfaces. Dashboard write routes
+are deferred unless authentication or a disabled-by-default feature flag exists.
 
 ## Branching recommendation
 
