@@ -152,6 +152,71 @@ async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     await _reply(update, "Unknown command. Try /ping, /status, or /skills.")
 
 
+async def natural_language_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle plain-text messages that are not slash commands."""
+
+    from core.llm.client import OllamaClient
+    from core.nl.classifier import NLClassifier
+    from core.nl.intent import READ_INTENTS, WRITE_INTENTS
+
+    text = update.effective_message.text
+    if not text or not text.strip():
+        return
+
+    user_id = update.effective_user.id if update.effective_user else None
+    pending = context.user_data.get("nl_pending_confirmation")
+    if pending is not None:
+        lower = text.strip().lower()
+        if lower in ("yes", "y", "confirm"):
+            context.user_data.pop("nl_pending_confirmation", None)
+            router = _build_nl_router(context)
+            response = router.execute_write(pending)
+            await _reply(update, response)
+            return
+        if lower in ("no", "n", "cancel"):
+            context.user_data.pop("nl_pending_confirmation", None)
+            await _reply(update, "Cancelled.")
+            return
+
+    settings = _get_bot_settings(context)
+    client = OllamaClient(
+        base_url=settings.ollama_base_url,
+        model=settings.ollama_model,
+        timeout=settings.ollama_timeout_seconds,
+    )
+    classifier = NLClassifier(client, timezone=settings.timezone)
+    match = classifier.classify(text.strip())
+
+    if not match.is_confident:
+        router = _build_nl_router(context)
+        await _reply(update, router.suggest_command(match))
+        return
+
+    if match.is_read:
+        router = _build_nl_router(context)
+        response = router.route_read(match)
+        await _reply(update, response)
+    elif match.is_write:
+        router = _build_nl_router(context)
+        confirmation = router.build_confirmation(match)
+        context.user_data["nl_pending_confirmation"] = match
+        await _reply(update, confirmation)
+    else:
+        router = _build_nl_router(context)
+        response = router.route_read(match)
+        await _reply(update, response)
+
+
+async def _reply(update: Update, text: str) -> None:
+    """Reply on the effective message when one exists."""
+
+    message = update.effective_message
+    if message is None:
+        logger.debug("telegram_update_without_message")
+        return
+    await message.reply_text(text)
+
+
 async def add_module_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Add a study module via key-value arguments."""
 
@@ -610,6 +675,7 @@ def build_application(settings: Settings | None = None) -> Application:
     application.add_handler(CommandHandler("flashcards_note", flashcards_note_command, filters=allowlist_filter))
     application.add_handler(CommandHandler("rewrite_note", rewrite_note_command, filters=allowlist_filter))
     application.add_handler(CommandHandler("reminders", reminders_command, filters=allowlist_filter))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & allowlist_filter, natural_language_handler))
     application.add_handler(MessageHandler(filters.COMMAND & allowlist_filter, unknown_command))
     return application
 
@@ -1234,6 +1300,19 @@ async def link_note_file_command(update: Update, context: ContextTypes.DEFAULT_T
 def _build_retrieval_service(context: ContextTypes.DEFAULT_TYPE) -> RetrievalService:
     settings = _get_bot_settings(context)
     return RetrievalService(
+        db_path=settings.db_path,
+        timezone=settings.timezone,
+        ollama_base_url=settings.ollama_base_url,
+        ollama_model=settings.ollama_model,
+        ollama_timeout=settings.ollama_timeout_seconds,
+    )
+
+
+def _build_nl_router(context: ContextTypes.DEFAULT_TYPE) -> "NLRouter":
+    from core.nl.router import NLRouter
+
+    settings = _get_bot_settings(context)
+    return NLRouter(
         db_path=settings.db_path,
         timezone=settings.timezone,
         ollama_base_url=settings.ollama_base_url,
