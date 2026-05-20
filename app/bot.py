@@ -13,6 +13,7 @@ from core.academic.service import AcademicService
 from core.academic.validators import parse_kv_args, parse_weekday, validate_hours, validate_priority, validate_status
 from core.knowledge.service import KnowledgeService
 from core.llm.service import LLMService
+from core.nl.intent import INTENT_CONVERSATIONAL, INTENT_GREETING
 from core.notifications.service import NotificationService, seconds_until, seconds_until_weekday
 from core.retrieval.models import NO_SOURCE_FALLBACK
 from core.retrieval.service import RetrievalService
@@ -164,6 +165,14 @@ async def natural_language_handler(update: Update, context: ContextTypes.DEFAULT
         return
 
     user_id = update.effective_user.id if update.effective_user else None
+    settings = _get_bot_settings(context)
+    if not _telegram_user_authorized(settings, user_id):
+        logger.warning(
+            "blocked_telegram_update",
+            extra={"event_type": "blocked_telegram_update", "user_id": user_id},
+        )
+        return
+
     pending = context.user_data.get("nl_pending_confirmation")
     if pending is not None:
         lower = text.strip().lower()
@@ -180,7 +189,6 @@ async def natural_language_handler(update: Update, context: ContextTypes.DEFAULT
         await _reply(update, 'Please reply "yes" to confirm or "no" to cancel.')
         return
 
-    settings = _get_bot_settings(context)
     client = OllamaClient(
         base_url=settings.ollama_base_url,
         model=settings.ollama_model,
@@ -188,6 +196,13 @@ async def natural_language_handler(update: Update, context: ContextTypes.DEFAULT
     )
     classifier = NLClassifier(client, timezone=settings.timezone)
     match = classifier.classify(text.strip())
+
+    if match.intent in (INTENT_GREETING, INTENT_CONVERSATIONAL):
+        from core.llm.conversational import ConversationalService
+        conv_service = ConversationalService(client)
+        response = conv_service.generate_response(text.strip())
+        await _reply(update, response)
+        return
 
     if not match.is_confident:
         router = _build_nl_router(context)
@@ -642,7 +657,7 @@ def build_application(settings: Settings | None = None) -> Application:
     validate_telegram_startup(runtime_settings)
     token = runtime_settings.TELEGRAM_BOT_TOKEN
 
-    allowlist_filter = _build_allowlist_filter()
+    allowlist_filter = _build_allowlist_filter(runtime_settings.TELEGRAM_ALLOWED_USER_IDS)
     application = Application.builder().token(token).build()
     application.bot_data["settings"] = runtime_settings
     application.add_handler(CommandHandler("ping", ping_command, filters=allowlist_filter))
@@ -744,7 +759,9 @@ def _cancel_notification_tasks(app: Application) -> None:
         task.cancel()
 
 
-def _build_allowlist_filter() -> AllowlistFilter:
+def _build_allowlist_filter(
+    allowed_user_ids: Sequence[int] | None = None,
+) -> AllowlistFilter:
     """Build the runtime PTB UpdateFilter subclass for handler registration."""
 
     from telegram.ext import filters
@@ -752,7 +769,7 @@ def _build_allowlist_filter() -> AllowlistFilter:
     class TelegramAllowlistFilter(filters.UpdateFilter, AllowlistFilter):
         def __init__(self) -> None:
             filters.UpdateFilter.__init__(self, name="AllowlistFilter")
-            AllowlistFilter.__init__(self)
+            AllowlistFilter.__init__(self, allowed_user_ids=allowed_user_ids)
 
         def filter(self, update: Update) -> bool:
             return AllowlistFilter.filter(self, update)
@@ -767,6 +784,20 @@ def _get_bot_settings(context: ContextTypes.DEFAULT_TYPE) -> Settings:
     if isinstance(stored, Settings):
         return stored
     return get_settings()
+
+
+def _telegram_user_authorized(settings: Settings, user_id: int | None) -> bool:
+    """Return whether a plain-message handler should process this user."""
+
+    allowed_user_ids = getattr(settings, "TELEGRAM_ALLOWED_USER_IDS", [])
+    if not isinstance(allowed_user_ids, Sequence) or isinstance(
+        allowed_user_ids,
+        (str, bytes),
+    ):
+        return True
+    if not allowed_user_ids:
+        return True
+    return user_id is not None and user_id in set(allowed_user_ids)
 
 
 async def _reply(update: Update, text: str) -> None:

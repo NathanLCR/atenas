@@ -90,6 +90,62 @@ class RetrievalService:
             skipped_files=skipped_files,
         )
 
+    def sync_index(self, *, include_files: bool = True) -> RetrievalIndexStats:
+        """Incrementally sync stale registered records into the retrieval index."""
+
+        notes_indexed = 0
+        files_indexed = 0
+        chunks_indexed = 0
+        skipped_files = 0
+        active_sources: set[tuple[str, int]] = set()
+
+        for note in self.repository.list_notes(limit=MAX_INDEX_RECORDS):
+            if note.id is None:
+                continue
+            active_sources.add(("note", note.id))
+            note_chunks = self._chunks_for_note(note)
+            if not note_chunks:
+                continue
+            notes_indexed += 1
+            if not self.store.source_is_current(
+                "note",
+                note.id,
+                updated_at=note.updated_at,
+                chunk_count=len(note_chunks),
+            ):
+                chunks_indexed += self.store.replace_source(note_chunks)
+
+        source_kinds = {"note"}
+        if include_files:
+            source_kinds.add("file")
+            for file_record in self.repository.list_files(limit=MAX_INDEX_RECORDS):
+                if file_record.id is None:
+                    continue
+                file_chunks = self._chunks_for_file(file_record)
+                if file_chunks:
+                    active_sources.add(("file", file_record.id))
+                    files_indexed += 1
+                    if not self.store.source_is_current(
+                        "file",
+                        file_record.id,
+                        updated_at=file_record.updated_at,
+                        chunk_count=len(file_chunks),
+                    ):
+                        chunks_indexed += self.store.replace_source(file_chunks)
+                else:
+                    skipped_files += 1
+
+        self.store.delete_stale_sources(
+            active_sources,
+            source_kinds=frozenset(source_kinds),
+        )
+        return RetrievalIndexStats(
+            notes_indexed=notes_indexed,
+            files_indexed=files_indexed,
+            chunks_indexed=chunks_indexed,
+            skipped_files=skipped_files,
+        )
+
     def retrieve_sources(
         self,
         question: str,
@@ -110,10 +166,11 @@ class RetrievalService:
         if note_error:
             return [], note_error
 
-        self.rebuild_index(include_files=include_files)
+        self.sync_index(include_files=include_files)
+        source_kind = "note" if note_id is not None or not include_files else None
         sources = self.store.query(
             question,
-            source_kind="note" if note_id is not None else None,
+            source_kind=source_kind,
             source_id=note_id,
             module_id=module_id,
             assignment_id=assignment_id,

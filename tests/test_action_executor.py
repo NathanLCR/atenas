@@ -1,5 +1,7 @@
 """Tests for policy-checked action execution."""
 
+import logging
+
 from core.action_executor import ActionExecutor
 from core.schemas import ActionOutcome, ActionProposal
 
@@ -64,3 +66,29 @@ def test_handler_exception_is_caught() -> None:
     assert result.outcome == ActionOutcome.ERROR
     assert "boom" in result.message
 
+
+def test_action_audit_includes_policy_and_payload_summary(
+    caplog,
+) -> None:
+    """Execution audit should include actor, policy decision, outcome, and summary."""
+
+    executor = ActionExecutor()
+    executor.register_action("write_memory", lambda payload: "stored")
+    caplog.set_level(logging.INFO, logger="core.action_executor")
+
+    result = executor.execute(
+        ActionProposal(
+            action_type="write_memory",
+            payload={"actor_user_id": 123, "body": "sensitive-ish note body"},
+            confidence=0.9,
+            user_confirmed=True,
+        )
+    )
+
+    assert result.success is True
+    audit = [record for record in caplog.records if record.message == "action_executed"][-1]
+    assert audit.actor_user_id == 123
+    assert audit.policy_allowed is True
+    assert audit.policy_outcome == "success"
+    assert audit.outcome == "success"
+    assert audit.payload_summary["body"] == "<23 chars>"

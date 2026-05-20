@@ -9,7 +9,10 @@ from core.action_executor import ActionExecutor
 from core.academic.validators import CommandResult
 from core.nl.intent import (
     INTENT_ADD_ASSIGNMENT,
+    INTENT_ADD_CLASS,
     INTENT_ADD_NOTE,
+    INTENT_ADD_SHIFT,
+    INTENT_ARCHIVE_NOTE,
     INTENT_ASK_NOTES,
     INTENT_AVAILABILITY,
     INTENT_DEADLINES,
@@ -19,6 +22,7 @@ from core.nl.intent import (
     INTENT_NOTE_ACTION,
     INTENT_PLAN,
     INTENT_REMINDERS,
+    INTENT_SET_HOURS,
     INTENT_SET_STATUS,
     INTENT_STUDY,
     INTENT_TODAY,
@@ -206,6 +210,20 @@ class TestNLRouterWriteIntents:
         with pytest.raises(NLProposalError, match="Missing assignment title"):
             router.build_write_proposal(match, actor_user_id=123)
 
+    def test_build_add_assignment_proposal_invalid_due_rejects_without_mutation(self, tmp_db: Path) -> None:
+        router = _make_router(tmp_db)
+        match = IntentMatch(
+            intent=INTENT_ADD_ASSIGNMENT,
+            confidence=0.9,
+            slots={"title": "Bad date", "due_at": "someday maybe"},
+        )
+
+        with pytest.raises(NLProposalError, match="Invalid datetime"):
+            router.build_write_proposal(match, actor_user_id=123)
+
+        assignments = router._build_academic_service().list_all_assignments(include_completed=True)
+        assert assignments == []
+
     def test_execute_set_status(self, tmp_db: Path) -> None:
         router = _make_router(tmp_db)
         add_match = IntentMatch(
@@ -227,6 +245,23 @@ class TestNLRouterWriteIntents:
         result = _confirm_and_execute(router, status_match)
         assert isinstance(result, str)
 
+    def test_ambiguous_assignment_title_rejects_without_mutation(self, tmp_db: Path) -> None:
+        router = _make_router(tmp_db)
+        service = router._build_academic_service()
+        service.add_assignment(title="Essay", due_at="2026-06-01 23:59")
+        service.add_assignment(title="Essay", due_at="2026-06-02 23:59")
+        match = IntentMatch(
+            intent=INTENT_SET_STATUS,
+            confidence=0.9,
+            slots={"assignment_id_or_title": "Essay", "status": "done"},
+        )
+
+        with pytest.raises(NLProposalError, match="Multiple assignments"):
+            router.build_write_proposal(match, actor_user_id=123)
+
+        assignments = service.list_all_assignments(include_completed=True)
+        assert [assignment.status.value for assignment in assignments] == ["todo", "todo"]
+
     def test_execute_add_note(self, tmp_db: Path) -> None:
         router = _make_router(tmp_db)
         match = IntentMatch(
@@ -236,6 +271,68 @@ class TestNLRouterWriteIntents:
         )
         result = _confirm_and_execute(router, match)
         assert isinstance(result, str)
+
+    def test_execute_set_hours(self, tmp_db: Path) -> None:
+        router = _make_router(tmp_db)
+        added = router._build_academic_service().add_assignment(
+            title="Hours Test",
+            due_at="2026-06-01 23:59",
+            estimated_hours=5,
+        )
+        match = IntentMatch(
+            intent=INTENT_SET_HOURS,
+            confidence=0.9,
+            slots={"assignment_id_or_title": added.record_id or "", "completed_hours": "2.5"},
+        )
+
+        result = _confirm_and_execute(router, match)
+
+        assert "Progress updated" in result
+
+    def test_execute_add_class(self, tmp_db: Path) -> None:
+        router = _make_router(tmp_db)
+        match = IntentMatch(
+            intent=INTENT_ADD_CLASS,
+            confidence=0.9,
+            slots={"title": "NLP", "day": "mon", "start": "10:00", "end": "12:00"},
+        )
+
+        result = _confirm_and_execute(router, match)
+
+        assert "Class added" in result
+
+    def test_execute_add_shift(self, tmp_db: Path) -> None:
+        router = _make_router(tmp_db)
+        match = IntentMatch(
+            intent=INTENT_ADD_SHIFT,
+            confidence=0.9,
+            slots={
+                "title": "Work",
+                "start": "2026-06-01 16:00",
+                "end": "2026-06-01 23:00",
+            },
+        )
+
+        result = _confirm_and_execute(router, match)
+
+        assert "Work shift added" in result
+
+    def test_archive_note_is_destructive_proposal(self, tmp_db: Path) -> None:
+        router = _make_router(tmp_db)
+        note_result = router._build_knowledge_service().create_note(
+            title="Archive me",
+            body="Temporary note",
+        )
+        match = IntentMatch(
+            intent=INTENT_ARCHIVE_NOTE,
+            confidence=0.9,
+            slots={"note_id": note_result.record_id or ""},
+        )
+
+        proposal = router.build_write_proposal(match, actor_user_id=123)
+
+        assert proposal.approval_required is True
+        assert proposal.criticality == "destructive"
 
     def test_build_write_proposal_is_unconfirmed_and_does_not_mutate(self, tmp_db: Path) -> None:
         router = _make_router(tmp_db)

@@ -21,6 +21,8 @@ class TestPrompts:
         prompt = summarize_prompt(NOTE_BODY)
         assert NOTE_BODY in prompt
         assert "5 bullet points" in prompt
+        assert "<note>" in prompt
+        assert "untrusted study data" in prompt
 
     def test_explain_prompt_includes_note(self) -> None:
         prompt = explain_prompt(NOTE_BODY)

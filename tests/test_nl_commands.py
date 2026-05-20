@@ -249,6 +249,31 @@ class TestNLHandlerFallback:
 
 class TestNLHandlerEdgeCases:
     @pytest.mark.asyncio
+    async def test_unauthorized_user_does_not_invoke_classifier(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_db: Path,
+    ) -> None:
+        update = _make_update(user_id=404, text="what's my plan today?")
+        settings = Settings(
+            _env_file=None,
+            data_dir=tmp_db.parent,
+            telegram_allowed_user_ids=[123],
+        )
+        context = SimpleNamespace(
+            bot=SimpleNamespace(send_message=AsyncMock()),
+            user_data={},
+            bot_data={"settings": settings},
+        )
+        generate = MagicMock(side_effect=AssertionError("classifier should not run"))
+        monkeypatch.setattr(OllamaClient, "generate", generate)
+
+        await natural_language_handler(update, context)
+
+        generate.assert_not_called()
+        update.effective_message.reply_text.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_empty_message_ignored(self) -> None:
         update = _make_update(user_id=123, text="")
         context = _make_context()
