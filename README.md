@@ -67,11 +67,10 @@ docker-compose up
 
 ## Current Docs
 
+- `docs/AGENT_LOOP.md` is the canonical contract for the agent loop and the
+  action-tier governance model. Read it first.
 - `docs/PRODUCT_SPEC.md` defines the product posture.
-- `docs/ARCHITECTURE.md` defines the target tool-agent architecture.
+- `docs/ARCHITECTURE.md` defines the tool-agent architecture.
+- `docs/AGENT_POLICY.md` defines agent behavior and tool-use rules.
 - `docs/SECURITY.md` defines the local-only and Telegram security contract.
-- `docs/HANDOFF_NL_INTERFACE.md` is the active implementation handoff for the
-  Telegram LLM tool interface.
-- `docs/HANDOFF_PROPOSE_VALIDATE_APPROVE.md` is the handoff for making
-  proposal, validation, approval, policy, execution, and audit a system-wide
-  invariant.
+- `docs/REQUIREMENTS.md` defines functional and non-functional requirements.

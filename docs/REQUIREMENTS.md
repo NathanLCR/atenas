@@ -7,21 +7,23 @@ phase-order assumptions where they conflict.
 
 ## Functional Requirements
 
-### FR-00 — Proposal Governance Doctrine
+### FR-00 — Tiered Governance Doctrine
 
-- System MUST follow this doctrine: LLM proposes, deterministic systems
-  validate, human approves critical actions.
-- LLM/tool-agent output MUST be treated as a proposal until deterministic code
-  validates it.
-- Deterministic validation MUST include schema checks, domain constraints, ID
-  resolution, and service-level validation before mutation.
-- Critical actions MUST require human approval before execution.
-- In v1, all LLM-originated writes MUST be treated as critical actions.
-- Destructive changes, external communication, configuration changes,
-  sensitive data egress, and ambiguous target resolution MUST be critical
-  regardless of origin.
-- Successful mutation MUST require an auditable execution path through core
-  services.
+- System MUST run the LLM as a tool-calling agent loop, not a fixed intent
+  classifier. The full contract is `docs/AGENT_LOOP.md`.
+- LLM/tool-agent output MUST be treated as untrusted until deterministic code
+  validates it (schema checks, domain constraints, ID resolution, service-level
+  validation before mutation).
+- The action tier MUST be decided by code from the tool's declared category. The
+  model MUST NOT set confirmation flags or self-classify an action's tier.
+- Reversible, local, low-risk writes (auto tier) MAY execute directly after
+  validation and policy, and MUST be audit-logged.
+- Destructive changes (delete, dedup, clear, bulk), external communication,
+  data export, configuration changes, sensitive data egress, and ambiguous
+  target resolution (confirm-first tier) MUST require explicit human
+  confirmation before execution, regardless of origin.
+- Every state change MUST produce an auditable record through core services.
+- Any action whose tier is uncertain MUST default to confirm-first.
 
 ### FR-01 — Telegram-First Interface
 
@@ -45,26 +47,37 @@ phase-order assumptions where they conflict.
 
 ### FR-03 — LLM Tool Agent
 
-- System MUST provide the LLM with explicit Atenas tools.
-- Tools MUST have validated argument schemas and structured result schemas.
+- System MUST run an agent loop: the model calls a tool, observes the structured
+  result, and decides the next step, carrying the goal across iterations and
+  turns.
+- The loop MUST be bounded by a hard cap on tool calls per turn, after which the
+  agent summarizes or asks instead of looping.
+- System MUST provide the LLM with explicit Atenas tools that have validated
+  argument schemas and structured result schemas.
 - Tools MUST call application/core services; the LLM MUST NOT access services,
   repositories, files, or shell commands directly.
-- Tools MUST be classified as read, planning, write, or system.
-- Read tools MAY execute after Telegram allowlist validation.
-- Write tools MUST create pending action proposals instead of mutating directly.
-- Tool adapters MUST NOT call service write methods until deterministic
-  validation and required approval have succeeded.
+- Tools MUST be classified by category (read, compute, act) and act tools MUST
+  declare an action tier (auto or confirm-first).
+- Read and compute tools MAY execute after Telegram allowlist validation.
+- Auto-tier act tools MAY execute after validation and policy; confirm-first act
+  tools MUST create pending proposals instead of mutating directly.
+- System MUST add the compute and act tools needed to finish tasks (e.g. detect
+  and delete duplicate modules) so the agent does not degrade to a read.
 
-### FR-04 — Write Confirmation and Policy
+### FR-04 — Confirmation and Policy
 
-- System MUST require explicit Telegram confirmation before LLM-initiated writes.
-- System MUST resolve natural-language titles/modules to stable IDs before write execution.
-- System MUST validate all write proposals before policy evaluation.
-- System MUST pass every write through the policy engine before execution.
-- System MUST log policy decisions and action outcomes.
-- System MUST report failed writes clearly and MUST NOT silently drop them.
-- System MUST distinguish proposal success from execution success in user-facing
-  replies and logs.
+- System MUST require explicit Telegram confirmation before confirm-first
+  actions (destructive or egress); it MUST NOT require confirmation for
+  auto-tier writes.
+- System MUST resolve natural-language titles/modules to stable IDs before any
+  act execution.
+- System MUST validate every act proposal before policy evaluation.
+- System MUST pass every act through the policy engine before execution.
+- System MUST log policy decisions and action outcomes, with enough detail to
+  reconstruct what changed.
+- System MUST report failed actions clearly and MUST NOT silently drop them.
+- For confirm-first actions, System MUST distinguish proposal success from
+  execution success in user-facing replies and logs.
 
 ### FR-05 — Academic Scheduling
 
@@ -82,6 +95,28 @@ phase-order assumptions where they conflict.
 - The LLM MAY choose or explain tasks inside code-authored slots, but MUST NOT
   invent arbitrary times.
 - Plans MUST surface warnings when demand exceeds capacity.
+
+#### Plan-quality acceptance (falsifiable)
+
+A generated plan is accepted only if an automated check confirms ALL of the
+following on a seeded fixture week. Any violation rejects the plan.
+
+1. **No hard-block collision.** No study slot overlaps any work shift or class
+   session.
+2. **Availability bound.** Total scheduled study minutes ≤ computed available
+   minutes that day.
+3. **Fatigue caps respected.** No block exceeds its slot's `max_intensity`; no
+   `deep` block before 10:00 the morning after a shift ending ≥ 23:00; a
+   `high`-fatigue day has only `recovery`/`light` blocks.
+4. **Deadline coverage.** Every assignment with a deadline ≤ 72h and priority ≥
+   high gets ≥ 1 block before its deadline, or an explicit warning explaining
+   why it cannot.
+5. **Slot integrity.** Every `BlockAssignment.slot_id` references a real
+   code-authored slot; no times are LLM-authored.
+6. **Determinism.** Same inputs → same plan (LLM temperature pinned; ties broken
+   by a fixed rule), so the suite is reproducible.
+7. **Capacity honesty.** A heavy week (≥ 4 shifts) reduces total planned study
+   minutes by ≥ 30% vs. an otherwise-identical light week.
 
 ### FR-07 — Notes, Files, and Retrieval
 
@@ -124,6 +159,17 @@ phase-order assumptions where they conflict.
 - Dead placeholder modules MUST be implemented, documented as intentionally
   reserved, or removed.
 - Fake LLM telemetry MUST NOT be written as real LLM calls.
+
+### FR-12 — Web Access
+
+- Web search/fetch MUST be opt-in and disabled by default.
+- A web query MUST be treated as egress; sensitive records MUST NOT be sent in a
+  query without explicit consent.
+- Returned web content MUST be treated as untrusted data, delimited in prompts,
+  and MUST NOT grant tool permissions or trigger writes/external actions.
+- Any action prompted by web content MUST still pass the confirm-first tier.
+- Web-derived claims MUST be attributed as web sources, distinct from local
+  notes/files.
 
 ## Non-Functional Requirements
 
