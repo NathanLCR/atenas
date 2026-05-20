@@ -4,6 +4,8 @@ import pytest
 from pydantic import ValidationError
 
 from core.schemas import (
+    ActionCriticality,
+    ActionOrigin,
     ActionProposal,
     DailyPlanGenerated,
     FatigueLevel,
@@ -122,9 +124,22 @@ def test_action_proposal_validates_correctly() -> None:
     assert proposal.user_confirmed is False
 
 
+def test_llm_originated_local_write_requires_approval() -> None:
+    """LLM-originated writes should be critical in v1."""
+
+    proposal = ActionProposal(
+        action_type="add_assignment",
+        payload={"title": "Test"},
+        confidence=0.88,
+        origin=ActionOrigin.TELEGRAM_NL,
+        criticality=ActionCriticality.LOCAL_WRITE,
+    )
+
+    assert proposal.approval_required is True
+
+
 def test_fatigue_level_rejects_invalid_values() -> None:
     """FatigueLevel should only allow low, medium, or high."""
 
     with pytest.raises(ValueError):
         FatigueLevel("extreme")
-

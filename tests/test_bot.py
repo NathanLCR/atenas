@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Awaitable, Callable
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.config import Settings
 from app.bot import (
     AllowlistFilter,
+    build_application,
+    natural_language_handler,
     ping_command,
     skills_command,
     status_command,
@@ -52,6 +56,19 @@ async def test_allowlist_passes_known_user() -> None:
     await _dispatch_if_allowed(update, context, handler)
 
     assert reached is True
+
+
+def test_telegram_startup_requires_non_empty_allowlist() -> None:
+    """A configured Telegram token without allowed users should fail startup."""
+
+    settings = Settings(
+        _env_file=None,
+        telegram_bot_token="123:abc",
+        telegram_allowed_user_ids=[],
+    )
+
+    with pytest.raises(RuntimeError, match="TELEGRAM_ALLOWED_USER_IDS"):
+        build_application(settings)
 
 
 @pytest.mark.asyncio
@@ -133,3 +150,81 @@ def _make_context() -> SimpleNamespace:
     """Create the small Context surface used by tests."""
 
     return SimpleNamespace(bot=SimpleNamespace(send_message=AsyncMock()))
+
+
+def _make_context_with_settings() -> SimpleNamespace:
+    """Create a context with bot settings for natural language handler tests."""
+
+    settings = Settings(_env_file=None)
+    return SimpleNamespace(
+        bot=SimpleNamespace(send_message=AsyncMock()),
+        user_data={},
+        bot_data={"settings": settings},
+        chat_data={},
+    )
+
+
+@pytest.mark.asyncio
+async def test_natural_language_handler_greeting_calls_conversational_service(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Greeting messages should be handled by the conversational service."""
+
+    from core.llm.client import OllamaClient
+    from core.nl.classifier import NLClassifier
+    from core.llm.conversational import ConversationalService
+
+    update = _make_update(user_id=123, text="hello")
+    context = _make_context_with_settings()
+
+    mock_client = MagicMock(spec=OllamaClient)
+    mock_classifier = MagicMock(spec=NLClassifier)
+    mock_classifier.classify.return_value = SimpleNamespace(
+        intent="greeting",
+        confidence=0.95,
+        is_confident=True,
+        is_read=True,
+        is_write=False,
+    )
+    mock_conv_service = MagicMock(spec=ConversationalService)
+    mock_conv_service.generate_response.return_value = "Hi! I'm Atenas. How can I help you study today?"
+
+    monkeypatch.setattr("app.bot.OllamaClient", lambda **kwargs: mock_client)
+    monkeypatch.setattr("app.bot.NLClassifier", lambda client, timezone: mock_classifier)
+    monkeypatch.setattr("app.bot.ConversationalService", lambda client: mock_conv_service)
+
+    await natural_language_handler(update, context)
+
+    mock_conv_service.generate_response.assert_called_once_with("hello")
+    update.effective_message.reply_text.assert_awaited_once_with("Hi! I'm Atenas. How can I help you study today?")
+
+
+@pytest.mark.asyncio
+async def test_natural_language_handler_conversational_calls_service(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Conversational messages should be handled by the conversational service."""
+
+    from core.llm.client import OllamaClient
+    from core.nl.classifier import NLClassifier
+    from core.llm.conversational import ConversationalService
+
+    update = _make_update(user_id=123, text="how are you?")
+    context = _make_context_with_settings()
+
+    mock_client = MagicMock(spec=OllamaClient)
+    mock_classifier = MagicMock(spec=NLClassifier)
+    mock_classifier.classify.return_value = SimpleNamespace(
+        intent="conversational",
+        confidence=0.90,
+        is_confident=True,
+        is_read=True,
+        is_write=False,
+    )
+    mock_conv_service = MagicMock(spec=ConversationalService)
+    mock_conv_service.generate_response.return_value = "I'm doing well! Ready to help you study."
+
+    monkeypatch.setattr("app.bot.OllamaClient", lambda **kwargs: mock_client)
+    monkeypatch.setattr("app.bot.NLClassifier", lambda client, timezone: mock_classifier)
+    monkeypatch.setattr("app.bot.ConversationalService", lambda client: mock_conv_service)
+
+    await natural_language_handler(update, context)
+
+    mock_conv_service.generate_response.assert_called_once_with("how are you?")
+    update.effective_message.reply_text.assert_awaited_once_with("I'm doing well! Ready to help you study.")

@@ -2,7 +2,7 @@
 
 ## Status
 
-Target security contract as of 2026-05-19. This document describes required
+Target security contract as of 2026-05-20. This document describes required
 behavior. If implementation differs, the implementation is non-compliant until
 fixed.
 
@@ -19,6 +19,8 @@ Atenas is a single-user, local-running assistant.
   allowlist enforcement is mandatory.
 - Local Ollama is the default LLM provider. External LLM providers are opt-in
   data egress.
+- Security follows the project doctrine: LLM proposes, deterministic systems
+  validate, human approves critical actions.
 
 ## Threat Model
 
@@ -29,6 +31,7 @@ Atenas is a single-user, local-running assistant.
 | LLM prompt injection through notes/files | Medium | High | Delimited prompts, no tool execution from retrieved text |
 | LLM hallucinated tool/action schema | Medium | High | Tool schemas, Pydantic validation, policy engine |
 | Accidental destructive write | Medium | High | Pending proposal + explicit confirmation |
+| LLM-proposed unsafe mutation | Medium | High | Proposal-only tools, deterministic validation, human approval |
 | Sensitive content in logs | Medium | Medium | Log metadata by default, redact prompt/response unless debug |
 | External LLM data leakage | Low-Medium | High | Disabled by default, explicit opt-in, provider disclosure |
 | Dependency compromise | Low | Medium | Pinned dependencies, audit before release |
@@ -58,21 +61,26 @@ Atenas is a single-user, local-running assistant.
 The LLM may call Atenas tools. It may not call repositories, services, Python
 functions, shell commands, or filesystem paths directly.
 
+The LLM has proposal authority, not mutation authority. A proposed tool call is
+untrusted until deterministic code validates it. A validated write proposal is
+still not executable until the required human and policy gates pass.
+
 ### Tool classes
 
 | Tool class | Examples | Rule |
 |---|---|---|
 | Read | status, today, week, list assignments, search notes, retrieve sources | Allowed after Telegram allowlist validation |
 | Planning | generate plan, suggest next task, explain deadline risk | Allowed after auth; deterministic service constraints still apply |
-| Write | add assignment, set status, add note, add shift, add class, archive note | Must create pending action, require confirmation, pass policy |
+| Write | add assignment, set status, add note, add shift, add class, archive note | LLM may create pending proposals only; code validates, human confirms, policy approves |
 | System | health, local LLM status, safe config summary | Read-only; never reveal secrets |
 
 ### Write contract
 
-Every write initiated through Telegram/LLM tooling must follow this path:
+Every LLM-originated write must follow this path:
 
 ```text
 authenticated user
+  -> LLM proposal
   -> validated tool arguments
   -> natural-language labels resolved to stable IDs
   -> pending action summary shown in Telegram
@@ -84,6 +92,21 @@ authenticated user
 
 The LLM never sets confirmation flags. Code sets confirmation only after the
 authenticated user confirms in Telegram.
+
+### Critical Action Classes
+
+The following actions always require human approval before execution:
+
+- LLM-originated writes of any kind.
+- Destructive changes, including deletes, archive operations, and bulk clears.
+- External communication or data export.
+- Configuration changes.
+- Sensitive data egress to an external LLM provider.
+- Any action where deterministic validation cannot uniquely resolve the target.
+
+Future specs may classify a narrow set of deterministic, local, low-risk slash
+commands differently, but they must still be allowlisted, validated, audited,
+and policy-checked where applicable.
 
 ## Forbidden Actions
 
@@ -199,8 +222,10 @@ If a forbidden or invalid action is attempted:
 The following implementation gaps must be resolved before treating this policy
 as enforced:
 
-- Dashboard/API bind and Docker publish must be localhost-only.
+- Dashboard/API bind and Docker publish must remain localhost-only and covered
+  by tests or deployment checks.
 - Empty Telegram allowlist must fail startup when Telegram is enabled.
-- LLM/NL writes must route through confirmation plus policy, not direct service writes.
+- LLM/NL writes must route through proposal, validation, confirmation, policy,
+  service execution, and audit, not direct service writes.
 - REST endpoints must stop using a fake `user_id=0` actor.
 - Prompt templates must delimit untrusted user/source text.

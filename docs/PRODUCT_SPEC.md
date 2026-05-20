@@ -7,7 +7,7 @@ Atenas
 `study-agent-cd`
 
 ## Status
-Target product contract as of 2026-05-19. This document describes the intended
+Target product contract as of 2026-05-20. This document describes the intended
 local-running, Telegram-first system. If implementation differs, the code is
 behind the spec.
 
@@ -21,6 +21,24 @@ Atenas helps students who also work manage classes, work shifts, assignments,
 deadlines, notes, files, retrieval, and study plans. The primary interaction is
 Telegram. The LLM can answer naturally and call controlled Atenas tools, while
 code owns validation, policy, scheduling math, and persistence.
+
+## Operating Doctrine
+
+```text
+LLM proposes.
+Deterministic systems validate.
+Human approves critical actions.
+```
+
+This doctrine is a product invariant, not an implementation detail. The LLM is
+used for interpretation, synthesis, and proposing actions. Deterministic code
+owns schemas, ID resolution, policy checks, scheduling constraints, and
+persistence. The human owns approval for any critical action.
+
+For v1, every LLM-originated write is treated as critical. Destructive actions,
+external messages, configuration changes, sensitive data egress, and bulk
+changes are critical regardless of whether they originate from the LLM, a slash
+command, or a local API path.
 
 ## Primary Question Atenas Answers
 > What should I study today or this week, given my classes, work shifts, deadlines, notes, and energy?
@@ -72,7 +90,7 @@ code owns validation, policy, scheduling math, and persistence.
 | Study planning | Generate realistic daily and weekly study plans |
 | Retrieval | Answer questions over registered notes/files with explicit sources |
 | LLM study help | Summarise, explain, draft questions, rewrite, and generate flashcards from selected local context |
-| Controlled writes | Add or update academic data only after confirmation and policy checks |
+| Governed writes | Add or update academic data only through proposal, validation, approval, policy, and audit |
 
 ---
 
@@ -99,9 +117,9 @@ host.
 1. **Spec before code.** No feature is implemented without a written spec.
 2. **Telegram first.** Optimize the product around the Telegram experience.
 3. **Local-running by default.** SQLite, files, dashboard, and API stay local.
-4. **LLM decides meaning. Tools execute capabilities. Code controls actions.**
+4. **LLM proposes. Deterministic systems validate. Human approves critical actions.**
 5. **Tool calls are structured.** The LLM never imports repositories or calls services directly.
-6. **Read and write are different trust levels.** Reads may run after allowlist auth; writes require confirmation and policy.
+6. **Read and write are different trust levels.** Reads may run after allowlist auth; LLM-originated writes require confirmation and policy.
 7. **All tool arguments and LLM outputs are validated before acting.**
 8. **Memory and logs must be human-inspectable.**
 9. **No unrestricted autonomous shell execution.**
@@ -124,7 +142,7 @@ Atenas v1 is complete when it can:
 2. Preserve slash commands as deterministic shortcuts.
 3. Let the LLM call read tools for status, schedule, planning, notes, files, and retrieval.
 4. Let the LLM propose write tools for assignments, notes, schedule data, and statuses.
-5. Execute write tools only after confirmation and policy approval.
+5. Execute LLM-originated write tools only after deterministic validation, human confirmation, policy approval, and audit logging.
 6. Display a simple local read-only dashboard.
 7. Store memory safely and consistently.
 8. Search memory by keyword and retrieve over registered notes/files.

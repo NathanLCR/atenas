@@ -118,6 +118,26 @@ class ActionOutcome(StrEnum):
     ERROR = "error"
 
 
+class ActionOrigin(StrEnum):
+    """Where an action proposal originated."""
+
+    SYSTEM = "system"
+    TELEGRAM_NL = "telegram_nl"
+    TELEGRAM_COMMAND = "telegram_command"
+    LOCAL_API = "local_api"
+
+
+class ActionCriticality(StrEnum):
+    """Criticality class used by deterministic policy checks."""
+
+    READ_ONLY = "read_only"
+    PLANNING = "planning"
+    LOCAL_WRITE = "local_write"
+    DESTRUCTIVE = "destructive"
+    EXTERNAL = "external"
+    CONFIG = "config"
+
+
 class WorkShiftItem(StrictModel):
     """Single work shift extracted from user input."""
 
@@ -343,7 +363,24 @@ class ActionProposal(StrictModel):
     payload: dict[str, Any]
     confidence: float = Field(ge=0.0, le=1.0)
     user_confirmed: bool = False
+    origin: ActionOrigin = ActionOrigin.SYSTEM
+    criticality: ActionCriticality = ActionCriticality.LOCAL_WRITE
     reason: str | None = None
+
+    @property
+    def approval_required(self) -> bool:
+        """Whether deterministic policy must require human confirmation."""
+
+        if self.criticality in {
+            ActionCriticality.DESTRUCTIVE,
+            ActionCriticality.EXTERNAL,
+            ActionCriticality.CONFIG,
+        }:
+            return True
+        return (
+            self.origin == ActionOrigin.TELEGRAM_NL
+            and self.criticality == ActionCriticality.LOCAL_WRITE
+        )
 
 
 class ActionResult(StrictModel):
