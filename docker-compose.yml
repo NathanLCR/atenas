@@ -2,7 +2,7 @@ services:
   atenas:
     build: .
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./data:/app/data
       - ./logs:/app/logs
@@ -12,4 +12,3 @@ services:
     env_file:
       - .env
     restart: unless-stopped
-

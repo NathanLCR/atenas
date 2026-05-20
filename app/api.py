@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request
 
 router = APIRouter()
+LOCAL_API_READ_ACTOR_ID = -1
 
 
 @router.get("/health")
@@ -18,7 +19,10 @@ async def health() -> dict[str, str]:
 async def status(request: Request) -> dict[str, str]:
     """Return the status skill response."""
 
-    response = await request.app.state.registry.dispatch("/status", user_id=0)
+    response = await request.app.state.registry.dispatch(
+        "/status",
+        user_id=LOCAL_API_READ_ACTOR_ID,
+    )
     return {"response": response}
 
 
@@ -26,5 +30,8 @@ async def status(request: Request) -> dict[str, str]:
 async def skills(request: Request) -> dict[str, str]:
     """Return the skills listing response."""
 
-    response = await request.app.state.registry.dispatch("/skills", user_id=0)
+    response = await request.app.state.registry.dispatch(
+        "/skills",
+        user_id=LOCAL_API_READ_ACTOR_ID,
+    )
     return {"response": response}

@@ -2,10 +2,26 @@
 
 ## Status
 
-Target requirements as of 2026-05-19. These requirements supersede older
+Target requirements as of 2026-05-20. These requirements supersede older
 phase-order assumptions where they conflict.
 
 ## Functional Requirements
+
+### FR-00 — Proposal Governance Doctrine
+
+- System MUST follow this doctrine: LLM proposes, deterministic systems
+  validate, human approves critical actions.
+- LLM/tool-agent output MUST be treated as a proposal until deterministic code
+  validates it.
+- Deterministic validation MUST include schema checks, domain constraints, ID
+  resolution, and service-level validation before mutation.
+- Critical actions MUST require human approval before execution.
+- In v1, all LLM-originated writes MUST be treated as critical actions.
+- Destructive changes, external communication, configuration changes,
+  sensitive data egress, and ambiguous target resolution MUST be critical
+  regardless of origin.
+- Successful mutation MUST require an auditable execution path through core
+  services.
 
 ### FR-01 — Telegram-First Interface
 
@@ -36,6 +52,8 @@ phase-order assumptions where they conflict.
 - Tools MUST be classified as read, planning, write, or system.
 - Read tools MAY execute after Telegram allowlist validation.
 - Write tools MUST create pending action proposals instead of mutating directly.
+- Tool adapters MUST NOT call service write methods until deterministic
+  validation and required approval have succeeded.
 
 ### FR-04 — Write Confirmation and Policy
 
@@ -45,6 +63,8 @@ phase-order assumptions where they conflict.
 - System MUST pass every write through the policy engine before execution.
 - System MUST log policy decisions and action outcomes.
 - System MUST report failed writes clearly and MUST NOT silently drop them.
+- System MUST distinguish proposal success from execution success in user-facing
+  replies and logs.
 
 ### FR-05 — Academic Scheduling
 

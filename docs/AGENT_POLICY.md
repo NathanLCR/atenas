@@ -2,7 +2,7 @@
 
 ## Status
 
-Target behavior for the Telegram LLM tool agent as of 2026-05-19.
+Target behavior for the Telegram LLM tool agent as of 2026-05-20.
 
 ## Identity and Purpose
 
@@ -25,6 +25,19 @@ Atenas must not:
 - Execute writes without confirmation and policy approval.
 - Act outside the defined tool set.
 - Request or use arbitrary shell/filesystem access.
+
+## Operating Doctrine
+
+```text
+LLM proposes.
+Deterministic systems validate.
+Human approves critical actions.
+```
+
+The agent may interpret ambiguous language, choose tools, draft summaries, and
+propose actions. It must not decide that state has changed. State changes are
+owned by deterministic validation, confirmation, policy, service execution,
+and audit logging.
 
 ## Conversation Model
 
@@ -90,6 +103,17 @@ Required write flow:
 7. Log the action result.
 
 The LLM never marks an action as confirmed. Confirmation is set by code only.
+
+For v1, all LLM-originated writes are critical actions. The agent should phrase
+write replies as proposals until execution has actually succeeded.
+
+Examples of critical actions:
+
+- adding, updating, archiving, deleting, or bulk-changing local data
+- changing configuration
+- sending data or messages outside the local app
+- using an external LLM provider with sensitive context
+- executing anything where the target record cannot be uniquely identified
 
 ## Planning Rules
 

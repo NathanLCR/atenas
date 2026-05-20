@@ -33,6 +33,7 @@ CONFIRMATION_REQUIRED: frozenset[str] = frozenset(
         "change_config",
         "send_external_message",
         "archive_plan",
+        "archive_note",
     }
 )
 
@@ -48,7 +49,10 @@ ALLOWED_ACTIONS: frozenset[str] = frozenset(
         "add_work_shift",
         "add_class_session",
         "add_assignment",
+        "add_note",
         "add_task",
+        "set_assignment_status",
+        "set_assignment_hours",
         "generate_plan",
         "generate_flashcards",
         "update_matrix",
@@ -78,7 +82,16 @@ class PolicyEngine:
                 outcome=ActionOutcome.BLOCKED,
                 reason=f"Forbidden action: {proposal.action_type}",
             )
-        elif proposal.action_type in CONFIRMATION_REQUIRED:
+        elif (
+            proposal.action_type not in ALLOWED_ACTIONS
+            and proposal.action_type not in CONFIRMATION_REQUIRED
+        ):
+            decision = PolicyDecision(
+                allowed=False,
+                outcome=ActionOutcome.BLOCKED,
+                reason=f"Unknown action type (not in allowlist): {proposal.action_type}",
+            )
+        elif proposal.action_type in CONFIRMATION_REQUIRED or proposal.approval_required:
             if proposal.user_confirmed:
                 decision = PolicyDecision(
                     allowed=True,
@@ -91,17 +104,11 @@ class PolicyEngine:
                     outcome=ActionOutcome.NEEDS_CONFIRMATION,
                     reason=f"Action requires explicit confirmation: {proposal.action_type}",
                 )
-        elif proposal.action_type in ALLOWED_ACTIONS:
+        else:
             decision = PolicyDecision(
                 allowed=True,
                 outcome=ActionOutcome.SUCCESS,
                 reason="Action allowed by policy.",
-            )
-        else:
-            decision = PolicyDecision(
-                allowed=False,
-                outcome=ActionOutcome.BLOCKED,
-                reason=f"Unknown action type (not in allowlist): {proposal.action_type}",
             )
 
         logger.info(
@@ -109,10 +116,10 @@ class PolicyEngine:
             extra={
                 "event_type": "policy_decision",
                 "action_type": proposal.action_type,
+                "actor_user_id": proposal.payload.get("actor_user_id"),
                 "allowed": decision.allowed,
                 "outcome": decision.outcome.value,
                 "reason": decision.reason,
             },
         )
         return decision
-
