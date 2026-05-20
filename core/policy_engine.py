@@ -48,7 +48,9 @@ ALLOWED_ACTIONS: frozenset[str] = frozenset(
         "add_work_shift",
         "add_class_session",
         "add_assignment",
+        "add_note",
         "add_task",
+        "set_assignment_status",
         "generate_plan",
         "generate_flashcards",
         "update_matrix",
@@ -109,10 +111,10 @@ class PolicyEngine:
             extra={
                 "event_type": "policy_decision",
                 "action_type": proposal.action_type,
+                "actor_user_id": proposal.payload.get("actor_user_id"),
                 "allowed": decision.allowed,
                 "outcome": decision.outcome.value,
                 "reason": decision.reason,
             },
         )
         return decision
-

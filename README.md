@@ -8,6 +8,14 @@ The current target is an LLM agent that can answer in Telegram and call
 controlled Atenas tools for scheduling, planning, notes, retrieval, and data
 updates. Slash commands remain supported as fast shortcuts.
 
+The operating doctrine is:
+
+```text
+LLM proposes.
+Deterministic systems validate.
+Human approves critical actions.
+```
+
 ## Product Posture
 
 - Single-user and local-only by default.
@@ -16,8 +24,9 @@ updates. Slash commands remain supported as fast shortcuts.
 - Local Ollama is the default LLM provider. Any external LLM provider is
   explicit opt-in because prompt and tool-result data leave the machine.
 - Read tools may run after Telegram allowlist validation.
-- Write tools must resolve stable IDs, show a pending action, require explicit
-  confirmation, pass the policy engine, and log the result.
+- LLM-originated writes must resolve stable IDs, show a pending action, require
+  explicit confirmation, pass the policy engine, execute through services, and
+  log the result.
 
 ## Run
 
@@ -63,3 +72,6 @@ docker-compose up
 - `docs/SECURITY.md` defines the local-only and Telegram security contract.
 - `docs/HANDOFF_NL_INTERFACE.md` is the active implementation handoff for the
   Telegram LLM tool interface.
+- `docs/HANDOFF_PROPOSE_VALIDATE_APPROVE.md` is the handoff for making
+  proposal, validation, approval, policy, execution, and audit a system-wide
+  invariant.

@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
+from core.action_executor import ActionExecutor
 from core.academic.service import AcademicService
-from core.academic.validators import CommandResult, parse_kv_args
+from core.academic.validators import CommandResult, validate_hours, validate_priority, validate_status
 from core.knowledge.service import KnowledgeService
 from core.llm.service import LLMService
 from core.nl.intent import (
@@ -32,11 +33,25 @@ from core.nl.intent import (
 )
 from core.notifications.service import NotificationService
 from core.retrieval.service import RetrievalService
+from core.schemas import ActionOutcome, ActionProposal, ActionResult
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+ACTION_SET_ASSIGNMENT_STATUS = "set_assignment_status"
+ACTION_ADD_NOTE = "add_note"
+ACTOR_PAYLOAD_KEY = "actor_user_id"
+
+PRIORITY_LABELS: dict[str, int] = {
+    "low": 1,
+    "medium": 3,
+    "normal": 3,
+    "high": 5,
+    "critical": 5,
+    "urgent": 5,
+}
 
 SLASH_COMMAND_SUGGESTIONS: dict[str, str] = {
     INTENT_TODAY: "/today",
@@ -57,6 +72,10 @@ SLASH_COMMAND_SUGGESTIONS: dict[str, str] = {
 }
 
 
+class NLProposalError(ValueError):
+    """Raised when a natural-language write cannot become a safe proposal."""
+
+
 class NLRouter:
     """Routes classified intents to existing service calls."""
 
@@ -67,12 +86,15 @@ class NLRouter:
         ollama_base_url: str = "http://localhost:11434",
         ollama_model: str = "llama3.1:8b",
         ollama_timeout: int = 60,
+        action_executor: ActionExecutor | None = None,
     ) -> None:
         self._db_path = db_path
         self._tz = timezone
         self._ollama_base_url = ollama_base_url
         self._ollama_model = ollama_model
         self._ollama_timeout = ollama_timeout
+        self._action_executor = action_executor or ActionExecutor()
+        self._register_write_handlers()
 
     def route_read(self, match: IntentMatch) -> str:
         """Execute a read intent and return the response text."""
@@ -102,25 +124,86 @@ class NLRouter:
             return self._reminders()
         return self._fallback(match)
 
-    def build_confirmation(self, match: IntentMatch) -> str:
-        """Build a confirmation message for a write intent."""
+    def build_write_proposal(
+        self,
+        match: IntentMatch,
+        *,
+        actor_user_id: int | None,
+    ) -> ActionProposal:
+        """Validate a write intent into a pending action proposal.
+
+        This is the mutation boundary: the LLM/classifier may suggest slots,
+        but code authors the ActionProposal and leaves user_confirmed false.
+        """
+
         if match.intent == INTENT_ADD_ASSIGNMENT:
-            return self._confirm_add_assignment(match.slots)
-        if match.intent == INTENT_SET_STATUS:
-            return self._confirm_set_status(match.slots)
-        if match.intent == INTENT_ADD_NOTE:
-            return self._confirm_add_note(match.slots)
+            action_type = INTENT_ADD_ASSIGNMENT
+            payload = self._payload_add_assignment(match.slots)
+        elif match.intent == INTENT_SET_STATUS:
+            action_type = ACTION_SET_ASSIGNMENT_STATUS
+            payload = self._payload_set_status(match.slots)
+        elif match.intent == INTENT_ADD_NOTE:
+            action_type = ACTION_ADD_NOTE
+            payload = self._payload_add_note(match.slots)
+        else:
+            raise NLProposalError("I'm not sure what to do. Try /help.")
+
+        if actor_user_id is not None:
+            payload[ACTOR_PAYLOAD_KEY] = actor_user_id
+
+        return ActionProposal(
+            action_type=action_type,
+            payload=payload,
+            confidence=match.confidence,
+            user_confirmed=False,
+            reason=f"Telegram natural-language intent: {match.intent}",
+        )
+
+    def build_confirmation(self, pending: IntentMatch | ActionProposal) -> str:
+        """Build a confirmation message for a write intent."""
+        proposal = self._coerce_pending_proposal(pending, actor_user_id=None)
+        if proposal.action_type == INTENT_ADD_ASSIGNMENT:
+            return self._confirm_add_assignment(proposal.payload)
+        if proposal.action_type == ACTION_SET_ASSIGNMENT_STATUS:
+            return self._confirm_set_status(proposal.payload)
+        if proposal.action_type == ACTION_ADD_NOTE:
+            return self._confirm_add_note(proposal.payload)
         return "I'm not sure what to do. Try /help."
 
     def execute_write(self, match: IntentMatch) -> str:
-        """Execute a confirmed write intent and return the result."""
-        if match.intent == INTENT_ADD_ASSIGNMENT:
-            return self._execute_add_assignment(match.slots)
-        if match.intent == INTENT_SET_STATUS:
-            return self._execute_set_status(match.slots)
-        if match.intent == INTENT_ADD_NOTE:
-            return self._execute_add_note(match.slots)
-        return "Unknown write intent."
+        """Refuse direct write execution without an explicit confirmation step."""
+
+        return 'Write intent requires explicit confirmation. Reply "yes" to confirm first.'
+
+    def execute_confirmed_write(
+        self,
+        pending: IntentMatch | ActionProposal,
+        *,
+        actor_user_id: int | None,
+    ) -> str:
+        """Mark a pending proposal confirmed and execute via ActionExecutor."""
+
+        try:
+            proposal = self._coerce_pending_proposal(pending, actor_user_id=actor_user_id)
+        except NLProposalError as exc:
+            return str(exc)
+
+        proposal_actor = proposal.payload.get(ACTOR_PAYLOAD_KEY)
+        if (
+            actor_user_id is not None
+            and proposal_actor is not None
+            and proposal_actor != actor_user_id
+        ):
+            return "Confirmation cancelled because the Telegram user changed."
+
+        payload = dict(proposal.payload)
+        if actor_user_id is not None:
+            payload[ACTOR_PAYLOAD_KEY] = actor_user_id
+        confirmed = proposal.model_copy(
+            update={"payload": payload, "user_confirmed": True}
+        )
+        result = self._action_executor.execute(confirmed)
+        return result.message
 
     def suggest_command(self, match: IntentMatch) -> str:
         """Suggest the closest slash command for an unclear intent."""
@@ -128,6 +211,144 @@ class NLRouter:
         if cmd:
             return f"I'm not entirely sure what you mean. Try: {cmd}"
         return f"I didn't understand that. You can try /ask_notes with your question, or use /status to see available commands."
+
+    def _register_write_handlers(self) -> None:
+        """Register NL write handlers on this router's policy executor."""
+
+        self._action_executor.register_action(INTENT_ADD_ASSIGNMENT, self._handle_add_assignment)
+        self._action_executor.register_action(
+            ACTION_SET_ASSIGNMENT_STATUS,
+            self._handle_set_assignment_status,
+        )
+        self._action_executor.register_action(ACTION_ADD_NOTE, self._handle_add_note)
+
+    def _coerce_pending_proposal(
+        self,
+        pending: IntentMatch | ActionProposal,
+        *,
+        actor_user_id: int | None,
+    ) -> ActionProposal:
+        """Restore older pending shapes into the current ActionProposal form."""
+
+        if isinstance(pending, ActionProposal):
+            return pending
+        if isinstance(pending, IntentMatch):
+            return self.build_write_proposal(pending, actor_user_id=actor_user_id)
+        raise NLProposalError("Pending action could not be restored. Please try again.")
+
+    def _payload_add_assignment(self, slots: dict[str, str]) -> dict[str, Any]:
+        title = self._required_slot(slots, "title", label="assignment title")
+        due = self._required_slot(slots, "due_at", "due", label="due date")
+        payload: dict[str, Any] = {
+            "title": title,
+            "due_at": due,
+            "priority": self._parse_priority(slots.get("priority")),
+        }
+        module_id = self._optional_slot(slots, "module_id", "module")
+        if module_id:
+            payload["module_id"] = module_id
+        estimated_hours = self._parse_estimated_hours(slots.get("estimated_hours"))
+        if estimated_hours is not None:
+            payload["estimated_hours"] = estimated_hours
+        notes = self._optional_slot(slots, "notes")
+        if notes:
+            payload["notes"] = notes
+        return payload
+
+    def _payload_set_status(self, slots: dict[str, str]) -> dict[str, Any]:
+        assignment = self._required_slot(
+            slots,
+            "assignment_id",
+            "assignment_id_or_title",
+            "assignment",
+            label="assignment",
+        )
+        status = self._required_slot(slots, "status", label="status").lower()
+        validated_status = validate_status(status)
+        if validated_status is None:
+            return {"assignment_id": assignment, "status": status}
+
+        assignment_id, assignment_title = self._resolve_assignment_id(assignment)
+        return {
+            "assignment_id": assignment_id,
+            "assignment_title": assignment_title,
+            "status": validated_status,
+        }
+
+    def _payload_add_note(self, slots: dict[str, str]) -> dict[str, Any]:
+        title = self._required_slot(slots, "title", label="note title")
+        body = self._required_slot(slots, "content", "body", label="note body")
+        payload: dict[str, Any] = {"title": title, "body": body}
+        module_id = self._optional_slot(slots, "module_id", "module")
+        if module_id:
+            payload["module_id"] = module_id
+        assignment_id = self._optional_slot(slots, "assignment_id", "assignment")
+        if assignment_id:
+            payload["assignment_id"] = assignment_id
+        tags = self._parse_tags(slots.get("tags"))
+        if tags:
+            payload["tags"] = tags
+        return payload
+
+    def _required_slot(self, slots: dict[str, str], *names: str, label: str) -> str:
+        value = self._optional_slot(slots, *names)
+        if value is None:
+            raise NLProposalError(f"Missing {label}.")
+        return value
+
+    def _optional_slot(self, slots: dict[str, str], *names: str) -> str | None:
+        for name in names:
+            value = slots.get(name)
+            if value is None:
+                continue
+            trimmed = str(value).strip()
+            if trimmed:
+                return trimmed
+        return None
+
+    def _parse_priority(self, value: str | None) -> int:
+        if value is None:
+            return 3
+        normalized = value.strip().lower()
+        if normalized in PRIORITY_LABELS:
+            return PRIORITY_LABELS[normalized]
+        priority = validate_priority(normalized)
+        if priority is None:
+            raise NLProposalError("Priority must be between 1 and 5.")
+        return priority
+
+    def _parse_estimated_hours(self, value: str | None) -> float | None:
+        if value is None or not str(value).strip():
+            return None
+        hours = validate_hours(value)
+        if hours is None:
+            raise NLProposalError("Estimated hours must be between 0 and 1000.")
+        return hours
+
+    def _parse_tags(self, value: str | None) -> list[str] | None:
+        if value is None:
+            return None
+        tags = [tag.strip() for tag in value.split(",") if tag.strip()]
+        return tags or None
+
+    def _resolve_assignment_id(self, value: str) -> tuple[str, str]:
+        service = self._build_academic_service()
+        existing = service.repository.get_assignment_by_id(value)
+        if existing is not None:
+            return existing.id, existing.title
+
+        matches = [
+            assignment
+            for assignment in service.list_all_assignments(include_completed=True)
+            if assignment.title.casefold() == value.casefold()
+        ]
+        if len(matches) == 1:
+            return matches[0].id, matches[0].title
+        if len(matches) > 1:
+            raise NLProposalError(
+                "Multiple assignments match that title. Use the assignment ID."
+            )
+        raise NLProposalError(f"Assignment not found: {value}")
 
     def _build_academic_service(self) -> AcademicService:
         return AcademicService(self._db_path, timezone=self._tz)
@@ -251,6 +472,47 @@ class NLRouter:
             lines.extend(["", overdue_msg])
         return "\n".join(lines)
 
+    def _handle_add_assignment(self, payload: dict[str, Any]) -> ActionResult:
+        service = self._build_academic_service()
+        result = service.add_assignment(
+            title=payload["title"],
+            due_at=payload["due_at"],
+            module_id=payload.get("module_id"),
+            priority=payload.get("priority", 3),
+            estimated_hours=payload.get("estimated_hours"),
+            notes=payload.get("notes"),
+        )
+        return self._action_result(INTENT_ADD_ASSIGNMENT, result)
+
+    def _handle_set_assignment_status(self, payload: dict[str, Any]) -> ActionResult:
+        service = self._build_academic_service()
+        result = service.update_assignment_status(
+            payload["assignment_id"],
+            payload["status"],
+        )
+        return self._action_result(ACTION_SET_ASSIGNMENT_STATUS, result)
+
+    def _handle_add_note(self, payload: dict[str, Any]) -> ActionResult:
+        service = self._build_knowledge_service()
+        result = service.create_note(
+            title=payload["title"],
+            body=payload["body"],
+            module_id=payload.get("module_id"),
+            assignment_id=payload.get("assignment_id"),
+            source_type="manual",
+            tags=payload.get("tags"),
+        )
+        return self._action_result(ACTION_ADD_NOTE, result)
+
+    def _action_result(self, action_type: str, result: CommandResult) -> ActionResult:
+        payload = {"record_id": result.record_id} if result.record_id else {}
+        return ActionResult(
+            action_type=action_type,
+            outcome=ActionOutcome.SUCCESS if result.success else ActionOutcome.ERROR,
+            message=result.message,
+            payload=payload,
+        )
+
     def _fallback(self, match: IntentMatch) -> str:
         query = match.slots.get("query", "")
         if query:
@@ -274,7 +536,10 @@ class NLRouter:
         )
 
     def _confirm_set_status(self, slots: dict[str, str]) -> str:
-        assignment = slots.get("assignment_id_or_title", slots.get("assignment", "not specified"))
+        assignment = slots.get(
+            "assignment_title",
+            slots.get("assignment_id", slots.get("assignment_id_or_title", "not specified")),
+        )
         status = slots.get("status", "not specified")
         return (
             f"Update assignment status?\n"
@@ -285,7 +550,7 @@ class NLRouter:
 
     def _confirm_add_note(self, slots: dict[str, str]) -> str:
         title = slots.get("title", "Untitled note")
-        content_preview = slots.get("content", "")[:100]
+        content_preview = slots.get("body", slots.get("content", ""))[:100]
         return (
             f"Add note?\n"
             f"Title: {title}\n"

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
 import pytest
 
+from core.action_executor import ActionExecutor
+from core.academic.validators import CommandResult
 from core.nl.intent import (
     INTENT_ADD_ASSIGNMENT,
     INTENT_ADD_NOTE,
@@ -26,7 +26,9 @@ from core.nl.intent import (
     INTENT_WEEK,
     IntentMatch,
 )
-from core.nl.router import NLRouter
+from core.nl.router import ACTOR_PAYLOAD_KEY, NLProposalError, NLRouter
+from core.policy_engine import PolicyDecision, PolicyEngine
+from core.schemas import ActionOutcome, ActionProposal
 
 
 def _make_router(db_path: Path) -> NLRouter:
@@ -37,6 +39,11 @@ def _make_router(db_path: Path) -> NLRouter:
         ollama_model="llama3.1:8b",
         ollama_timeout=30,
     )
+
+
+def _confirm_and_execute(router: NLRouter, match: IntentMatch) -> str:
+    proposal = router.build_write_proposal(match, actor_user_id=123)
+    return router.execute_confirmed_write(proposal, actor_user_id=123)
 
 
 class TestNLRouterReadIntents:
@@ -118,11 +125,12 @@ class TestNLRouterReadIntents:
         result = router.route_read(match)
         assert "What would you like to search" in result
 
-    def test_fallback_with_query(self, tmp_db: Path) -> None:
+    def test_fallback_with_query(self, monkeypatch: pytest.MonkeyPatch, tmp_db: Path) -> None:
         router = _make_router(tmp_db)
+        monkeypatch.setattr(router, "_ask_notes", lambda slots: "searched notes")
         match = IntentMatch(intent=INTENT_UNKNOWN, confidence=0.0, slots={"query": "test query"})
         result = router.route_read(match)
-        assert isinstance(result, str)
+        assert result == "searched notes"
 
 
 class TestNLRouterWriteIntents:
@@ -140,10 +148,14 @@ class TestNLRouterWriteIntents:
 
     def test_confirm_set_status(self, tmp_db: Path) -> None:
         router = _make_router(tmp_db)
+        added = router._build_academic_service().add_assignment(
+            title="ML Exam",
+            due_at="2026-05-22 17:00",
+        )
         match = IntentMatch(
             intent=INTENT_SET_STATUS,
             confidence=0.9,
-            slots={"assignment_id_or_title": "ML Exam", "status": "done"},
+            slots={"assignment_id_or_title": added.record_id or "", "status": "done"},
         )
         result = router.build_confirmation(match)
         assert "Update assignment status?" in result
@@ -160,25 +172,39 @@ class TestNLRouterWriteIntents:
         assert "Add note?" in result
         assert "CNN Notes" in result
 
-    def test_execute_add_assignment(self, tmp_db: Path) -> None:
+    def test_execute_write_refuses_direct_mutation(self, tmp_db: Path) -> None:
         router = _make_router(tmp_db)
         match = IntentMatch(
             intent=INTENT_ADD_ASSIGNMENT,
             confidence=0.9,
             slots={"title": "Test Assignment", "due_at": "2026-06-01 23:59", "priority": "3"},
         )
+
         result = router.execute_write(match)
+
+        assert "requires explicit confirmation" in result
+        assignments = router._build_academic_service().list_all_assignments(include_completed=True)
+        assert assignments == []
+
+    def test_execute_confirmed_add_assignment(self, tmp_db: Path) -> None:
+        router = _make_router(tmp_db)
+        match = IntentMatch(
+            intent=INTENT_ADD_ASSIGNMENT,
+            confidence=0.9,
+            slots={"title": "Test Assignment", "due_at": "2026-06-01 23:59", "priority": "3"},
+        )
+        result = _confirm_and_execute(router, match)
         assert isinstance(result, str)
 
-    def test_execute_add_assignment_missing_title(self, tmp_db: Path) -> None:
+    def test_build_add_assignment_proposal_missing_title(self, tmp_db: Path) -> None:
         router = _make_router(tmp_db)
         match = IntentMatch(
             intent=INTENT_ADD_ASSIGNMENT,
             confidence=0.9,
             slots={"due_at": "2026-06-01"},
         )
-        result = router.execute_write(match)
-        assert "Missing title" in result
+        with pytest.raises(NLProposalError, match="Missing assignment title"):
+            router.build_write_proposal(match, actor_user_id=123)
 
     def test_execute_set_status(self, tmp_db: Path) -> None:
         router = _make_router(tmp_db)
@@ -187,7 +213,7 @@ class TestNLRouterWriteIntents:
             confidence=0.9,
             slots={"title": "Status Test", "due_at": "2026-06-01 23:59", "priority": "3"},
         )
-        router.execute_write(add_match)
+        _confirm_and_execute(router, add_match)
 
         assignments = router._build_academic_service().list_all_assignments(include_completed=False)
         assert len(assignments) >= 1
@@ -198,7 +224,7 @@ class TestNLRouterWriteIntents:
             confidence=0.9,
             slots={"assignment_id_or_title": assignment_id, "status": "done"},
         )
-        result = router.execute_write(status_match)
+        result = _confirm_and_execute(router, status_match)
         assert isinstance(result, str)
 
     def test_execute_add_note(self, tmp_db: Path) -> None:
@@ -208,8 +234,104 @@ class TestNLRouterWriteIntents:
             confidence=0.9,
             slots={"title": "Test Note", "content": "Some content here"},
         )
-        result = router.execute_write(match)
+        result = _confirm_and_execute(router, match)
         assert isinstance(result, str)
+
+    def test_build_write_proposal_is_unconfirmed_and_does_not_mutate(self, tmp_db: Path) -> None:
+        router = _make_router(tmp_db)
+        match = IntentMatch(
+            intent=INTENT_ADD_ASSIGNMENT,
+            confidence=0.9,
+            slots={"title": "Deferred", "due_at": "2026-06-01 23:59", "priority": "3"},
+        )
+
+        proposal = router.build_write_proposal(match, actor_user_id=123)
+
+        assert proposal.user_confirmed is False
+        assert proposal.action_type == INTENT_ADD_ASSIGNMENT
+        assert proposal.payload[ACTOR_PAYLOAD_KEY] == 123
+        assignments = router._build_academic_service().list_all_assignments(include_completed=True)
+        assert assignments == []
+
+    def test_execute_confirmed_write_runs_policy_before_service(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_db: Path,
+    ) -> None:
+        events: list[str] = []
+
+        class RecordingPolicy(PolicyEngine):
+            def check(self, proposal: ActionProposal) -> PolicyDecision:
+                events.append("policy")
+                return super().check(proposal)
+
+        class FakeAcademicService:
+            def add_assignment(self, **payload) -> CommandResult:
+                events.append("write")
+                return CommandResult(success=True, message="ok", record_id="abc")
+
+        router = NLRouter(
+            db_path=tmp_db,
+            timezone="Europe/Dublin",
+            ollama_base_url="http://localhost:11434",
+            ollama_model="llama3.1:8b",
+            ollama_timeout=30,
+            action_executor=ActionExecutor(policy_engine=RecordingPolicy()),
+        )
+        monkeypatch.setattr(router, "_build_academic_service", lambda: FakeAcademicService())
+        match = IntentMatch(
+            intent=INTENT_ADD_ASSIGNMENT,
+            confidence=0.9,
+            slots={"title": "Policy order", "due_at": "2026-06-01 23:59"},
+        )
+        proposal = router.build_write_proposal(match, actor_user_id=123)
+
+        result = router.execute_confirmed_write(proposal, actor_user_id=123)
+
+        assert result == "ok"
+        assert events == ["policy", "write"]
+
+    def test_execute_confirmed_write_blocks_service_when_policy_denies(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_db: Path,
+    ) -> None:
+        events: list[str] = []
+
+        class BlockingPolicy(PolicyEngine):
+            def check(self, proposal: ActionProposal) -> PolicyDecision:
+                events.append("policy")
+                return PolicyDecision(
+                    allowed=False,
+                    outcome=ActionOutcome.BLOCKED,
+                    reason="blocked by test policy",
+                )
+
+        class FakeAcademicService:
+            def add_assignment(self, **payload) -> CommandResult:
+                events.append("write")
+                return CommandResult(success=True, message="should not run", record_id="abc")
+
+        router = NLRouter(
+            db_path=tmp_db,
+            timezone="Europe/Dublin",
+            ollama_base_url="http://localhost:11434",
+            ollama_model="llama3.1:8b",
+            ollama_timeout=30,
+            action_executor=ActionExecutor(policy_engine=BlockingPolicy()),
+        )
+        monkeypatch.setattr(router, "_build_academic_service", lambda: FakeAcademicService())
+        match = IntentMatch(
+            intent=INTENT_ADD_ASSIGNMENT,
+            confidence=0.9,
+            slots={"title": "Policy block", "due_at": "2026-06-01 23:59"},
+        )
+        proposal = router.build_write_proposal(match, actor_user_id=123)
+
+        result = router.execute_confirmed_write(proposal, actor_user_id=123)
+
+        assert result == "blocked by test policy"
+        assert events == ["policy"]
 
 
 class TestNLRouterSuggestions:

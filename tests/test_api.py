@@ -3,6 +3,7 @@
 import subprocess
 import sys
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.main import create_app
@@ -75,3 +76,17 @@ def test_placeholder_telegram_token_does_not_block_startup(settings: Settings) -
         response = client.get("/health")
 
     assert response.status_code == 200
+
+
+def test_enabled_telegram_requires_allowlist_on_app_startup(settings: Settings) -> None:
+    """FastAPI startup should fail when Telegram is enabled without an allowlist."""
+
+    settings_data = settings.model_dump()
+    settings_data["telegram_bot_token"] = "123:abc"
+    settings_data["telegram_allowed_user_ids"] = []
+    runtime_settings = Settings(_env_file=None, **settings_data)
+    app = create_app(settings=runtime_settings, registry=SkillRegistry())
+
+    with pytest.raises(RuntimeError, match="TELEGRAM_ALLOWED_USER_IDS"):
+        with TestClient(app):
+            pass
