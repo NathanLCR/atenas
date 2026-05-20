@@ -1,48 +1,49 @@
 # Atenas — Documentation
 
-## What's in this folder
+## Canonical doc set
 
-Core spec docs are in `docs/`, with phase and code-map material in
-subdirectories:
+This folder holds one source of truth per concern. There are no handoff,
+phase, or build-prompt docs — those caused the divergence we removed.
 
 ```text
 docs/
-├── HANDOFF.md                 Current handoff and next implementation target
-├── HANDOFF_NL_INTERFACE.md    Telegram LLM tool interface handoff
-├── PRODUCT_SPEC.md            Product posture
-├── REQUIREMENTS.md            Functional and non-functional requirements
-├── ARCHITECTURE.md            Target tool-agent architecture
-├── AGENT_POLICY.md            LLM tool-agent behavior and safety
-├── SECURITY.md                Local-only, Telegram, and tool security
-├── DATA_MODEL.md              SQLite schema and data entities
-├── SCHEMAS.md                 LLM/action schemas
-├── ROADMAP.md                 Historical phase roadmap
-├── phases/                    Phase specs
-├── codex/                     Older Codex handoffs/prompts
-└── code-map/                  Developer architecture map
+├── AGENT_LOOP.md     The agent loop + action-tier governance contract (canonical)
+├── PRODUCT_SPEC.md   What Atenas is, who it's for, success criteria
+├── ARCHITECTURE.md   How the agent loop, tools, and layers are structured
+├── AGENT_POLICY.md   Agent behavior, tool-use rules, planning/retrieval/web rules
+├── SECURITY.md       Local-only posture, action tiers, prompt-injection & web defense
+├── REQUIREMENTS.md   Functional and non-functional requirements
+├── DATA_MODEL.md     SQLite schema and data entities
+└── SCHEMAS.md        LLM/action schemas
 ```
 
-## Current Direction
+## Current direction
 
-Atenas is local-running and Telegram-first. Plain Telegram messages should be
-handled by an LLM agent with controlled Atenas tools. Slash commands remain
-supported as shortcuts.
+Atenas is local-running and Telegram-first. Plain Telegram messages are handled
+by an **LLM tool-calling agent loop** — the model calls a tool, observes the
+result, and decides the next step, carrying the goal across turns. The local
+model is weak at reasoning, so it is given strong tools (read, compute, act)
+rather than more guardrails.
 
-Dashboard and REST API routes are local support surfaces and should not be
-exposed directly on a LAN or public host.
+Governance is tiered: reversible local writes run directly and are audit-logged;
+destructive and egress actions require explicit confirmation; forbidden actions
+are blocked. Web access is opt-in and guarded. Slash commands remain as
+deterministic shortcuts. Dashboard/API are local support surfaces only.
 
-## How to Use These Docs
+When any doc describes agent behavior, `AGENT_LOOP.md` is authoritative. All
+contributors — including Codex, Claude Code, and OpenCode — follow it to keep
+the implementation from diverging again.
+
+## How to read
 
 For implementation work, read in this order:
 
-1. `HANDOFF.md`
+1. `AGENT_LOOP.md`
 2. `PRODUCT_SPEC.md`
 3. `ARCHITECTURE.md`
 4. `SECURITY.md`
 5. `AGENT_POLICY.md`
 6. `REQUIREMENTS.md`
-7. `HANDOFF_NL_INTERFACE.md`
-8. Relevant `docs/code-map/` files
 
 Do not rely on historical test counts. Run the suite in the current workspace.
 
@@ -52,9 +53,3 @@ python3.11 -m venv .venv
 .venv/bin/pytest -q
 .venv/bin/uvicorn app.main:app --reload
 ```
-
-## Historical Material
-
-Some older docs remain useful for context, especially the phase specs and the
-original build prompt. When older docs conflict with the 2026-05-19 product
-posture, the current canonical docs listed above win.

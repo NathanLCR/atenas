@@ -148,7 +148,7 @@ structurally impossible (it would fail `extra="forbid"`).
 
 ### `AvailabilitySlot` (code-authored — LLM input, never LLM output)
 
-Computed by the deterministic Availability Algorithm (study_planner.md).
+Computed by the deterministic Availability Algorithm (see REQUIREMENTS.md FR-06).
 
 ```json
 {
