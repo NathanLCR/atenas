@@ -88,9 +88,9 @@ tests fall back to the local `.env` or real local database.
 
 ## Docs to Read First
 
-1. `docs/PRODUCT_SPEC.md`
-2. `docs/ARCHITECTURE.md`
-3. `docs/SECURITY.md`
-4. `docs/AGENT_POLICY.md`
-5. `docs/REQUIREMENTS.md`
-6. `docs/HANDOFF_NL_INTERFACE.md`
+1. `docs/AGENT_LOOP.md`
+2. `docs/PRODUCT_SPEC.md`
+3. `docs/ARCHITECTURE.md`
+4. `docs/SECURITY.md`
+5. `docs/AGENT_POLICY.md`
+6. `docs/REQUIREMENTS.md`

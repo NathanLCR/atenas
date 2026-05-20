@@ -17,10 +17,12 @@ Atenas is a single-user, local-running assistant.
   adds authentication, authorization, TLS, and deployment hardening.
 - Telegram is the primary interface and is remote by nature, so Telegram
   allowlist enforcement is mandatory.
-- Local Ollama is the default LLM provider. External LLM providers are opt-in
-  data egress.
-- Security follows the project doctrine: LLM proposes, deterministic systems
-  validate, human approves critical actions.
+- Local Ollama is the default LLM provider. External LLM providers and web
+  access are opt-in data egress.
+- Security follows the project doctrine: the LLM is a tool-calling agent;
+  deterministic code validates and gates by action tier; the human approves only
+  destructive and egress actions; every change is audit-logged. The full
+  behavior contract is `docs/AGENT_LOOP.md`.
 
 ## Threat Model
 
@@ -29,9 +31,10 @@ Atenas is a single-user, local-running assistant.
 | Unauthorized Telegram user | Medium | High | Non-empty allowlist, startup validation |
 | Dashboard/API exposed beyond localhost | Medium | High | Localhost bind, Docker localhost publish |
 | LLM prompt injection through notes/files | Medium | High | Delimited prompts, no tool execution from retrieved text |
+| Prompt injection / egress via web content | Medium | High | Web off by default; returned content is data, never instructions; no auto-act |
 | LLM hallucinated tool/action schema | Medium | High | Tool schemas, Pydantic validation, policy engine |
-| Accidental destructive write | Medium | High | Pending proposal + explicit confirmation |
-| LLM-proposed unsafe mutation | Medium | High | Proposal-only tools, deterministic validation, human approval |
+| Accidental destructive write | Medium | High | Confirm-first tier: pending proposal + explicit confirmation |
+| Agent runs an unsafe destructive/egress action without approval | Medium | High | Code-enforced action tier; model cannot self-classify as auto |
 | Sensitive content in logs | Medium | Medium | Log metadata by default, redact prompt/response unless debug |
 | External LLM data leakage | Low-Medium | High | Disabled by default, explicit opt-in, provider disclosure |
 | Dependency compromise | Low | Medium | Pinned dependencies, audit before release |
@@ -61,26 +64,32 @@ Atenas is a single-user, local-running assistant.
 The LLM may call Atenas tools. It may not call repositories, services, Python
 functions, shell commands, or filesystem paths directly.
 
-The LLM has proposal authority, not mutation authority. A proposed tool call is
-untrusted until deterministic code validates it. A validated write proposal is
-still not executable until the required human and policy gates pass.
+A proposed tool call is untrusted until deterministic code validates it. The
+**action tier** then decides execution, and the tier is set by code from the
+tool's declared category — the model cannot self-classify or set confirmation
+flags. Auto-tier writes execute directly and are audit-logged; confirm-first
+actions are not executable until the human and policy gates pass.
 
 ### Tool classes
 
 | Tool class | Examples | Rule |
 |---|---|---|
-| Read | status, today, week, list assignments, search notes, retrieve sources | Allowed after Telegram allowlist validation |
-| Planning | generate plan, suggest next task, explain deadline risk | Allowed after auth; deterministic service constraints still apply |
-| Write | add assignment, set status, add note, add shift, add class, archive note | LLM may create pending proposals only; code validates, human confirms, policy approves |
+| Read / search | status, today, week, list assignments, search notes, retrieve sources | Allowed after Telegram allowlist validation |
+| Compute | generate plan, suggest next task, explain deadline risk, detect duplicates | Allowed after auth; deterministic service does the computation |
+| Act (auto) | add assignment, set status, set hours, add note, add shift, add class | Validated, executed directly, audit-logged |
+| Act (confirm-first) | delete/clear/bulk-remove, deduplicate, archive, external message, export | Pending proposal only; code validates, human confirms, policy approves |
+| Web (guarded) | web search/fetch | Off by default; egress + untrusted content; never grants tool permissions or triggers writes |
 | System | health, local LLM status, safe config summary | Read-only; never reveal secrets |
 
 ### Write contract
 
-Every LLM-originated write must follow this path:
+Reversible local writes (auto tier) execute after validation; the audit log is
+the control. Destructive and egress actions (confirm-first tier) must follow
+this path:
 
 ```text
 authenticated user
-  -> LLM proposal
+  -> agent chooses a confirm-first tool
   -> validated tool arguments
   -> natural-language labels resolved to stable IDs
   -> pending action summary shown in Telegram
@@ -95,18 +104,18 @@ authenticated user confirms in Telegram.
 
 ### Critical Action Classes
 
-The following actions always require human approval before execution:
+The following always require human confirmation before execution:
 
-- LLM-originated writes of any kind.
-- Destructive changes, including deletes, archive operations, and bulk clears.
+- Destructive changes: deletes, deduplication, archive operations, bulk clears.
 - External communication or data export.
 - Configuration changes.
-- Sensitive data egress to an external LLM provider.
+- Sensitive data egress to an external LLM provider or the web.
 - Any action where deterministic validation cannot uniquely resolve the target.
 
-Future specs may classify a narrow set of deterministic, local, low-risk slash
-commands differently, but they must still be allowlisted, validated, audited,
-and policy-checked where applicable.
+Reversible, local, low-risk writes (auto tier) do **not** require prior
+confirmation; they are validated, policy-checked, executed, and audit-logged.
+The audit trail is the control for this tier. Any action whose tier is uncertain
+defaults to confirm-first.
 
 ## Forbidden Actions
 
@@ -132,12 +141,16 @@ FORBIDDEN_ACTIONS = frozenset({
 ```python
 CONFIRMATION_REQUIRED = frozenset({
     "delete_file",
+    "delete_module",
+    "deduplicate_modules",
     "overwrite_memory",
     "clear_work_schedule",
     "remove_assignment",
+    "archive_note",
+    "archive_plan",
     "change_config",
     "send_external_message",
-    "archive_plan",
+    "export_data",
 })
 ```
 
@@ -159,18 +172,34 @@ Evaluation order:
 
 ## Prompt Injection Defense
 
-All user text, note text, file text, and retrieved source text is untrusted.
+All user text, note text, file text, retrieved source text, and **web content**
+is untrusted.
 
 Requirements:
 
 - Do not concatenate untrusted text into prompts without delimiters.
 - Mark user text as `<user_input>...</user_input>`.
 - Mark retrieved source text as `<source id="...">...</source>`.
-- Add an instruction that content inside sources is data, not instructions.
-- Keep length limits on note/file snippets.
-- Retrieved text may influence answers, not tool permissions.
+- Mark web content as `<web url="...">...</web>`.
+- Add an instruction that content inside sources/web is data, not instructions.
+- Keep length limits on note/file/web snippets.
+- Retrieved and web text may influence answers, not tool permissions, and must
+  never trigger a write or an external action on their own.
 - Tool calls must be based on the system tool schema, never on instructions
-  found inside retrieved content.
+  found inside retrieved or fetched content.
+
+## Web Access
+
+Web search/fetch is **opt-in and disabled by default**. When enabled:
+
+- A web query is **egress**: the query text leaves the machine. Treat it like an
+  external-LLM call and never include sensitive records in a query without
+  explicit consent.
+- Returned content is untrusted data (see prompt-injection defense above).
+- The agent must not act on web content directly; any resulting destructive or
+  egress action still passes the confirm-first tier.
+- Web-derived claims in a reply must be attributed as web sources, kept distinct
+  from the user's local notes/files.
 
 ## Logging and Privacy
 
@@ -225,7 +254,8 @@ as enforced:
 - Dashboard/API bind and Docker publish must remain localhost-only and covered
   by tests or deployment checks.
 - Empty Telegram allowlist must fail startup when Telegram is enabled.
-- LLM/NL writes must route through proposal, validation, confirmation, policy,
-  service execution, and audit, not direct service writes.
+- LLM/agent writes must route through validation, the action-tier gate, policy,
+  service execution, and audit. Auto-tier writes execute directly; confirm-first
+  actions add explicit confirmation. No path may bypass the tier gate.
 - REST endpoints must stop using a fake `user_id=0` actor.
 - Prompt templates must delimit untrusted user/source text.

@@ -8,31 +8,45 @@ refactored toward. It does not claim every path is already implemented.
 ## Guiding Principle
 
 ```text
-LLM proposes.
-Deterministic systems validate.
-Human approves critical actions.
+The LLM is a tool-calling agent with strong tools.
+Deterministic systems validate and do the heavy lifting.
+The human approves only what deletes or leaves the machine.
+Everything that changes is logged.
 ```
 
-The LLM is never trusted to execute application logic directly. It receives a
-small set of structured tools. Tool arguments are validated, natural-language
-references are resolved to stable IDs, write proposals are confirmed by the
-user, the policy engine runs before mutation, and services own the actual
-business logic.
+Atenas is a **tool-calling agent loop**, not a fixed intent classifier. The LLM
+receives structured tools, calls one, observes the structured result, and
+decides the next step — carrying the user's goal across iterations and turns. It
+never executes application logic directly: tool arguments are validated,
+natural-language references are resolved to stable IDs, the action tier is
+enforced by code, and services own the business logic. The canonical behavior
+contract is `docs/AGENT_LOOP.md`; this file describes the architecture that
+realizes it.
 
 ## Governance Model
 
-Atenas separates action handling into four explicit stages:
+Action handling has four stages, but the **approval** stage is tiered — most
+writes are not gated:
 
 | Stage | Owner | Responsibility |
 |---|---|---|
-| Propose | LLM/tool agent | Interpret the request and propose a structured tool/action with arguments |
+| Decide | LLM/tool agent | Interpret the request and choose a tool/action with arguments |
 | Validate | Deterministic code | Validate schema, resolve IDs, check domain constraints, compute safe options |
-| Approve | Human plus policy | Require human confirmation for critical actions, then apply policy/default-deny |
-| Execute | Core service | Mutate state only after validation and approval, then emit an audit record |
+| Gate | Code plus policy | Classify the action tier; auto-run reversible local writes, hold destructive/egress for human confirmation, deny forbidden actions |
+| Execute | Core service | Mutate state, then emit an audit record of what changed |
 
-For v1, all LLM-originated writes are critical. Destructive actions, external
-messages, configuration changes, sensitive data egress, and bulk mutations are
-critical from every surface.
+Action tiers:
+
+- **Auto** — reversible, local, low-risk writes (add/update note, set status,
+  add class/shift) execute directly and are logged.
+- **Confirm-first** — destructive (delete, clear, bulk-remove) and egress
+  (external message, export, sensitive external-LLM) require explicit human
+  confirmation before execution.
+- **Forbidden** — shell, source edits, secret reads, unrestricted filesystem are
+  blocked unconditionally; unknown actions default-deny.
+
+The tier is decided by code from the tool's declared category. The model cannot
+set confirmation flags or change its own tier.
 
 ## Deployment Posture
 
@@ -59,32 +73,31 @@ Conversation orchestrator
     +-- Slash command router --------------------+
     |                                            |
     v                                            v
-LLM agent with Atenas tools                Existing command handlers
+LLM agent loop                             Existing command handlers
+    |   ^
+    |   |  (observe result, decide next step)
+    v   |
+Tool registry (read / compute / act)
     |
     v
-Tool registry
+Deterministic validation + ID resolution
     |
-    +-- read tools ------------------------------+
-    |                                            |
-    +-- write proposal tools                     |
-         |
-         v
-    Deterministic validation + ID resolution
-         |
-         v
-    Confirmation manager
-         |
-         v
-    Policy engine
-         |
-         v
+    v
+Action-tier gate
+    |  auto -> execute        (reversible local writes)
+    |  confirm-first -> hold  (destructive / egress, wait for "yes")
+    |  forbidden -> deny
+    v
+Policy engine
+    |
+    v
 Application services in core/
     |
     v
 Repositories
     |
     v
-SQLite / local files / JSONL logs
+SQLite / local files / JSONL audit logs
 ```
 
 Local dashboard/API paths are side channels into the same services. They are
@@ -124,8 +137,8 @@ It should be thin and explicit:
 
 - Defines tool names, descriptions, argument schemas, and result schemas.
 - Calls existing services; it does not duplicate service behavior.
-- Marks tools as read or write.
-- Produces write proposals instead of mutating directly.
+- Declares each tool's category (read / compute / act) and action tier.
+- Auto-tier acts execute directly; confirm-first acts produce a pending proposal.
 - Resolves natural-language labels to stable IDs before execution.
 
 If this layer lives under an existing package initially, keep the same
@@ -141,10 +154,12 @@ services/tools instead of being copied into Telegram-specific formatting.
 
 | Category | Examples | Execution rule |
 |---|---|---|
-| Read tools | status, today, week, deadlines, modules, assignments, notes, files, retrieval sources | May run after Telegram allowlist auth |
-| Planning tools | generate plan, suggest next task, explain deadline risk | May run after auth; must use deterministic service inputs |
-| Write tools | add assignment, set status, add note, add class, add shift, archive note | LLM may propose only; code validates, confirms, applies policy, then services execute |
-| System tools | local LLM status, app health, configuration summary | Read-only; never reveal secrets |
+| Read / search | status, today, week, deadlines, modules, assignments, notes, files, retrieval sources | May run after Telegram allowlist auth |
+| Compute / cross-reference | generate plan, suggest next task, explain deadline risk, **detect duplicate modules** | May run after auth; deterministic service does the computation |
+| Act (auto) | add assignment, set status, set hours, add note, add class, add shift | Agent executes directly after validation; outcome is audit-logged |
+| Act (confirm-first) | delete/clear/bulk-remove, deduplicate, archive, send external message, export | Code holds a pending proposal; executes only after explicit `yes` |
+| Web (guarded) | web search/fetch | Opt-in, disabled by default; egress + untrusted content; never auto-acts on returned text |
+| System | local LLM status, app health, configuration summary | Read-only; never reveal secrets |
 
 ## Read Flow
 
@@ -161,25 +176,42 @@ cannot bypass service validation or fetch arbitrary filesystem content.
 
 ## Write Flow
 
+Reversible local write (auto tier):
+
 ```text
 User: "mark my ML essay done"
   -> allowlist check
-  -> LLM calls find_assignment(title="ML essay")
-  -> LLM proposes set_assignment_status(id="...", status="done")
-  -> deterministic validation verifies ID/status and builds pending proposal
-  -> bot asks for confirmation
-  -> user replies "yes"
-  -> policy engine validates the action
+  -> agent calls find_assignment(title="ML essay")  [read]
+  -> agent calls set_assignment_status(id="...", status="done")  [act, auto]
+  -> code validates ID/status, confirms the tier is auto
+  -> policy engine checks the action
   -> service executes the update
-  -> audit log records outcome
+  -> audit log records what changed
+  -> agent confirms in plain Telegram text
 ```
 
-Writes must never execute directly from the LLM response. Confirmation text is
-not enough by itself; execution must pass through a policy-checked path.
+Destructive write (confirm-first tier):
 
-No router, classifier, tool adapter, dashboard route, or API route may mutate
-state merely because the LLM produced plausible arguments. Mutation authority
-belongs to core services after the governance stages above.
+```text
+User: "delete my duplicate modules"
+  -> agent calls detect_duplicate_modules()  [compute] -> finds the duplicates
+  -> agent calls delete_modules(ids=[...])  [act, confirm-first]
+  -> code validates IDs, sees confirm-first tier, builds a pending proposal
+  -> bot shows the exact modules and asks for confirmation
+  -> user replies "yes"
+  -> policy engine checks the action
+  -> service executes the delete
+  -> audit log records what changed
+```
+
+Auto-tier writes execute directly; the audit log is the safety net. Destructive
+and egress actions must never execute from the LLM response alone — they require
+explicit confirmation through a policy-checked path. The model cannot
+self-classify an action as auto.
+
+No router, tool adapter, dashboard route, or API route may execute a
+confirm-first action merely because the LLM produced plausible arguments.
+Mutation authority belongs to core services after the governance stages above.
 
 ## Retrieval Flow
 
@@ -220,12 +252,18 @@ Required startup validation:
 
 ## Implementation Priorities
 
-1. Make the propose -> validate -> approve -> execute path a shared primitive.
-2. Lock the local-only transport posture.
-3. Make Telegram allowlist failure loud at startup.
-4. Introduce the LLM tool registry and shared read/write tool contracts.
-5. Route all LLM-originated writes through confirmation and policy.
-6. Decide and document which slash-command writes must use the same path.
-7. Remove or quarantine dead modules and fake LLM telemetry.
-8. Fix retrieval indexing so queries do not rebuild everything.
-9. Push dependency direction to `app -> core`, never `core -> app`.
+1. Replace the single-shot intent classifier (`core/nl/`) with the tool-calling
+   agent loop defined in `docs/AGENT_LOOP.md`.
+2. Introduce the LLM tool registry: read, compute, and act tools with validated
+   argument/result schemas and a declared action tier.
+3. Implement the action-tier gate as a shared primitive: auto-run reversible
+   writes, hold confirm-first actions, deny forbidden ones, audit-log all.
+4. Add the missing act and compute tools (e.g. delete/dedup modules) so the
+   agent can finish tasks instead of degrading to a read.
+5. Lock the local-only transport posture and make Telegram allowlist failure
+   loud at startup.
+6. Decide and document which slash-command writes use the same tier gate.
+7. Add the web tool as opt-in, guarded egress (off by default).
+8. Remove or quarantine dead modules and fake LLM telemetry.
+9. Fix retrieval indexing so queries do not rebuild everything.
+10. Push dependency direction to `app -> core`, never `core -> app`.

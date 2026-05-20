@@ -25,20 +25,31 @@ code owns validation, policy, scheduling math, and persistence.
 ## Operating Doctrine
 
 ```text
-LLM proposes.
-Deterministic systems validate.
-Human approves critical actions.
+The LLM is an agent with strong tools.
+Deterministic systems validate and do the heavy lifting.
+The human approves only what deletes or leaves the machine.
+Everything that changes is logged.
 ```
 
-This doctrine is a product invariant, not an implementation detail. The LLM is
-used for interpretation, synthesis, and proposing actions. Deterministic code
-owns schemas, ID resolution, policy checks, scheduling constraints, and
-persistence. The human owns approval for any critical action.
+Atenas is a **tool-calling agent**, not a fixed intent menu. The local model is
+weak at reasoning, so it is given strong, validated tools (read, compute, act)
+and a loop in which it calls a tool, observes the result, and decides the next
+step — carrying the user's goal across turns. Deterministic code owns schemas,
+ID resolution, policy, scheduling math, and persistence. The full contract for
+the loop and the action tiers lives in `docs/AGENT_LOOP.md`.
 
-For v1, every LLM-originated write is treated as critical. Destructive actions,
-external messages, configuration changes, sensitive data egress, and bulk
-changes are critical regardless of whether they originate from the LLM, a slash
-command, or a local API path.
+Governance is **tiered**, not all-or-nothing:
+
+- **Auto** — reversible, local, low-risk writes (add/update a note, set a
+  status, add a class or shift) execute directly and are logged.
+- **Confirm-first** — destructive actions (delete, clear, bulk-remove) and
+  egress (external messages, exports, sensitive data to an external LLM) require
+  explicit human confirmation before execution.
+- **Forbidden** — shell, source edits, secret reads, unrestricted filesystem are
+  blocked unconditionally.
+
+Web access is opt-in and treated with care: a query is egress, and returned
+content is untrusted data, never instructions.
 
 ## Primary Question Atenas Answers
 > What should I study today or this week, given my classes, work shifts, deadlines, notes, and energy?
@@ -81,7 +92,7 @@ command, or a local API path.
 
 | Capability | Description |
 |---|---|
-| Telegram agent | Plain Telegram messages are handled by an allowlisted LLM agent with Atenas tools |
+| Telegram agent | Plain Telegram messages are handled by an allowlisted LLM tool-calling agent that loops over Atenas tools |
 | Slash commands | Stable command shortcuts for status, schedule, planning, notes, files, retrieval, and writes |
 | Memory/notes | Store and search notes, facts, preferences, module info |
 | Work schedule | Ingest work shifts; use them to constrain planning |
@@ -90,7 +101,7 @@ command, or a local API path.
 | Study planning | Generate realistic daily and weekly study plans |
 | Retrieval | Answer questions over registered notes/files with explicit sources |
 | LLM study help | Summarise, explain, draft questions, rewrite, and generate flashcards from selected local context |
-| Governed writes | Add or update academic data only through proposal, validation, approval, policy, and audit |
+| Governed writes | The agent acts directly on reversible local writes; destructive and egress actions require confirmation; every change is validated, policy-checked, and audit-logged |
 
 ---
 
@@ -117,13 +128,14 @@ host.
 1. **Spec before code.** No feature is implemented without a written spec.
 2. **Telegram first.** Optimize the product around the Telegram experience.
 3. **Local-running by default.** SQLite, files, dashboard, and API stay local.
-4. **LLM proposes. Deterministic systems validate. Human approves critical actions.**
+4. **The LLM is a tool-calling agent.** It loops over validated tools and carries the goal across turns; it does not map messages to a fixed intent menu.
 5. **Tool calls are structured.** The LLM never imports repositories or calls services directly.
-6. **Read and write are different trust levels.** Reads may run after allowlist auth; LLM-originated writes require confirmation and policy.
-7. **All tool arguments and LLM outputs are validated before acting.**
-8. **Memory and logs must be human-inspectable.**
-9. **No unrestricted autonomous shell execution.**
-10. **Build small, safe, and debuggable.**
+6. **Governance is tiered.** Reads and reversible local writes run directly; destructive and egress actions require confirmation; forbidden actions are blocked. See `docs/AGENT_LOOP.md`.
+7. **Everything that changes is logged.** Agency is traded for an audit trail, not for prior approval on every action.
+8. **All tool arguments and LLM outputs are validated before acting.**
+9. **Memory and logs must be human-inspectable.**
+10. **No unrestricted autonomous shell execution; web access is opt-in and guarded.**
+11. **Build small, safe, and debuggable.**
 
 ## LLM Provider Policy
 
@@ -138,11 +150,11 @@ results may leave the machine.
 
 Atenas v1 is complete when it can:
 
-1. Receive and respond to plain Telegram messages through an allowlisted LLM agent.
+1. Receive and respond to plain Telegram messages through an allowlisted LLM tool-calling agent that loops over tools and carries the goal across turns.
 2. Preserve slash commands as deterministic shortcuts.
-3. Let the LLM call read tools for status, schedule, planning, notes, files, and retrieval.
-4. Let the LLM propose write tools for assignments, notes, schedule data, and statuses.
-5. Execute LLM-originated write tools only after deterministic validation, human confirmation, policy approval, and audit logging.
+3. Let the agent call read and compute tools for status, schedule, planning, notes, files, retrieval, and cross-referencing (e.g. duplicate detection).
+4. Let the agent act on reversible local writes directly (assignments, notes, schedule data, statuses), with validation and an audit-logged outcome.
+5. Require explicit human confirmation before destructive (delete, clear, bulk) or egress (external message, export, sensitive external-LLM) actions, then validate, policy-check, execute, and log.
 6. Display a simple local read-only dashboard.
 7. Store memory safely and consistently.
 8. Search memory by keyword and retrieve over registered notes/files.
