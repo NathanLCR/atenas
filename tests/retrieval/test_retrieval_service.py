@@ -64,6 +64,18 @@ def test_retrieve_sources_returns_source_ids(tmp_path: Path) -> None:
     assert sources[0].chunk_label == f"N{note.id}.1"
 
 
+def test_retrieve_sources_syncs_without_full_rebuild(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    _create_note(service, "Transformers", "Self attention compares queries and keys.")
+    service.rebuild_index = MagicMock(side_effect=AssertionError("full rebuild should not run"))
+
+    sources, error = service.retrieve_sources("self attention")
+
+    assert error is None
+    assert sources
+    service.rebuild_index.assert_not_called()
+
+
 def test_retrieve_sources_excludes_archived_notes(tmp_path: Path) -> None:
     service = _service(tmp_path)
     _create_note(service, "Archived", "Attention should not be retrieved.", archived=True)
@@ -105,6 +117,8 @@ def test_answer_uses_local_llm_after_sources(tmp_path: Path) -> None:
     assert result.sources[0].source_label == f"N{note.id}"
     prompt = mock_client.generate.call_args.args[0]
     assert f"[N{note.id}.1]" in prompt
+    assert "<sources>" in prompt
+    assert "untrusted data" in prompt
 
 
 def test_ask_note_rejects_archived_note(tmp_path: Path) -> None:

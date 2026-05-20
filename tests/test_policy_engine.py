@@ -8,7 +8,7 @@ from core.policy_engine import (
     FORBIDDEN_ACTIONS,
     PolicyEngine,
 )
-from core.schemas import ActionOutcome, ActionProposal
+from core.schemas import ActionCriticality, ActionOrigin, ActionOutcome, ActionProposal
 
 
 def proposal(action_type: str, user_confirmed: bool = False) -> ActionProposal:
@@ -85,3 +85,37 @@ def test_unknown_action_cannot_be_bypassed_by_confirmation() -> None:
     assert decision.allowed is False
     assert decision.outcome == ActionOutcome.BLOCKED
 
+
+def test_unknown_action_cannot_be_bypassed_by_criticality() -> None:
+    """Approval metadata must not turn an unknown action into a known action."""
+
+    decision = PolicyEngine().check(
+        ActionProposal(
+            action_type="rm_rf_everything",
+            payload={},
+            confidence=0.9,
+            user_confirmed=True,
+            origin=ActionOrigin.TELEGRAM_NL,
+            criticality=ActionCriticality.DESTRUCTIVE,
+        )
+    )
+
+    assert decision.allowed is False
+    assert decision.outcome == ActionOutcome.BLOCKED
+
+
+def test_llm_originated_write_requires_confirmation() -> None:
+    """All LLM-originated local writes are critical in v1."""
+
+    decision = PolicyEngine().check(
+        ActionProposal(
+            action_type="add_assignment",
+            payload={},
+            confidence=0.9,
+            origin=ActionOrigin.TELEGRAM_NL,
+            criticality=ActionCriticality.LOCAL_WRITE,
+        )
+    )
+
+    assert decision.allowed is False
+    assert decision.outcome == ActionOutcome.NEEDS_CONFIRMATION

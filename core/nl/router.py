@@ -8,12 +8,26 @@ from zoneinfo import ZoneInfo
 
 from core.action_executor import ActionExecutor
 from core.academic.service import AcademicService
-from core.academic.validators import CommandResult, validate_hours, validate_priority, validate_status
+from core.academic.validators import (
+    CommandResult,
+    parse_datetime_input,
+    parse_datetime_strict,
+    parse_weekday,
+    validate_energy_cost,
+    validate_hours,
+    validate_priority,
+    validate_status,
+    validate_text_field,
+)
+from core.knowledge.validators import normalize_tags, validate_note_body, validate_note_title
 from core.knowledge.service import KnowledgeService
 from core.llm.service import LLMService
 from core.nl.intent import (
     INTENT_ADD_ASSIGNMENT,
+    INTENT_ADD_CLASS,
     INTENT_ADD_NOTE,
+    INTENT_ADD_SHIFT,
+    INTENT_ARCHIVE_NOTE,
     INTENT_ASK_NOTES,
     INTENT_AVAILABILITY,
     INTENT_DEADLINES,
@@ -23,6 +37,7 @@ from core.nl.intent import (
     INTENT_NOTE_ACTION,
     INTENT_PLAN,
     INTENT_REMINDERS,
+    INTENT_SET_HOURS,
     INTENT_SET_STATUS,
     INTENT_STUDY,
     INTENT_TODAY,
@@ -33,7 +48,14 @@ from core.nl.intent import (
 )
 from core.notifications.service import NotificationService
 from core.retrieval.service import RetrievalService
-from core.schemas import ActionOutcome, ActionProposal, ActionResult
+from core.schemas import (
+    ActionCriticality,
+    ActionOrigin,
+    ActionOutcome,
+    ActionProposal,
+    ActionResult,
+)
+from core.time import parse_hhmm
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -41,7 +63,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 ACTION_SET_ASSIGNMENT_STATUS = "set_assignment_status"
+ACTION_SET_ASSIGNMENT_HOURS = "set_assignment_hours"
+ACTION_ADD_CLASS_SESSION = "add_class_session"
+ACTION_ADD_WORK_SHIFT = "add_work_shift"
 ACTION_ADD_NOTE = "add_note"
+ACTION_ARCHIVE_NOTE = "archive_note"
 ACTOR_PAYLOAD_KEY = "actor_user_id"
 
 PRIORITY_LABELS: dict[str, int] = {
@@ -62,10 +88,14 @@ SLASH_COMMAND_SUGGESTIONS: dict[str, str] = {
     INTENT_STUDY: "/study",
     INTENT_ADD_ASSIGNMENT: "/add_assignment",
     INTENT_SET_STATUS: "/set_status",
+    INTENT_SET_HOURS: "/set_hours",
+    INTENT_ADD_CLASS: "/add_class",
+    INTENT_ADD_SHIFT: "/add_shift",
     INTENT_LIST_ASSIGNMENTS: "/assignments",
     INTENT_LIST_MODULES: "/modules",
     INTENT_LIST_SHIFTS: "/shifts",
     INTENT_ADD_NOTE: "/add_note",
+    INTENT_ARCHIVE_NOTE: "/archive_note",
     INTENT_NOTE_ACTION: "/summarize_note or /explain_note",
     INTENT_ASK_NOTES: "/ask_notes",
     INTENT_REMINDERS: "/reminders",
@@ -142,9 +172,21 @@ class NLRouter:
         elif match.intent == INTENT_SET_STATUS:
             action_type = ACTION_SET_ASSIGNMENT_STATUS
             payload = self._payload_set_status(match.slots)
+        elif match.intent == INTENT_SET_HOURS:
+            action_type = ACTION_SET_ASSIGNMENT_HOURS
+            payload = self._payload_set_hours(match.slots)
+        elif match.intent == INTENT_ADD_CLASS:
+            action_type = ACTION_ADD_CLASS_SESSION
+            payload = self._payload_add_class(match.slots)
+        elif match.intent == INTENT_ADD_SHIFT:
+            action_type = ACTION_ADD_WORK_SHIFT
+            payload = self._payload_add_shift(match.slots)
         elif match.intent == INTENT_ADD_NOTE:
             action_type = ACTION_ADD_NOTE
             payload = self._payload_add_note(match.slots)
+        elif match.intent == INTENT_ARCHIVE_NOTE:
+            action_type = ACTION_ARCHIVE_NOTE
+            payload = self._payload_archive_note(match.slots)
         else:
             raise NLProposalError("I'm not sure what to do. Try /help.")
 
@@ -156,6 +198,12 @@ class NLRouter:
             payload=payload,
             confidence=match.confidence,
             user_confirmed=False,
+            origin=ActionOrigin.TELEGRAM_NL,
+            criticality=(
+                ActionCriticality.DESTRUCTIVE
+                if action_type == ACTION_ARCHIVE_NOTE
+                else ActionCriticality.LOCAL_WRITE
+            ),
             reason=f"Telegram natural-language intent: {match.intent}",
         )
 
@@ -166,8 +214,16 @@ class NLRouter:
             return self._confirm_add_assignment(proposal.payload)
         if proposal.action_type == ACTION_SET_ASSIGNMENT_STATUS:
             return self._confirm_set_status(proposal.payload)
+        if proposal.action_type == ACTION_SET_ASSIGNMENT_HOURS:
+            return self._confirm_set_hours(proposal.payload)
+        if proposal.action_type == ACTION_ADD_CLASS_SESSION:
+            return self._confirm_add_class(proposal.payload)
+        if proposal.action_type == ACTION_ADD_WORK_SHIFT:
+            return self._confirm_add_shift(proposal.payload)
         if proposal.action_type == ACTION_ADD_NOTE:
             return self._confirm_add_note(proposal.payload)
+        if proposal.action_type == ACTION_ARCHIVE_NOTE:
+            return self._confirm_archive_note(proposal.payload)
         return "I'm not sure what to do. Try /help."
 
     def execute_write(self, match: IntentMatch) -> str:
@@ -220,7 +276,14 @@ class NLRouter:
             ACTION_SET_ASSIGNMENT_STATUS,
             self._handle_set_assignment_status,
         )
+        self._action_executor.register_action(
+            ACTION_SET_ASSIGNMENT_HOURS,
+            self._handle_set_assignment_hours,
+        )
+        self._action_executor.register_action(ACTION_ADD_CLASS_SESSION, self._handle_add_class)
+        self._action_executor.register_action(ACTION_ADD_WORK_SHIFT, self._handle_add_shift)
         self._action_executor.register_action(ACTION_ADD_NOTE, self._handle_add_note)
+        self._action_executor.register_action(ACTION_ARCHIVE_NOTE, self._handle_archive_note)
 
     def _coerce_pending_proposal(
         self,
@@ -238,7 +301,9 @@ class NLRouter:
 
     def _payload_add_assignment(self, slots: dict[str, str]) -> dict[str, Any]:
         title = self._required_slot(slots, "title", label="assignment title")
+        title = self._validate_short_text(title, label="Assignment title")
         due = self._required_slot(slots, "due_at", "due", label="due date")
+        due = self._parse_due_at(due)
         payload: dict[str, Any] = {
             "title": title,
             "due_at": due,
@@ -246,7 +311,9 @@ class NLRouter:
         }
         module_id = self._optional_slot(slots, "module_id", "module")
         if module_id:
-            payload["module_id"] = module_id
+            resolved_module_id, module_name = self._resolve_module_id(module_id)
+            payload["module_id"] = resolved_module_id
+            payload["module_name"] = module_name
         estimated_hours = self._parse_estimated_hours(slots.get("estimated_hours"))
         if estimated_hours is not None:
             payload["estimated_hours"] = estimated_hours
@@ -266,7 +333,7 @@ class NLRouter:
         status = self._required_slot(slots, "status", label="status").lower()
         validated_status = validate_status(status)
         if validated_status is None:
-            return {"assignment_id": assignment, "status": status}
+            raise NLProposalError("Invalid status. Use todo, in_progress, submitted, done, or cancelled.")
 
         assignment_id, assignment_title = self._resolve_assignment_id(assignment)
         return {
@@ -275,20 +342,128 @@ class NLRouter:
             "status": validated_status,
         }
 
+    def _payload_set_hours(self, slots: dict[str, str]) -> dict[str, Any]:
+        assignment = self._required_slot(
+            slots,
+            "assignment_id",
+            "assignment_id_or_title",
+            "assignment",
+            label="assignment",
+        )
+        completed = self._required_slot(
+            slots,
+            "completed_hours",
+            "completed",
+            "hours",
+            label="completed hours",
+        )
+        completed_hours = validate_hours(completed)
+        if completed_hours is None:
+            raise NLProposalError("Completed hours must be between 0 and 1000.")
+        assignment_id, assignment_title = self._resolve_assignment_id(assignment)
+        return {
+            "assignment_id": assignment_id,
+            "assignment_title": assignment_title,
+            "completed_hours": completed_hours,
+        }
+
+    def _payload_add_class(self, slots: dict[str, str]) -> dict[str, Any]:
+        title = self._required_slot(slots, "title", label="class title")
+        title = self._validate_short_text(title, label="Class title")
+        day = self._required_slot(slots, "day", "weekday", label="weekday")
+        weekday = parse_weekday(day)
+        if weekday is None:
+            raise NLProposalError("Invalid weekday. Use 0-6 or mon/tue/wed/thu/fri/sat/sun.")
+        start_time = self._required_slot(slots, "start_time", "start", label="start time")
+        end_time = self._required_slot(slots, "end_time", "end", label="end time")
+        start_clock = self._parse_hhmm(start_time, label="start_time")
+        end_clock = self._parse_hhmm(end_time, label="end_time")
+        if start_clock >= end_clock:
+            raise NLProposalError("start_time must be before end_time.")
+
+        payload: dict[str, Any] = {
+            "title": title,
+            "weekday": weekday,
+            "start_time": start_clock.strftime("%H:%M"),
+            "end_time": end_clock.strftime("%H:%M"),
+        }
+        module_id = self._optional_slot(slots, "module_id", "module")
+        if module_id:
+            resolved_module_id, module_name = self._resolve_module_id(module_id)
+            payload["module_id"] = resolved_module_id
+            payload["module_name"] = module_name
+        location = self._optional_slot(slots, "location")
+        if location:
+            payload["location"] = self._validate_short_text(location, label="Location")
+        notes = self._optional_slot(slots, "notes")
+        if notes:
+            payload["notes"] = notes
+        return payload
+
+    def _payload_add_shift(self, slots: dict[str, str]) -> dict[str, Any]:
+        start = self._required_slot(slots, "start_at", "start", label="shift start")
+        end = self._required_slot(slots, "end_at", "end", label="shift end")
+        start_at = self._parse_shift_datetime(start, label="start_at")
+        end_at = self._parse_shift_datetime(end, label="end_at")
+        if start_at >= end_at:
+            raise NLProposalError("start_at must be before end_at.")
+
+        title = self._optional_slot(slots, "title") or "Work"
+        payload: dict[str, Any] = {
+            "title": self._validate_short_text(title, label="Shift title"),
+            "start_at": start_at.strftime("%Y-%m-%d %H:%M"),
+            "end_at": end_at.strftime("%Y-%m-%d %H:%M"),
+        }
+        location = self._optional_slot(slots, "location")
+        if location:
+            payload["location"] = self._validate_short_text(location, label="Location")
+        role = self._optional_slot(slots, "role")
+        if role:
+            payload["role"] = self._validate_short_text(role, label="Role")
+        energy = self._optional_slot(slots, "energy_cost", "energy")
+        if energy:
+            energy_cost = validate_energy_cost(energy)
+            if energy_cost is None:
+                raise NLProposalError("Energy cost must be between 1 and 5.")
+            payload["energy_cost"] = energy_cost
+        notes = self._optional_slot(slots, "notes")
+        if notes:
+            payload["notes"] = notes
+        return payload
+
     def _payload_add_note(self, slots: dict[str, str]) -> dict[str, Any]:
         title = self._required_slot(slots, "title", label="note title")
+        title = self._validate_note_title(title)
         body = self._required_slot(slots, "content", "body", label="note body")
+        body = self._validate_note_body(body)
         payload: dict[str, Any] = {"title": title, "body": body}
         module_id = self._optional_slot(slots, "module_id", "module")
         if module_id:
-            payload["module_id"] = module_id
+            resolved_module_id, module_name = self._resolve_module_id(module_id)
+            payload["module_id"] = resolved_module_id
+            payload["module_name"] = module_name
         assignment_id = self._optional_slot(slots, "assignment_id", "assignment")
         if assignment_id:
-            payload["assignment_id"] = assignment_id
+            resolved_assignment_id, assignment_title = self._resolve_assignment_id(assignment_id)
+            payload["assignment_id"] = resolved_assignment_id
+            payload["assignment_title"] = assignment_title
         tags = self._parse_tags(slots.get("tags"))
         if tags:
             payload["tags"] = tags
         return payload
+
+    def _payload_archive_note(self, slots: dict[str, str]) -> dict[str, Any]:
+        note_id_str = self._required_slot(slots, "note_id", "id", label="note ID")
+        try:
+            note_id = int(note_id_str)
+        except ValueError as exc:
+            raise NLProposalError(f"Invalid note ID: {note_id_str}") from exc
+        note = self._build_knowledge_service().get_note(note_id)
+        if note is None:
+            raise NLProposalError(f"Note #{note_id} not found.")
+        if note.archived:
+            raise NLProposalError(f"Note #{note_id} is already archived.")
+        return {"note_id": note_id, "note_title": note.title}
 
     def _required_slot(self, slots: dict[str, str], *names: str, label: str) -> str:
         value = self._optional_slot(slots, *names)
@@ -325,11 +500,67 @@ class NLRouter:
             raise NLProposalError("Estimated hours must be between 0 and 1000.")
         return hours
 
+    def _parse_due_at(self, value: str) -> str:
+        parsed, error = parse_datetime_input(value, ZoneInfo(self._tz))
+        if error:
+            raise NLProposalError(error)
+        return parsed.strftime("%Y-%m-%d %H:%M")
+
+    def _parse_hhmm(self, value: str, *, label: str):
+        try:
+            return parse_hhmm(value)
+        except ValueError as exc:
+            raise NLProposalError(f"{label} must be HH:MM format.") from exc
+
+    def _parse_shift_datetime(self, value: str, *, label: str):
+        parsed, error = parse_datetime_strict(value, ZoneInfo(self._tz))
+        if error:
+            raise NLProposalError(error.replace("datetime", label, 1))
+        return parsed
+
     def _parse_tags(self, value: str | None) -> list[str] | None:
         if value is None:
             return None
-        tags = [tag.strip() for tag in value.split(",") if tag.strip()]
+        tags = normalize_tags(value)
         return tags or None
+
+    def _validate_short_text(self, value: str, *, label: str) -> str:
+        validated = validate_text_field(value, required=True)
+        if not validated:
+            raise NLProposalError(f"{label} is required.")
+        return validated
+
+    def _validate_note_title(self, value: str) -> str:
+        validated = validate_note_title(value)
+        if not validated:
+            raise NLProposalError("Note title is required.")
+        return validated
+
+    def _validate_note_body(self, value: str) -> str:
+        validated = validate_note_body(value)
+        if not validated:
+            raise NLProposalError("Note body is required.")
+        return validated
+
+    def _resolve_module_id(self, value: str) -> tuple[str, str]:
+        service = self._build_academic_service()
+        existing = service.repository.get_module_by_id(value)
+        if existing is not None:
+            return existing.id, existing.name
+
+        lowered = value.casefold()
+        matches = [
+            module
+            for module in service.list_modules()
+            if module.name.casefold() == lowered
+            or (module.code is not None and module.code.casefold() == lowered)
+            or module.id.startswith(value)
+        ]
+        if len(matches) == 1:
+            return matches[0].id, matches[0].name
+        if len(matches) > 1:
+            raise NLProposalError("Multiple modules match that label. Use the module ID.")
+        raise NLProposalError(f"Module not found: {value}")
 
     def _resolve_assignment_id(self, value: str) -> tuple[str, str]:
         service = self._build_academic_service()
@@ -341,6 +572,7 @@ class NLRouter:
             assignment
             for assignment in service.list_all_assignments(include_completed=True)
             if assignment.title.casefold() == value.casefold()
+            or assignment.id.startswith(value)
         ]
         if len(matches) == 1:
             return matches[0].id, matches[0].title
@@ -492,6 +724,40 @@ class NLRouter:
         )
         return self._action_result(ACTION_SET_ASSIGNMENT_STATUS, result)
 
+    def _handle_set_assignment_hours(self, payload: dict[str, Any]) -> ActionResult:
+        service = self._build_academic_service()
+        result = service.update_completed_hours(
+            payload["assignment_id"],
+            payload["completed_hours"],
+        )
+        return self._action_result(ACTION_SET_ASSIGNMENT_HOURS, result)
+
+    def _handle_add_class(self, payload: dict[str, Any]) -> ActionResult:
+        service = self._build_academic_service()
+        result = service.add_class_session(
+            title=payload["title"],
+            weekday=payload["weekday"],
+            start_time=payload["start_time"],
+            end_time=payload["end_time"],
+            module_id=payload.get("module_id"),
+            location=payload.get("location"),
+            notes=payload.get("notes"),
+        )
+        return self._action_result(ACTION_ADD_CLASS_SESSION, result)
+
+    def _handle_add_shift(self, payload: dict[str, Any]) -> ActionResult:
+        service = self._build_academic_service()
+        result = service.add_work_shift(
+            title=payload["title"],
+            start_at=payload["start_at"],
+            end_at=payload["end_at"],
+            location=payload.get("location"),
+            role=payload.get("role"),
+            energy_cost=payload.get("energy_cost"),
+            notes=payload.get("notes"),
+        )
+        return self._action_result(ACTION_ADD_WORK_SHIFT, result)
+
     def _handle_add_note(self, payload: dict[str, Any]) -> ActionResult:
         service = self._build_knowledge_service()
         result = service.create_note(
@@ -503,6 +769,11 @@ class NLRouter:
             tags=payload.get("tags"),
         )
         return self._action_result(ACTION_ADD_NOTE, result)
+
+    def _handle_archive_note(self, payload: dict[str, Any]) -> ActionResult:
+        service = self._build_knowledge_service()
+        result = service.archive_note(payload["note_id"])
+        return self._action_result(ACTION_ARCHIVE_NOTE, result)
 
     def _action_result(self, action_type: str, result: CommandResult) -> ActionResult:
         payload = {"record_id": result.record_id} if result.record_id else {}
@@ -523,7 +794,7 @@ class NLRouter:
         title = slots.get("title", "Untitled assignment")
         due = slots.get("due_at", "not specified")
         priority = slots.get("priority", "normal (inferred)")
-        module = slots.get("module", "not specified")
+        module = slots.get("module_name", slots.get("module_id", "not specified"))
         hours = slots.get("estimated_hours", "not specified")
         return (
             f"Add assignment?\n"
@@ -548,54 +819,61 @@ class NLRouter:
             f'Reply "yes" to confirm or "no" to cancel.'
         )
 
-    def _confirm_add_note(self, slots: dict[str, str]) -> str:
-        title = slots.get("title", "Untitled note")
-        content_preview = slots.get("body", slots.get("content", ""))[:100]
+    def _confirm_set_hours(self, slots: dict[str, str]) -> str:
+        assignment = slots.get("assignment_title", slots.get("assignment_id", "not specified"))
+        completed = slots.get("completed_hours", "not specified")
         return (
-            f"Add note?\n"
-            f"Title: {title}\n"
-            f"Content: {content_preview}\n"
+            f"Update assignment hours?\n"
+            f"Assignment: {assignment}\n"
+            f"Completed: {completed}h\n"
             f'Reply "yes" to confirm or "no" to cancel.'
         )
 
-    def _execute_add_assignment(self, slots: dict[str, str]) -> str:
-        service = self._build_academic_service()
-        title = slots.get("title")
-        due = slots.get("due_at")
-        if not title or not due:
-            return "Missing title or due date. Use: /add_assignment title=\"...\" due=\"...\""
-        priority_str = slots.get("priority", "3")
-        priority = int(priority_str) if priority_str.isdigit() else 3
-        estimate_str = slots.get("estimated_hours")
-        estimated = float(estimate_str) if estimate_str and estimate_str.replace(".", "").isdigit() else None
-        module_id = slots.get("module")
-        result = service.add_assignment(
-            title=title,
-            due_at=due,
-            module_id=module_id or None,
-            priority=priority,
-            estimated_hours=estimated,
+    def _confirm_add_class(self, slots: dict[str, str]) -> str:
+        title = slots.get("title", "Untitled class")
+        module = slots.get("module_name", slots.get("module_id", "not specified"))
+        return (
+            f"Add class session?\n"
+            f"Title: {title}\n"
+            f"Weekday: {slots.get('weekday', 'not specified')}\n"
+            f"Time: {slots.get('start_time', 'not specified')}-{slots.get('end_time', 'not specified')}\n"
+            f"Module: {module}\n"
+            f'Reply "yes" to confirm or "no" to cancel.'
         )
-        return result.message
 
-    def _execute_set_status(self, slots: dict[str, str]) -> str:
-        service = self._build_academic_service()
-        assignment_id = slots.get("assignment_id_or_title", slots.get("assignment"))
-        status = slots.get("status")
-        if not assignment_id or not status:
-            return "Missing assignment or status. Use: /set_status assignment=... status=..."
-        result = service.update_assignment_status(assignment_id, status)
-        return result.message
+    def _confirm_add_shift(self, slots: dict[str, str]) -> str:
+        return (
+            f"Add work shift?\n"
+            f"Title: {slots.get('title', 'Work')}\n"
+            f"Start: {slots.get('start_at', 'not specified')}\n"
+            f"End: {slots.get('end_at', 'not specified')}\n"
+            f'Reply "yes" to confirm or "no" to cancel.'
+        )
 
-    def _execute_add_note(self, slots: dict[str, str]) -> str:
-        service = self._build_knowledge_service()
-        title = slots.get("title")
-        body = slots.get("content", slots.get("body", ""))
-        if not title:
-            return "Missing note title. Use: /add_note title=\"...\" body=\"...\""
-        result = service.create_note(title=title, body=body, source_type="manual")
-        return result.message
+    def _confirm_add_note(self, slots: dict[str, str]) -> str:
+        title = slots.get("title", "Untitled note")
+        content_preview = slots.get("body", slots.get("content", ""))[:100]
+        module = slots.get("module_name")
+        assignment = slots.get("assignment_title")
+        links = []
+        if module:
+            links.append(f"Module: {module}")
+        if assignment:
+            links.append(f"Assignment: {assignment}")
+        link_block = ("\n" + "\n".join(links)) if links else ""
+        return (
+            f"Add note?\n"
+            f"Title: {title}\n"
+            f"Content: {content_preview}{link_block}\n"
+            f'Reply "yes" to confirm or "no" to cancel.'
+        )
 
+    def _confirm_archive_note(self, slots: dict[str, str]) -> str:
+        return (
+            f"Archive note?\n"
+            f"Note: #{slots.get('note_id')} - {slots.get('note_title', 'Untitled note')}\n"
+            f'Reply "yes" to confirm or "no" to cancel.'
+        )
 
 def _format_today(overview: object) -> str:
     classes = overview.classes
