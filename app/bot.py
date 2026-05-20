@@ -157,7 +157,7 @@ async def natural_language_handler(update: Update, context: ContextTypes.DEFAULT
 
     from core.llm.client import OllamaClient
     from core.nl.classifier import NLClassifier
-    from core.nl.intent import READ_INTENTS, WRITE_INTENTS
+    from core.nl.router import NLProposalError
 
     text = update.effective_message.text
     if not text or not text.strip():
@@ -170,13 +170,15 @@ async def natural_language_handler(update: Update, context: ContextTypes.DEFAULT
         if lower in ("yes", "y", "confirm"):
             context.user_data.pop("nl_pending_confirmation", None)
             router = _build_nl_router(context)
-            response = router.execute_write(pending)
+            response = router.execute_confirmed_write(pending, actor_user_id=user_id)
             await _reply(update, response)
             return
         if lower in ("no", "n", "cancel"):
             context.user_data.pop("nl_pending_confirmation", None)
             await _reply(update, "Cancelled.")
             return
+        await _reply(update, 'Please reply "yes" to confirm or "no" to cancel.')
+        return
 
     settings = _get_bot_settings(context)
     client = OllamaClient(
@@ -198,8 +200,13 @@ async def natural_language_handler(update: Update, context: ContextTypes.DEFAULT
         await _reply(update, response)
     elif match.is_write:
         router = _build_nl_router(context)
-        confirmation = router.build_confirmation(match)
-        context.user_data["nl_pending_confirmation"] = match
+        try:
+            proposal = router.build_write_proposal(match, actor_user_id=user_id)
+        except NLProposalError as exc:
+            await _reply(update, str(exc))
+            return
+        confirmation = router.build_confirmation(proposal)
+        context.user_data["nl_pending_confirmation"] = proposal
         await _reply(update, confirmation)
     else:
         router = _build_nl_router(context)
@@ -632,9 +639,8 @@ def build_application(settings: Settings | None = None) -> Application:
     from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
     runtime_settings = settings or get_settings()
+    validate_telegram_startup(runtime_settings)
     token = runtime_settings.TELEGRAM_BOT_TOKEN
-    if not token:
-        raise RuntimeError("TELEGRAM_BOT_TOKEN is not set; Telegram bot startup is disabled.")
 
     allowlist_filter = _build_allowlist_filter()
     application = Application.builder().token(token).build()
@@ -678,6 +684,17 @@ def build_application(settings: Settings | None = None) -> Application:
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & allowlist_filter, natural_language_handler))
     application.add_handler(MessageHandler(filters.COMMAND & allowlist_filter, unknown_command))
     return application
+
+
+def validate_telegram_startup(settings: Settings) -> None:
+    """Fail fast on unsafe Telegram startup settings."""
+
+    if not settings.TELEGRAM_BOT_TOKEN:
+        raise RuntimeError("TELEGRAM_BOT_TOKEN is not set; Telegram bot startup is disabled.")
+    if not settings.TELEGRAM_ALLOWED_USER_IDS:
+        raise RuntimeError(
+            "TELEGRAM_ALLOWED_USER_IDS must be non-empty when TELEGRAM_BOT_TOKEN is set."
+        )
 
 
 async def start_bot(app: Application) -> None:

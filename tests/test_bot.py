@@ -9,8 +9,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app.config import Settings
 from app.bot import (
     AllowlistFilter,
+    build_application,
     ping_command,
     skills_command,
     status_command,
@@ -52,6 +54,19 @@ async def test_allowlist_passes_known_user() -> None:
     await _dispatch_if_allowed(update, context, handler)
 
     assert reached is True
+
+
+def test_telegram_startup_requires_non_empty_allowlist() -> None:
+    """A configured Telegram token without allowed users should fail startup."""
+
+    settings = Settings(
+        _env_file=None,
+        telegram_bot_token="123:abc",
+        telegram_allowed_user_ids=[],
+    )
+
+    with pytest.raises(RuntimeError, match="TELEGRAM_ALLOWED_USER_IDS"):
+        build_application(settings)
 
 
 @pytest.mark.asyncio

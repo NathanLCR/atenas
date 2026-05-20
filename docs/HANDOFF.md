@@ -1,4 +1,4 @@
-# Atenas Handoff - 2026-05-19
+# Atenas Handoff - 2026-05-20
 
 ## Status
 
@@ -8,11 +8,19 @@ review. It is not a verified implementation baseline.
 The product direction is now:
 
 ```text
-local-running app + Telegram-first LLM tool agent
+local-running app + Telegram-first governed LLM tool agent
 ```
 
 Dashboard and REST API are local support surfaces. Telegram remains the main
 interface.
+
+The governing doctrine is:
+
+```text
+LLM proposes.
+Deterministic systems validate.
+Human approves critical actions.
+```
 
 ## Verification
 
@@ -41,7 +49,11 @@ valid baseline.
 - Local Ollama is the default LLM provider.
 - External LLM providers are opt-in data egress.
 - Telegram allowlist is mandatory.
-- Writes require confirmation and policy approval.
+- LLM-originated writes require proposal, deterministic validation, human
+  confirmation, policy approval, service execution, and audit logging.
+- Critical actions include all LLM-originated writes in v1, destructive
+  changes, external communication, configuration changes, sensitive data
+  egress, and ambiguous target resolution.
 
 Read these docs first:
 
@@ -51,6 +63,7 @@ Read these docs first:
 4. `docs/AGENT_POLICY.md`
 5. `docs/REQUIREMENTS.md`
 6. `docs/HANDOFF_NL_INTERFACE.md`
+7. `docs/HANDOFF_PROPOSE_VALIDATE_APPROVE.md`
 
 ## Existing Telegram Surface to Preserve
 
@@ -130,8 +143,8 @@ Write flow:
 
 ```text
 Telegram user
-  -> LLM write proposal
-  -> validated args and ID resolution
+  -> LLM proposes write
+  -> deterministic validation and ID resolution
   -> confirmation prompt
   -> policy check
   -> service execution

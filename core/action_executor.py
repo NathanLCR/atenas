@@ -114,8 +114,11 @@ class ActionExecutor:
             extra={
                 "event_type": "action_executed",
                 "action_type": proposal.action_type,
+                "actor_user_id": proposal.payload.get("actor_user_id"),
+                "confidence": proposal.confidence,
                 "outcome": result.outcome.value,
                 "success": result.success,
+                "user_confirmed": proposal.user_confirmed,
             },
         )
 
@@ -133,4 +136,3 @@ def execute(proposal: ActionProposal) -> ActionResult:
     """Execute an action proposal on the process-wide executor."""
 
     return _executor.execute(proposal)
-

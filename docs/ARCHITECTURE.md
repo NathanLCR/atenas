@@ -2,17 +2,37 @@
 
 ## Status
 
-Target architecture as of 2026-05-19. This is the contract the code should be
+Target architecture as of 2026-05-20. This is the contract the code should be
 refactored toward. It does not claim every path is already implemented.
 
 ## Guiding Principle
 
-> The LLM decides meaning. Tools expose capabilities. Code controls actions.
+```text
+LLM proposes.
+Deterministic systems validate.
+Human approves critical actions.
+```
 
 The LLM is never trusted to execute application logic directly. It receives a
-small set of structured tools. Tool arguments are validated, write proposals
-are confirmed by the user, the policy engine runs before mutation, and services
-own the actual business logic.
+small set of structured tools. Tool arguments are validated, natural-language
+references are resolved to stable IDs, write proposals are confirmed by the
+user, the policy engine runs before mutation, and services own the actual
+business logic.
+
+## Governance Model
+
+Atenas separates action handling into four explicit stages:
+
+| Stage | Owner | Responsibility |
+|---|---|---|
+| Propose | LLM/tool agent | Interpret the request and propose a structured tool/action with arguments |
+| Validate | Deterministic code | Validate schema, resolve IDs, check domain constraints, compute safe options |
+| Approve | Human plus policy | Require human confirmation for critical actions, then apply policy/default-deny |
+| Execute | Core service | Mutate state only after validation and approval, then emit an audit record |
+
+For v1, all LLM-originated writes are critical. Destructive actions, external
+messages, configuration changes, sensitive data egress, and bulk mutations are
+critical from every surface.
 
 ## Deployment Posture
 
@@ -47,6 +67,9 @@ Tool registry
     +-- read tools ------------------------------+
     |                                            |
     +-- write proposal tools                     |
+         |
+         v
+    Deterministic validation + ID resolution
          |
          v
     Confirmation manager
@@ -120,7 +143,7 @@ services/tools instead of being copied into Telegram-specific formatting.
 |---|---|---|
 | Read tools | status, today, week, deadlines, modules, assignments, notes, files, retrieval sources | May run after Telegram allowlist auth |
 | Planning tools | generate plan, suggest next task, explain deadline risk | May run after auth; must use deterministic service inputs |
-| Write tools | add assignment, set status, add note, add class, add shift, archive note | Must create a pending proposal, require confirmation, pass policy |
+| Write tools | add assignment, set status, add note, add class, add shift, archive note | LLM may propose only; code validates, confirms, applies policy, then services execute |
 | System tools | local LLM status, app health, configuration summary | Read-only; never reveal secrets |
 
 ## Read Flow
@@ -143,6 +166,7 @@ User: "mark my ML essay done"
   -> allowlist check
   -> LLM calls find_assignment(title="ML essay")
   -> LLM proposes set_assignment_status(id="...", status="done")
+  -> deterministic validation verifies ID/status and builds pending proposal
   -> bot asks for confirmation
   -> user replies "yes"
   -> policy engine validates the action
@@ -152,6 +176,10 @@ User: "mark my ML essay done"
 
 Writes must never execute directly from the LLM response. Confirmation text is
 not enough by itself; execution must pass through a policy-checked path.
+
+No router, classifier, tool adapter, dashboard route, or API route may mutate
+state merely because the LLM produced plausible arguments. Mutation authority
+belongs to core services after the governance stages above.
 
 ## Retrieval Flow
 
@@ -192,10 +220,12 @@ Required startup validation:
 
 ## Implementation Priorities
 
-1. Lock the local-only transport posture.
-2. Make Telegram allowlist failure loud at startup.
-3. Introduce the LLM tool registry and shared read/write tool contracts.
-4. Route all writes through confirmation and policy.
-5. Remove or quarantine dead modules and fake LLM telemetry.
-6. Fix retrieval indexing so queries do not rebuild everything.
-7. Push dependency direction to `app -> core`, never `core -> app`.
+1. Make the propose -> validate -> approve -> execute path a shared primitive.
+2. Lock the local-only transport posture.
+3. Make Telegram allowlist failure loud at startup.
+4. Introduce the LLM tool registry and shared read/write tool contracts.
+5. Route all LLM-originated writes through confirmation and policy.
+6. Decide and document which slash-command writes must use the same path.
+7. Remove or quarantine dead modules and fake LLM telemetry.
+8. Fix retrieval indexing so queries do not rebuild everything.
+9. Push dependency direction to `app -> core`, never `core -> app`.

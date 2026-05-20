@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.api import router as api_router
-from app.bot import build_application, start_bot, stop_bot
+from app.bot import build_application, start_bot, stop_bot, validate_telegram_startup
 from app.config import Settings, get_settings
 from app.dashboard import router as dashboard_router
 from core.db import init_db
@@ -43,6 +43,7 @@ def create_app(settings: Settings | None = None, registry: SkillRegistry | None 
         app.state.registry = runtime_registry
         bot_app = None
         if runtime_settings.TELEGRAM_BOT_TOKEN:
+            validate_telegram_startup(runtime_settings)
             try:
                 bot_app = build_application(runtime_settings)
                 await start_bot(bot_app)
@@ -52,6 +53,7 @@ def create_app(settings: Settings | None = None, registry: SkillRegistry | None 
                 if bot_app is not None:
                     await stop_bot(bot_app)
                     bot_app = None
+                raise
         else:
             logger.warning(
                 "telegram_bot_token_not_set",
