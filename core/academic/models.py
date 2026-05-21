@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from core.schemas import FatigueLevel
 from core.time import parse_hhmm, utc_now_iso
 
 TIME_PATTERN = r"^\d{2}:\d{2}$"
@@ -106,6 +107,7 @@ class WorkShift(StrictModel):
     location: str | None = None
     role: str | None = None
     energy_cost: int | None = Field(default=None, ge=1, le=5)
+    fatigue_level: FatigueLevel = FatigueLevel.MEDIUM
     notes: str | None = None
     created_at: str = Field(default_factory=utc_now_iso)
     updated_at: str = Field(default_factory=utc_now_iso)
@@ -166,6 +168,7 @@ class StudyWindow(StrictModel):
     start_at: datetime
     end_at: datetime
     minutes: int
+    max_intensity: str = "deep"
 
 
 class DayAvailability(StrictModel):

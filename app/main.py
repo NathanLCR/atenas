@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api import router as api_router
@@ -72,6 +74,18 @@ def create_app(settings: Settings | None = None, registry: SkillRegistry | None 
             logger.info("application_shutdown", extra={"event_type": "application_shutdown"})
 
     app = FastAPI(title=runtime_settings.app_name, lifespan=lifespan)
+
+    @app.middleware("http")
+    async def local_only_guard(request: Request, call_next):
+        if runtime_settings.allow_non_loopback_clients:
+            return await call_next(request)
+        client_host = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        if not client_host and request.client is not None:
+            client_host = request.client.host
+        if client_host and not _is_loopback_or_test_client(client_host):
+            return JSONResponse({"detail": "Atenas API/dashboard is local-only."}, status_code=403)
+        return await call_next(request)
+
     app.include_router(api_router)
     app.include_router(dashboard_router)
     static_dir = Path(__file__).parent / "static"
@@ -96,3 +110,13 @@ def __getattr__(name: str) -> FastAPI:
             _app = create_app()
         return _app
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def _is_loopback_or_test_client(host: str) -> bool:
+    """Return True if the host is loopback or a test client."""
+    if host == "testclient":
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return host == "localhost"

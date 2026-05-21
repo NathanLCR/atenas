@@ -15,7 +15,6 @@ from core.knowledge.service import KnowledgeService
 from core.llm.client import OllamaClient
 from core.llm.service import LLMService
 from core.nl.agent import AgentLoop
-from core.nl.tool_contracts import PendingToolAction
 from core.nl.tools import ToolRegistry
 from core.notifications.service import NotificationService, seconds_until, seconds_until_weekday
 from core.retrieval.models import NO_SOURCE_FALLBACK
@@ -183,11 +182,8 @@ async def natural_language_handler(update: Update, context: ContextTypes.DEFAULT
         if lower in ("yes", "y", "confirm"):
             user_data.pop("nl_pending_action", None)
             registry = _build_nl_tool_registry(context)
-            if isinstance(pending, PendingToolAction):
-                result = registry.execute_pending(pending, actor_user_id=user_id)
-                await _reply(update, result.message)
-            else:
-                await _reply(update, "Pending action could not be restored. Please try again.")
+            result = registry.execute_pending(pending, actor_user_id=user_id)
+            await _reply(update, result.message)
             return
         if lower in ("no", "n", "cancel"):
             user_data.pop("nl_pending_action", None)
@@ -766,27 +762,20 @@ def _get_bot_settings(context: ContextTypes.DEFAULT_TYPE) -> Settings:
 
 
 def _telegram_user_authorized(settings: Settings, user_id: int | None) -> bool:
-    """Return whether a plain-message handler should process this user."""
+    """Return whether a plain-message handler should process this user.
+
+    Default-deny: returns False for empty, malformed, or missing allowlists.
+    """
 
     allowed_user_ids = getattr(settings, "TELEGRAM_ALLOWED_USER_IDS", [])
     if not isinstance(allowed_user_ids, Sequence) or isinstance(
         allowed_user_ids,
         (str, bytes),
     ):
-        return True
+        return False
     if not allowed_user_ids:
-        return True
+        return False
     return user_id is not None and user_id in set(allowed_user_ids)
-
-
-async def _reply(update: Update, text: str) -> None:
-    """Reply on the effective message when one exists."""
-
-    message = update.effective_message
-    if message is None:
-        logger.debug("telegram_update_without_message")
-        return
-    await message.reply_text(text)
 
 
 def _get_status_text() -> str:
@@ -1149,19 +1138,26 @@ async def note_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def archive_note_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    service = _build_knowledge_service(context)
     text = update.effective_message.text or ""
     parts = text.split(None, 1)
     if len(parts) < 2:
         await _reply(update, "Usage: /archive_note <id>")
         return
-    try:
-        note_id = int(parts[1].strip())
-    except ValueError:
-        await _reply(update, "Invalid note ID. Use: /archive_note <id>")
+    note_ref = parts[1].strip()
+    if not note_ref:
+        await _reply(update, "Usage: /archive_note <id>")
         return
-    result = service.archive_note(note_id)
-    await _reply(update, result.message)
+
+    user_id = update.effective_user.id if update.effective_user else None
+    registry = _build_nl_tool_registry(context)
+    run = registry.run_tool("archive_note", {"note": note_ref}, actor_user_id=user_id)
+    if run.pending_action is not None:
+        user_data = getattr(context, "user_data", None)
+        if user_data is None:
+            user_data = {}
+            context.user_data = user_data
+        user_data["nl_pending_action"] = run.pending_action
+    await _reply(update, run.result.message)
 
 
 async def add_file_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1359,19 +1355,10 @@ def _build_nl_agent(context: ContextTypes.DEFAULT_TYPE) -> AgentLoop:
         model=settings.ollama_model,
         timeout=settings.ollama_timeout_seconds,
     )
-    return AgentLoop(registry=registry, client=client)
-
-
-def _build_nl_router(context: ContextTypes.DEFAULT_TYPE) -> "NLRouter":
-    from core.nl.router import NLRouter
-
-    settings = _get_bot_settings(context)
-    return NLRouter(
-        db_path=settings.db_path,
-        timezone=settings.timezone,
-        ollama_base_url=settings.ollama_base_url,
-        ollama_model=settings.ollama_model,
-        ollama_timeout=settings.ollama_timeout_seconds,
+    return AgentLoop(
+        registry=registry,
+        client=client,
+        llm_log_path=settings.llm_log_path,
     )
 
 
@@ -1450,6 +1437,7 @@ def _build_llm_service(context: ContextTypes.DEFAULT_TYPE) -> LLMService:
         ollama_base_url=settings.ollama_base_url,
         ollama_model=settings.ollama_model,
         ollama_timeout=settings.ollama_timeout_seconds,
+        llm_log_path=settings.llm_log_path,
     )
 
 
