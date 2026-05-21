@@ -58,3 +58,19 @@ def test_render_view_clips_to_dimensions() -> None:
     assert len(lines) == 8
     assert all(len(line) <= 24 for line in lines)
     assert lines[-1].strip() == "ready"
+
+
+def test_render_view_shows_empty_message() -> None:
+    view = TuiView(key="plan", title="Plan", empty_message="No planned blocks.")
+
+    lines = render_view(
+        view,
+        tabs=(("plan", "Plan"),),
+        active_key="plan",
+        width=50,
+        height=8,
+        status="ready",
+    )
+
+    joined = "\n".join(lines)
+    assert "No planned blocks." in joined
