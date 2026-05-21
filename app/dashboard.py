@@ -251,7 +251,11 @@ def _get_academic_service(settings: Settings) -> AcademicService:
 def _get_knowledge_service(settings: Settings) -> KnowledgeService:
     """Build the request-scoped knowledge service."""
 
-    return KnowledgeService(settings.db_path, timezone=settings.timezone)
+    return KnowledgeService(
+        settings.db_path,
+        timezone=settings.timezone,
+        allowed_file_roots=settings.knowledge_file_roots,
+    )
 
 
 def _get_retrieval_service(settings: Settings) -> RetrievalService:
@@ -263,6 +267,7 @@ def _get_retrieval_service(settings: Settings) -> RetrievalService:
         ollama_base_url=settings.ollama_base_url,
         ollama_model=settings.ollama_model,
         ollama_timeout=settings.ollama_timeout_seconds,
+        allowed_file_roots=settings.knowledge_file_roots,
     )
 
 

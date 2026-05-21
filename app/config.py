@@ -49,6 +49,9 @@ class Settings(BaseSettings):
     output_dir: Path = Path("output")
     inbox_dir: Path = Path("inbox")
     logs_dir: Path = Path("logs")
+    knowledge_file_roots: list[Path] = Field(
+        default_factory=lambda: [Path("inbox"), Path("memory")]
+    )
 
     local_llm_provider: str = "ollama"
     ollama_base_url: str = "http://localhost:11434"
@@ -134,6 +137,17 @@ class Settings(BaseSettings):
             return [value]
         if isinstance(value, str):
             return [int(item.strip()) for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator("knowledge_file_roots", mode="before")
+    @classmethod
+    def parse_knowledge_file_roots(cls, value: object) -> object:
+        """Parse comma-separated allowed file roots from environment variables."""
+
+        if value is None or value == "":
+            return [Path("inbox"), Path("memory")]
+        if isinstance(value, str):
+            return [Path(item.strip()) for item in value.split(",") if item.strip()]
         return value
 
     @property
