@@ -6,35 +6,10 @@ import sqlite3
 from pathlib import Path
 from typing import Iterable
 
-from core.db import get_connection
+from core.db import get_connection, init_db
 from core.retrieval.embeddings import lexical_score, query_terms
 from core.retrieval.models import RetrievalChunk, RetrievedSource
 from core.time import utc_now_iso
-
-SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS retrieval_chunks (
-    id TEXT PRIMARY KEY,
-    source_kind TEXT NOT NULL CHECK(source_kind IN ('note', 'file')),
-    source_id INTEGER NOT NULL,
-    chunk_index INTEGER NOT NULL,
-    title TEXT NOT NULL,
-    text TEXT NOT NULL,
-    module_id TEXT NULL,
-    assignment_id TEXT NULL,
-    updated_at TEXT NOT NULL,
-    indexed_at TEXT NOT NULL,
-    UNIQUE(source_kind, source_id, chunk_index)
-);
-
-CREATE INDEX IF NOT EXISTS idx_retrieval_chunks_source
-ON retrieval_chunks(source_kind, source_id);
-
-CREATE INDEX IF NOT EXISTS idx_retrieval_chunks_module
-ON retrieval_chunks(module_id);
-
-CREATE INDEX IF NOT EXISTS idx_retrieval_chunks_assignment
-ON retrieval_chunks(assignment_id);
-"""
 
 
 class RetrievalVectorStore:
@@ -42,6 +17,7 @@ class RetrievalVectorStore:
 
     This MVP intentionally uses sparse lexical scoring instead of a vector DB.
     The table shape leaves a clear boundary for a later embedding-backed store.
+    Schema is owned by core.db.init_db.
     """
 
     def __init__(self, db_path: Path | str) -> None:
@@ -49,9 +25,7 @@ class RetrievalVectorStore:
         self.ensure_schema()
 
     def ensure_schema(self) -> None:
-        with get_connection(self.db_path) as conn:
-            conn.executescript(SCHEMA_SQL)
-            conn.commit()
+        init_db(self.db_path)
 
     def rebuild(self, chunks: list[RetrievalChunk]) -> int:
         indexed_at = utc_now_iso()

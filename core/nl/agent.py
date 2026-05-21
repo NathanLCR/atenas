@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 import logging
+import time
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import Field, ValidationError
 
+from core.llm.audit import log_llm_call
 from core.llm.client import OllamaClient
 from core.nl.tool_contracts import PendingToolAction
 from core.nl.tools import ToolRegistry
@@ -44,10 +47,12 @@ class AgentLoop:
         registry: ToolRegistry,
         client: OllamaClient,
         max_tool_calls: int = 5,
+        llm_log_path: Path | str | None = None,
     ) -> None:
         self.registry = registry
         self.client = client
         self.max_tool_calls = max_tool_calls
+        self._llm_log_path = Path(llm_log_path) if llm_log_path is not None else None
 
     def run(
         self,
@@ -68,9 +73,29 @@ class AgentLoop:
                 conversation=history,
                 observations=observations,
             )
+            started = time.perf_counter()
             try:
                 response = self.client.generate(prompt)
+                latency_ms = int((time.perf_counter() - started) * 1000)
+                log_llm_call(
+                    self._llm_log_path,
+                    provider="local",
+                    model=response.model,
+                    task_type="agent_turn",
+                    success=True,
+                    latency_ms=latency_ms,
+                )
             except (ConnectionError, TimeoutError, OSError) as exc:
+                latency_ms = int((time.perf_counter() - started) * 1000)
+                log_llm_call(
+                    self._llm_log_path,
+                    provider="local",
+                    model=self.client.model,
+                    task_type="agent_turn",
+                    success=False,
+                    latency_ms=latency_ms,
+                    error=str(exc),
+                )
                 logger.info(
                     "agent_llm_unavailable",
                     extra={"event_type": "agent_llm_unavailable", "error": str(exc)},

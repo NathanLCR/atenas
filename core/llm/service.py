@@ -116,27 +116,16 @@ class LLMService:
         latency_ms: int,
         error: str | None = None,
     ) -> None:
-        """Append LLM call metadata to the existing llm_calls JSONL log."""
+        """Append LLM call metadata using the centralized audit logger."""
 
-        if self._llm_log_path is None:
-            return
-        try:
-            path = self._llm_log_path
-            path.parent.mkdir(parents=True, exist_ok=True)
-            payload = {
-                "timestamp": utc_now(),
-                "event_type": "llm_call",
-                "provider": "local",
-                "model": model,
-                "task_type": f"note_{action}",
-                "source_kind": "note",
-                "source_id": source_id,
-                "success": success,
-                "latency_ms": latency_ms,
-                "outcome": "success" if success else "error",
-                "error": error,
-            }
-            with path.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
-        except OSError:
-            logger.debug("llm_call_log_write_failed")
+        from core.llm.audit import log_llm_call
+
+        log_llm_call(
+            self._llm_log_path,
+            provider="local",
+            model=model,
+            task_type=f"note_{action}",
+            success=success,
+            latency_ms=latency_ms,
+            error=error,
+        )

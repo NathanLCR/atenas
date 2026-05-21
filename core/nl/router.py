@@ -1,4 +1,8 @@
-"""Natural language router: maps IntentMatch to existing service/command calls."""
+"""Legacy fixed-intent NL router.
+
+The canonical Telegram natural-language path is AgentLoop + ToolRegistry.
+Do not add new product behavior here; migrate behavior to tools instead.
+"""
 
 from __future__ import annotations
 

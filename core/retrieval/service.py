@@ -7,6 +7,7 @@ from zoneinfo import ZoneInfo
 
 from core.knowledge.models import FileRecord, Note
 from core.knowledge.repository import KnowledgeRepository
+from core.llm.audit import log_llm_call
 from core.llm.client import OllamaClient
 from core.path_policy import PathPolicy, PathPolicyError
 from core.retrieval.chunking import chunk_text
@@ -51,6 +52,7 @@ class RetrievalService:
         ollama_model: str = "llama3.1:8b",
         ollama_timeout: int = 60,
         allowed_file_roots: list[Path | str] | None = None,
+        llm_log_path: Path | str | None = None,
     ) -> None:
         self.timezone = timezone if isinstance(timezone, ZoneInfo) else ZoneInfo(timezone)
         self.repository = KnowledgeRepository(db_path)
@@ -61,6 +63,7 @@ class RetrievalService:
             model=ollama_model,
             timeout=ollama_timeout,
         )
+        self._llm_log_path = Path(llm_log_path) if llm_log_path is not None else None
 
     def rebuild_index(self, *, include_files: bool = True) -> RetrievalIndexStats:
         """Rebuild the retrieval index from non-archived registered records."""
@@ -217,9 +220,30 @@ class RetrievalService:
             )
 
         prompt = build_answer_prompt(question, sources)
+        import time as _time
+        started = _time.perf_counter()
         try:
             response = self.client.generate(prompt)
+            latency_ms = int((_time.perf_counter() - started) * 1000)
+            log_llm_call(
+                self._llm_log_path,
+                provider="local",
+                model=response.model,
+                task_type="retrieval_answer",
+                success=True,
+                latency_ms=latency_ms,
+            )
         except (ConnectionError, TimeoutError, OSError) as exc:
+            latency_ms = int((_time.perf_counter() - started) * 1000)
+            log_llm_call(
+                self._llm_log_path,
+                provider="local",
+                model=self.client.model,
+                task_type="retrieval_answer",
+                success=False,
+                latency_ms=latency_ms,
+                error=str(exc),
+            )
             return RetrievalAnswer(
                 success=False,
                 question=question,

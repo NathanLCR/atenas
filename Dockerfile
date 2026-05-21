@@ -7,5 +7,5 @@ RUN mkdir -p data logs memory inbox output web/templates && \
     useradd --create-home appuser && \
     chown -R appuser:appuser /app
 USER appuser
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"]
 

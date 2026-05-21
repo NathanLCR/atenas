@@ -267,6 +267,7 @@ def _get_retrieval_service(settings: Settings) -> RetrievalService:
         ollama_base_url=settings.ollama_base_url,
         ollama_model=settings.ollama_model,
         ollama_timeout=settings.ollama_timeout_seconds,
+        llm_log_path=settings.llm_log_path,
         allowed_file_roots=settings.knowledge_file_roots,
     )
 
