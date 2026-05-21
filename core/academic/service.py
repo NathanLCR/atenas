@@ -17,6 +17,7 @@ from core.academic.models import (
     AssignmentStatus,
     ClassSession,
     DaySummary,
+    DuplicateModuleGroup,
     StudyModule,
     TimeBlock,
     TodayOverview,
@@ -89,6 +90,135 @@ class AcademicService:
         """List study modules."""
 
         return self.repository.list_modules()
+
+    def detect_duplicate_modules(self) -> list[DuplicateModuleGroup]:
+        """Return duplicate module groups using normalized name and code."""
+
+        grouped: dict[tuple[str, str], list[StudyModule]] = {}
+        for module in self.list_modules():
+            key = (_normalize_module_label(module.name), _normalize_module_label(module.code or ""))
+            grouped.setdefault(key, []).append(module)
+
+        duplicates: list[DuplicateModuleGroup] = []
+        for key, modules in grouped.items():
+            if len(modules) < 2:
+                continue
+            ordered = sorted(modules, key=lambda item: (item.created_at, item.id))
+            canonical = ordered[0]
+            duplicates.append(
+                DuplicateModuleGroup(
+                    key="|".join(key),
+                    canonical_module=canonical,
+                    duplicate_modules=ordered[1:],
+                    all_modules=ordered,
+                )
+            )
+        return sorted(
+            duplicates,
+            key=lambda group: (group.canonical_module.name.casefold(), group.key),
+        )
+
+    def delete_modules(self, module_ids: list[str]) -> CommandResult:
+        """Delete unreferenced modules after deterministic validation."""
+
+        requested_ids = _unique_ids(module_ids)
+        if not requested_ids:
+            return CommandResult(success=False, message="No module IDs were provided.")
+
+        modules_by_id = {module.id: module for module in self.list_modules()}
+        missing = [module_id for module_id in requested_ids if module_id not in modules_by_id]
+        if missing:
+            return CommandResult(
+                success=False,
+                message=f"Module not found: {', '.join(missing)}",
+            )
+
+        reference_counts = self.repository.module_reference_counts(requested_ids)
+        referenced = [
+            modules_by_id[module_id]
+            for module_id in requested_ids
+            if reference_counts.get(module_id, 0) > 0
+        ]
+        if referenced:
+            labels = ", ".join(f"#{module.id[:8]} {module.name}" for module in referenced)
+            return CommandResult(
+                success=False,
+                message=f"Refusing to delete referenced modules. Use deduplication instead: {labels}",
+            )
+
+        deleted = self.repository.delete_modules(requested_ids)
+        labels = "\n".join(
+            f"- #{modules_by_id[module_id].id[:8]} {modules_by_id[module_id].name}"
+            for module_id in requested_ids
+        )
+        return CommandResult(
+            success=True,
+            message=f"Deleted {deleted} module(s).\n\n{labels}",
+        )
+
+    def deduplicate_modules(
+        self,
+        groups: list[tuple[str, list[str]]],
+    ) -> CommandResult:
+        """Merge duplicate modules into canonical modules, then delete duplicates."""
+
+        if not groups:
+            return CommandResult(success=False, message="No duplicate module groups were provided.")
+
+        modules_by_id = {module.id: module for module in self.list_modules()}
+        deleted_modules: list[StudyModule] = []
+        reassigned_counts: dict[str, int] = {}
+
+        for canonical_id, duplicate_ids in groups:
+            canonical = modules_by_id.get(canonical_id)
+            if canonical is None:
+                return CommandResult(success=False, message=f"Canonical module not found: {canonical_id}")
+
+            dedupe_ids = _unique_ids(duplicate_ids)
+            if canonical_id in dedupe_ids:
+                return CommandResult(
+                    success=False,
+                    message="Canonical module cannot also be deleted.",
+                )
+            if not dedupe_ids:
+                return CommandResult(success=False, message="No duplicate module IDs were provided.")
+
+            canonical_key = _module_duplicate_key(canonical)
+            for module_id in dedupe_ids:
+                duplicate = modules_by_id.get(module_id)
+                if duplicate is None:
+                    return CommandResult(success=False, message=f"Duplicate module not found: {module_id}")
+                if _module_duplicate_key(duplicate) != canonical_key:
+                    return CommandResult(
+                        success=False,
+                        message=(
+                            f"Module #{duplicate.id[:8]} {duplicate.name} is not a duplicate "
+                            f"of #{canonical.id[:8]} {canonical.name}."
+                        ),
+                    )
+
+            changed = self.repository.reassign_module_references(dedupe_ids, canonical_id)
+            for table, count in changed.items():
+                reassigned_counts[table] = reassigned_counts.get(table, 0) + count
+            self.repository.delete_modules(dedupe_ids)
+            deleted_modules.extend(modules_by_id[module_id] for module_id in dedupe_ids)
+
+        if not deleted_modules:
+            return CommandResult(success=False, message="No duplicate modules were removed.")
+
+        deleted_lines = "\n".join(
+            f"- #{module.id[:8]} {module.name}{_module_code_label(module)}"
+            for module in deleted_modules
+        )
+        reassigned_total = sum(reassigned_counts.values())
+        return CommandResult(
+            success=True,
+            message=(
+                f"Duplicate modules removed: {len(deleted_modules)}\n"
+                f"References reassigned: {reassigned_total}\n\n"
+                f"{deleted_lines}"
+            ),
+        )
 
     def create_class_session(
         self,
@@ -723,13 +853,37 @@ def _weekday_name(weekday: int) -> str:
     return ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][weekday]
 
 
+def _normalize_module_label(value: str) -> str:
+    return " ".join(value.casefold().strip().split())
+
+
+def _module_duplicate_key(module: StudyModule) -> tuple[str, str]:
+    return (
+        _normalize_module_label(module.name),
+        _normalize_module_label(module.code or ""),
+    )
+
+
+def _module_code_label(module: StudyModule) -> str:
+    return f" ({module.code})" if module.code else ""
+
+
+def _unique_ids(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for value in values:
+        module_id = str(value).strip()
+        if not module_id or module_id in seen:
+            continue
+        seen.add(module_id)
+        unique.append(module_id)
+    return unique
+
+
 def get_academic_service() -> AcademicService:
-    """Build a service from process settings."""
+    """Deprecated: construct AcademicService with injected app settings."""
 
-    from app.config import get_settings
-
-    settings = get_settings()
-    return AcademicService(settings.db_path, timezone=settings.timezone)
+    raise RuntimeError("AcademicService requires injected db_path and timezone settings.")
 
 
 def _duration_minutes(start_at: datetime, end_at: datetime) -> int:

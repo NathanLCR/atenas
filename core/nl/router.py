@@ -1067,7 +1067,7 @@ def _format_shifts(shifts: list) -> str:
 def _format_llm_result(result: object, note_title: str) -> str:
     if not result.success:
         if "unavailable" in (result.error or "").lower() or "connection" in (result.error or "").lower():
-            return "Local LLM unavailable.\n\nCheck that Ollama is running:\nollama serve"
+            return "\n".join(_format_local_llm_error_lines(result.error))
         return f"Error: {result.error}"
     model_label = f"\nModel: {result.model}" if result.model else ""
     return f"{note_title}{model_label}\n\n{result.output[:2000]}"
@@ -1077,7 +1077,7 @@ def _format_retrieval_answer(result: object) -> str:
     if not result.success:
         error = result.error or "Retrieval failed."
         if "unavailable" in error.lower() or "connection" in error.lower():
-            lines = ["Local LLM unavailable.", "", "Check that Ollama is running:", "ollama serve"]
+            lines = _format_local_llm_error_lines(error)
             if result.sources:
                 lines.extend(["", "Sources found"])
                 lines.extend(_format_retrieval_source_lines(result.sources))
@@ -1092,6 +1092,14 @@ def _format_retrieval_answer(result: object) -> str:
     lines.extend(["", "Sources"])
     lines.extend(_format_retrieval_source_lines(result.sources))
     return "\n".join(lines).rstrip()
+
+
+def _format_local_llm_error_lines(error: str | None) -> list[str]:
+    error_text = (error or "").strip()
+    lower_error = error_text.lower()
+    if "ollama model unavailable" in lower_error or "ollama pull" in lower_error:
+        return ["Local LLM model unavailable.", "", error_text]
+    return ["Local LLM unavailable.", "", "Check that Ollama is running:", "ollama serve"]
 
 
 def _format_retrieval_source_lines(sources) -> list[str]:

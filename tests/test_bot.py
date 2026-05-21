@@ -2,17 +2,17 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import Awaitable, Callable
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
 from app.config import Settings
 from app.bot import (
     AllowlistFilter,
+    _get_skills_text,
     build_application,
     natural_language_handler,
     ping_command,
@@ -111,6 +111,16 @@ async def test_skills_handler_replies(monkeypatch: pytest.MonkeyPatch) -> None:
     assert reply_text
 
 
+def test_skills_text_includes_telegram_command_catalog() -> None:
+    """The /skills response should not only show the internal status skill."""
+
+    response = _get_skills_text()
+
+    assert "Telegram Commands" in response
+    assert "/today" in response
+    assert "/summarize_note" in response
+
+
 @pytest.mark.asyncio
 async def test_unknown_command_replies_helpful_message() -> None:
     """Unknown allowlisted commands should get the supported command list."""
@@ -120,7 +130,7 @@ async def test_unknown_command_replies_helpful_message() -> None:
     await _dispatch_if_allowed(update, _make_context(), unknown_command)
 
     update.effective_message.reply_text.assert_awaited_once_with(
-        "Unknown command. Try /ping, /status, or /skills."
+        "Unknown command. Use /skills to see available commands."
     )
 
 
@@ -165,66 +175,61 @@ def _make_context_with_settings() -> SimpleNamespace:
 
 
 @pytest.mark.asyncio
-async def test_natural_language_handler_greeting_calls_conversational_service(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Greeting messages should be handled by the conversational service."""
-
-    from core.llm.client import OllamaClient
-    from core.nl.classifier import NLClassifier
-    from core.llm.conversational import ConversationalService
+async def test_natural_language_handler_calls_agent_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Plain messages should go through the tool-calling agent."""
 
     update = _make_update(user_id=123, text="hello")
     context = _make_context_with_settings()
+    fake_agent = _FakeAgent("Hi! I'm Atenas.")
 
-    mock_client = MagicMock(spec=OllamaClient)
-    mock_classifier = MagicMock(spec=NLClassifier)
-    mock_classifier.classify.return_value = SimpleNamespace(
-        intent="greeting",
-        confidence=0.95,
-        is_confident=True,
-        is_read=True,
-        is_write=False,
-    )
-    mock_conv_service = MagicMock(spec=ConversationalService)
-    mock_conv_service.generate_response.return_value = "Hi! I'm Atenas. How can I help you study today?"
-
-    monkeypatch.setattr("app.bot.OllamaClient", lambda **kwargs: mock_client)
-    monkeypatch.setattr("app.bot.NLClassifier", lambda client, timezone: mock_classifier)
-    monkeypatch.setattr("app.bot.ConversationalService", lambda client: mock_conv_service)
+    monkeypatch.setattr("app.bot._build_nl_agent", lambda inner_context: fake_agent)
 
     await natural_language_handler(update, context)
 
-    mock_conv_service.generate_response.assert_called_once_with("hello")
-    update.effective_message.reply_text.assert_awaited_once_with("Hi! I'm Atenas. How can I help you study today?")
+    assert fake_agent.calls[0]["message"] == "hello"
+    update.effective_message.reply_text.assert_awaited_once_with("Hi! I'm Atenas.")
+    assert context.user_data["nl_agent_history"][-1]["content"] == "Hi! I'm Atenas."
 
 
 @pytest.mark.asyncio
-async def test_natural_language_handler_conversational_calls_service(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Conversational messages should be handled by the conversational service."""
+async def test_natural_language_handler_passes_prior_agent_history(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Follow-ups should keep the prior conversational goal in context."""
 
-    from core.llm.client import OllamaClient
-    from core.nl.classifier import NLClassifier
-    from core.llm.conversational import ConversationalService
-
-    update = _make_update(user_id=123, text="how are you?")
+    update = _make_update(user_id=123, text="let's review that")
     context = _make_context_with_settings()
+    context.user_data["nl_agent_history"] = [
+        {"role": "user", "content": "what should I study next?"},
+        {"role": "assistant", "content": "Review CNN notes next."},
+    ]
+    fake_agent = _FakeAgent("Great, let's review CNN notes.")
 
-    mock_client = MagicMock(spec=OllamaClient)
-    mock_classifier = MagicMock(spec=NLClassifier)
-    mock_classifier.classify.return_value = SimpleNamespace(
-        intent="conversational",
-        confidence=0.90,
-        is_confident=True,
-        is_read=True,
-        is_write=False,
-    )
-    mock_conv_service = MagicMock(spec=ConversationalService)
-    mock_conv_service.generate_response.return_value = "I'm doing well! Ready to help you study."
-
-    monkeypatch.setattr("app.bot.OllamaClient", lambda **kwargs: mock_client)
-    monkeypatch.setattr("app.bot.NLClassifier", lambda client, timezone: mock_classifier)
-    monkeypatch.setattr("app.bot.ConversationalService", lambda client: mock_conv_service)
+    monkeypatch.setattr("app.bot._build_nl_agent", lambda inner_context: fake_agent)
 
     await natural_language_handler(update, context)
 
-    mock_conv_service.generate_response.assert_called_once_with("how are you?")
-    update.effective_message.reply_text.assert_awaited_once_with("I'm doing well! Ready to help you study.")
+    assert fake_agent.calls[0]["conversation"][1]["content"] == "Review CNN notes next."
+    update.effective_message.reply_text.assert_awaited_once_with("Great, let's review CNN notes.")
+
+
+class _FakeAgent:
+    def __init__(self, message: str) -> None:
+        self.message = message
+        self.calls: list[dict] = []
+
+    def run(self, message: str, *, conversation: list, actor_user_id: int | None):
+        self.calls.append(
+            {
+                "message": message,
+                "conversation": conversation,
+                "actor_user_id": actor_user_id,
+            }
+        )
+        return SimpleNamespace(
+            message=self.message,
+            conversation=[
+                *conversation,
+                {"role": "user", "content": message},
+                {"role": "assistant", "content": self.message},
+            ],
+            pending_action=None,
+        )

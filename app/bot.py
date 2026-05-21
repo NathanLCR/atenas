@@ -12,8 +12,11 @@ from core.academic.models import Assignment, TimeBlock
 from core.academic.service import AcademicService
 from core.academic.validators import parse_kv_args, parse_weekday, validate_hours, validate_priority, validate_status
 from core.knowledge.service import KnowledgeService
+from core.llm.client import OllamaClient
 from core.llm.service import LLMService
-from core.nl.intent import INTENT_CONVERSATIONAL, INTENT_GREETING
+from core.nl.agent import AgentLoop
+from core.nl.tool_contracts import PendingToolAction
+from core.nl.tools import ToolRegistry
 from core.notifications.service import NotificationService, seconds_until, seconds_until_weekday
 from core.retrieval.models import NO_SOURCE_FALLBACK
 from core.retrieval.service import RetrievalService
@@ -150,15 +153,11 @@ async def unknown_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     """Reply to an allowlisted but unknown Telegram command."""
 
     logger.debug("unknown_telegram_command")
-    await _reply(update, "Unknown command. Try /ping, /status, or /skills.")
+    await _reply(update, "Unknown command. Use /skills to see available commands.")
 
 
 async def natural_language_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle plain-text messages that are not slash commands."""
-
-    from core.llm.client import OllamaClient
-    from core.nl.classifier import NLClassifier
-    from core.nl.router import NLProposalError
 
     text = update.effective_message.text
     if not text or not text.strip():
@@ -173,60 +172,40 @@ async def natural_language_handler(update: Update, context: ContextTypes.DEFAULT
         )
         return
 
-    pending = context.user_data.get("nl_pending_confirmation")
+    user_data = getattr(context, "user_data", None)
+    if user_data is None:
+        user_data = {}
+        context.user_data = user_data
+
+    pending = user_data.get("nl_pending_action")
     if pending is not None:
         lower = text.strip().lower()
         if lower in ("yes", "y", "confirm"):
-            context.user_data.pop("nl_pending_confirmation", None)
-            router = _build_nl_router(context)
-            response = router.execute_confirmed_write(pending, actor_user_id=user_id)
-            await _reply(update, response)
+            user_data.pop("nl_pending_action", None)
+            registry = _build_nl_tool_registry(context)
+            if isinstance(pending, PendingToolAction):
+                result = registry.execute_pending(pending, actor_user_id=user_id)
+                await _reply(update, result.message)
+            else:
+                await _reply(update, "Pending action could not be restored. Please try again.")
             return
         if lower in ("no", "n", "cancel"):
-            context.user_data.pop("nl_pending_confirmation", None)
+            user_data.pop("nl_pending_action", None)
             await _reply(update, "Cancelled.")
             return
         await _reply(update, 'Please reply "yes" to confirm or "no" to cancel.')
         return
 
-    client = OllamaClient(
-        base_url=settings.ollama_base_url,
-        model=settings.ollama_model,
-        timeout=settings.ollama_timeout_seconds,
+    agent = _build_nl_agent(context)
+    result = agent.run(
+        text.strip(),
+        conversation=user_data.get("nl_agent_history", []),
+        actor_user_id=user_id,
     )
-    classifier = NLClassifier(client, timezone=settings.timezone)
-    match = classifier.classify(text.strip())
-
-    if match.intent in (INTENT_GREETING, INTENT_CONVERSATIONAL):
-        from core.llm.conversational import ConversationalService
-        conv_service = ConversationalService(client)
-        response = conv_service.generate_response(text.strip())
-        await _reply(update, response)
-        return
-
-    if not match.is_confident:
-        router = _build_nl_router(context)
-        await _reply(update, router.suggest_command(match))
-        return
-
-    if match.is_read:
-        router = _build_nl_router(context)
-        response = router.route_read(match)
-        await _reply(update, response)
-    elif match.is_write:
-        router = _build_nl_router(context)
-        try:
-            proposal = router.build_write_proposal(match, actor_user_id=user_id)
-        except NLProposalError as exc:
-            await _reply(update, str(exc))
-            return
-        confirmation = router.build_confirmation(proposal)
-        context.user_data["nl_pending_confirmation"] = proposal
-        await _reply(update, confirmation)
-    else:
-        router = _build_nl_router(context)
-        response = router.route_read(match)
-        await _reply(update, response)
+    user_data["nl_agent_history"] = result.conversation
+    if result.pending_action is not None:
+        user_data["nl_pending_action"] = result.pending_action
+    await _reply(update, result.message)
 
 
 async def _reply(update: Update, text: str) -> None:
@@ -651,11 +630,11 @@ def build_application(settings: Settings | None = None) -> Application:
     Settings are stored in bot_data for handler access.
     """
 
-    from telegram.ext import Application, CommandHandler, MessageHandler, filters
-
     runtime_settings = settings or get_settings()
     validate_telegram_startup(runtime_settings)
     token = runtime_settings.TELEGRAM_BOT_TOKEN
+
+    from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
     allowlist_filter = _build_allowlist_filter(runtime_settings.TELEGRAM_ALLOWED_USER_IDS)
     application = Application.builder().token(token).build()
@@ -1353,7 +1332,31 @@ def _build_retrieval_service(context: ContextTypes.DEFAULT_TYPE) -> RetrievalSer
         ollama_base_url=settings.ollama_base_url,
         ollama_model=settings.ollama_model,
         ollama_timeout=settings.ollama_timeout_seconds,
+        llm_log_path=settings.llm_log_path,
     )
+
+
+def _build_nl_tool_registry(context: ContextTypes.DEFAULT_TYPE) -> ToolRegistry:
+    settings = _get_bot_settings(context)
+    return ToolRegistry(
+        db_path=settings.db_path,
+        timezone=settings.timezone,
+        ollama_base_url=settings.ollama_base_url,
+        ollama_model=settings.ollama_model,
+        ollama_timeout=settings.ollama_timeout_seconds,
+        web_enabled=getattr(settings, "enable_web_tools", False),
+    )
+
+
+def _build_nl_agent(context: ContextTypes.DEFAULT_TYPE) -> AgentLoop:
+    settings = _get_bot_settings(context)
+    registry = _build_nl_tool_registry(context)
+    client = OllamaClient(
+        base_url=settings.ollama_base_url,
+        model=settings.ollama_model,
+        timeout=settings.ollama_timeout_seconds,
+    )
+    return AgentLoop(registry=registry, client=client)
 
 
 def _build_nl_router(context: ContextTypes.DEFAULT_TYPE) -> "NLRouter":
@@ -1402,12 +1405,7 @@ def _format_retrieval_answer(result: object) -> str:
     if not result.success:
         error = result.error or "Retrieval failed."
         if "unavailable" in error.lower() or "connection" in error.lower():
-            lines = [
-                "Local LLM unavailable.",
-                "",
-                "Check that Ollama is running:",
-                "ollama serve",
-            ]
+            lines = _format_local_llm_error_lines(error)
             if result.sources:
                 lines.extend(["", "Sources found"])
                 lines.extend(_format_retrieval_source_lines(result.sources))
@@ -1470,15 +1468,21 @@ def _format_llm_result(result: object, note_title: str) -> str:
 
     if not result.success:
         if "unavailable" in (result.error or "").lower() or "connection" in (result.error or "").lower():
-            return (
-                f"Local LLM unavailable.\n\n"
-                f"Check that Ollama is running:\n"
-                f"ollama serve"
-            )
+            return "\n".join(_format_local_llm_error_lines(result.error))
         return f"Error: {result.error}"
 
     model_label = f"\nModel: {result.model}" if result.model else ""
     return f"{note_title}{model_label}\n\n{result.output[:2000]}"
+
+
+def _format_local_llm_error_lines(error: str | None) -> list[str]:
+    """Return a Telegram-friendly local LLM failure message."""
+
+    error_text = (error or "").strip()
+    lower_error = error_text.lower()
+    if "ollama model unavailable" in lower_error or "ollama pull" in lower_error:
+        return ["Local LLM model unavailable.", "", error_text]
+    return ["Local LLM unavailable.", "", "Check that Ollama is running:", "ollama serve"]
 
 
 async def summarize_note_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

@@ -63,3 +63,23 @@ def test_placeholder_telegram_bot_token_is_treated_as_unset() -> None:
     settings = Settings(_env_file=None, telegram_bot_token="YOUR_TELEGRAM_BOT_TOKEN_HERE")
 
     assert settings.telegram_bot_token is None
+
+
+def test_ollama_small_model_falls_back_when_generation_model_is_unset() -> None:
+    """Legacy OLLAMA_SMALL_MODEL env files should drive the active local model."""
+
+    settings = Settings(_env_file=None, ollama_small_model="batiai/gemma4-e4b:q4")
+
+    assert settings.ollama_model == "batiai/gemma4-e4b:q4"
+
+
+def test_explicit_ollama_model_wins_over_small_model() -> None:
+    """OLLAMA_MODEL remains the preferred explicit generation-model setting."""
+
+    settings = Settings(
+        _env_file=None,
+        ollama_small_model="batiai/gemma4-e4b:q4",
+        ollama_model="llama3.1:8b",
+    )
+
+    assert settings.ollama_model == "llama3.1:8b"

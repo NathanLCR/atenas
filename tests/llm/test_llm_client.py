@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import json
+import urllib.error
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.llm.client import OllamaClient, OllamaResponse
+from core.llm.client import OllamaClient, OllamaModelUnavailable, OllamaResponse
 
 
 class TestOllamaClient:
@@ -36,11 +37,27 @@ class TestOllamaClient:
         assert result.done is True
 
     def test_handles_connection_failure(self) -> None:
-        import urllib.error
         client = OllamaClient()
 
         with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("Connection refused")):
             with pytest.raises(ConnectionError, match="Ollama unavailable"):
+                client.generate("Test prompt")
+
+    def test_handles_missing_model_response(self) -> None:
+        client = OllamaClient(model="batiai/gemma4-e4b:q4")
+        error = urllib.error.HTTPError(
+            url="http://localhost:11434/api/generate",
+            code=404,
+            msg="not found",
+            hdrs=None,
+            fp=MagicMock(),
+        )
+        error.fp.read.return_value = json.dumps(
+            {"error": "model 'batiai/gemma4-e4b:q4' not found"}
+        ).encode("utf-8")
+
+        with patch("urllib.request.urlopen", side_effect=error):
+            with pytest.raises(OllamaModelUnavailable, match="ollama pull batiai/gemma4-e4b:q4"):
                 client.generate("Test prompt")
 
     def test_handles_timeout_error(self) -> None:
@@ -72,7 +89,6 @@ class TestOllamaClient:
             assert client.is_available() is True
 
     def test_is_available_returns_false_on_error(self) -> None:
-        import urllib.error
         client = OllamaClient()
 
         with patch("urllib.request.urlopen", side_effect=urllib.error.URLError("refused")):

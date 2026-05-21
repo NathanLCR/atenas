@@ -342,6 +342,73 @@ class AcademicRepository:
             return None
         return self._module_from_row(row)
 
+    def module_reference_counts(self, module_ids: list[str]) -> dict[str, int]:
+        """Return how many local records reference each module."""
+
+        counts = {module_id: 0 for module_id in module_ids}
+        if not module_ids:
+            return counts
+
+        reference_tables = (
+            "assignments",
+            "class_sessions",
+            "notes",
+            "files",
+            "retrieval_chunks",
+            "tasks",
+            "study_blocks",
+        )
+        with get_connection(self.db_path) as connection:
+            for module_id in module_ids:
+                total = 0
+                for table in reference_tables:
+                    row = connection.execute(
+                        f"SELECT COUNT(*) AS count FROM {table} WHERE module_id = ?",
+                        (module_id,),
+                    ).fetchone()
+                    total += int(row["count"] if row is not None else 0)
+                counts[module_id] = total
+        return counts
+
+    def reassign_module_references(self, from_module_ids: list[str], to_module_id: str) -> dict[str, int]:
+        """Move all references from duplicate modules onto the canonical module."""
+
+        if not from_module_ids:
+            return {}
+
+        placeholders = ", ".join("?" for _ in from_module_ids)
+        now_expr = "datetime('now')"
+        updates = {
+            "assignments": f"UPDATE assignments SET module_id = ?, updated_at = {now_expr} WHERE module_id IN ({placeholders})",
+            "class_sessions": f"UPDATE class_sessions SET module_id = ?, updated_at = {now_expr} WHERE module_id IN ({placeholders})",
+            "notes": f"UPDATE notes SET module_id = ?, updated_at = {now_expr} WHERE module_id IN ({placeholders})",
+            "files": f"UPDATE files SET module_id = ?, updated_at = {now_expr} WHERE module_id IN ({placeholders})",
+            "retrieval_chunks": f"UPDATE retrieval_chunks SET module_id = ? WHERE module_id IN ({placeholders})",
+            "tasks": f"UPDATE tasks SET module_id = ?, updated_at = {now_expr} WHERE module_id IN ({placeholders})",
+            "study_blocks": f"UPDATE study_blocks SET module_id = ?, updated_at = {now_expr} WHERE module_id IN ({placeholders})",
+        }
+        changed: dict[str, int] = {}
+        with get_connection(self.db_path) as connection:
+            for table, sql in updates.items():
+                cursor = connection.execute(sql, [to_module_id, *from_module_ids])
+                changed[table] = cursor.rowcount
+            connection.commit()
+        return changed
+
+    def delete_modules(self, module_ids: list[str]) -> int:
+        """Delete modules by ID and return the number of removed rows."""
+
+        if not module_ids:
+            return 0
+        placeholders = ", ".join("?" for _ in module_ids)
+        with get_connection(self.db_path) as connection:
+            cursor = connection.execute(
+                f"DELETE FROM study_modules WHERE id IN ({placeholders})",
+                module_ids,
+            )
+            connection.commit()
+        return cursor.rowcount
+
     def find_duplicate_module(self, name: str, code: str | None) -> StudyModule | None:
         """Find existing module with same normalized name and code."""
 

@@ -138,6 +138,14 @@ class ActionCriticality(StrEnum):
     CONFIG = "config"
 
 
+class ActionTier(StrEnum):
+    """Deterministic action execution tier assigned by tool code."""
+
+    AUTO = "auto"
+    CONFIRM_FIRST = "confirm-first"
+    FORBIDDEN = "forbidden"
+
+
 class WorkShiftItem(StrictModel):
     """Single work shift extracted from user input."""
 
@@ -365,6 +373,7 @@ class ActionProposal(StrictModel):
     user_confirmed: bool = False
     origin: ActionOrigin = ActionOrigin.SYSTEM
     criticality: ActionCriticality = ActionCriticality.LOCAL_WRITE
+    action_tier: ActionTier | None = None
     reason: str | None = None
 
     @property
@@ -376,6 +385,10 @@ class ActionProposal(StrictModel):
             ActionCriticality.EXTERNAL,
             ActionCriticality.CONFIG,
         }:
+            return True
+        if self.action_tier == ActionTier.AUTO:
+            return False
+        if self.action_tier == ActionTier.CONFIRM_FIRST:
             return True
         return (
             self.origin == ActionOrigin.TELEGRAM_NL

@@ -141,7 +141,7 @@ FORBIDDEN_ACTIONS = frozenset({
 ```python
 CONFIRMATION_REQUIRED = frozenset({
     "delete_file",
-    "delete_module",
+    "delete_modules",
     "deduplicate_modules",
     "overwrite_memory",
     "clear_work_schedule",

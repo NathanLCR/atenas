@@ -18,6 +18,10 @@ class OllamaResponse:
     done: bool = True
 
 
+class OllamaModelUnavailable(ConnectionError):
+    """Raised when Ollama is reachable but the configured model is missing."""
+
+
 class OllamaClient:
     """Minimal HTTP client for Ollama's /api/generate endpoint.
 
@@ -59,6 +63,16 @@ class OllamaClient:
                     model=data.get("model", self.model),
                     done=data.get("done", True),
                 )
+        except urllib.error.HTTPError as exc:
+            error = _read_ollama_http_error(exc)
+            if exc.code == 404 or "model" in error.lower():
+                raise OllamaModelUnavailable(
+                    f"Ollama model unavailable: {self.model}. "
+                    f"{error}. Pull it with: ollama pull {self.model}"
+                ) from exc
+            raise ConnectionError(
+                f"Ollama request failed at {self.base_url}: HTTP {exc.code}: {error}"
+            ) from exc
         except urllib.error.URLError as exc:
             raise ConnectionError(f"Ollama unavailable at {self.base_url}: {exc}") from exc
         except TimeoutError as exc:
@@ -74,3 +88,20 @@ class OllamaClient:
                 return resp.status == 200
         except Exception:
             return False
+
+
+def _read_ollama_http_error(exc: urllib.error.HTTPError) -> str:
+    """Read Ollama's JSON error body when present."""
+
+    try:
+        body = exc.read().decode("utf-8")
+    except Exception:
+        return str(exc.reason or exc)
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return body.strip() or str(exc.reason or exc)
+    error = data.get("error") if isinstance(data, dict) else None
+    if isinstance(error, str) and error.strip():
+        return error.strip()
+    return body.strip() or str(exc.reason or exc)
