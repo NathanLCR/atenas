@@ -112,3 +112,16 @@ Web is **opt-in and disabled by default**. When enabled:
 - Dependencies flow `app -> core`. The LLM sees tool schemas, not service objects.
 - Spec-driven development — but specs describe the loop and tiers above, not a
   fixed intent menu.
+
+## Not Yet Built
+
+All items from the original punch list have been shipped:
+
+1. **Web tool** — `web_search` registered when `web_enabled=True` (default off).
+   Query text is egress; returned content is wrapped as `<web>` untrusted data;
+   never triggers automatic writes.
+2. **archive_note** — wired as `ActionTier.CONFIRM_FIRST` act tool. `export_data`
+   removed from `CONFIRMATION_REQUIRED` (out of scope).
+3. **Audit before/after** — confirm-first mutations (delete_modules,
+   deduplicate_modules, archive_note) capture prior state in `before_state` and
+   post-execution state in `after_state`, both logged without sensitive content.

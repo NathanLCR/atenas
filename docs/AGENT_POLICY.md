@@ -116,7 +116,7 @@ Examples:
 
 - `delete_module`, `deduplicate_modules`, `archive_note`
 - `clear_work_schedule`, `remove_assignment`
-- `send_external_message`, `export_data`
+- `send_external_message`
 - changing configuration
 - using an external LLM provider with sensitive context
 - any action where the target record cannot be uniquely identified

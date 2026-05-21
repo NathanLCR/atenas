@@ -114,26 +114,30 @@ class ActionExecutor:
     ) -> None:
         """Log every action execution attempt."""
 
-        logger.info(
-            "action_executed",
-            extra={
-                "event_type": "action_executed",
-                "action_type": proposal.action_type,
-                "actor_user_id": proposal.payload.get("actor_user_id"),
-                "confidence": proposal.confidence,
-                "origin": proposal.origin.value,
-                "criticality": proposal.criticality.value,
-                "action_tier": proposal.action_tier.value if proposal.action_tier else None,
-                "approval_required": proposal.approval_required,
-                "policy_allowed": decision.allowed,
-                "policy_outcome": decision.outcome.value,
-                "policy_reason": decision.reason,
-                "outcome": result.outcome.value,
-                "success": result.success,
-                "user_confirmed": proposal.user_confirmed,
-                "payload_summary": _payload_summary(proposal.payload),
-            },
-        )
+        extra: dict[str, Any] = {
+            "event_type": "action_executed",
+            "action_type": proposal.action_type,
+            "actor_user_id": proposal.payload.get("actor_user_id"),
+            "confidence": proposal.confidence,
+            "origin": proposal.origin.value,
+            "criticality": proposal.criticality.value,
+            "action_tier": proposal.action_tier.value if proposal.action_tier else None,
+            "approval_required": proposal.approval_required,
+            "policy_allowed": decision.allowed,
+            "policy_outcome": decision.outcome.value,
+            "policy_reason": decision.reason,
+            "outcome": result.outcome.value,
+            "success": result.success,
+            "user_confirmed": proposal.user_confirmed,
+            "payload_summary": _payload_summary(proposal.payload),
+        }
+        before = proposal.payload.get("before_state")
+        if before is not None:
+            extra["before_state"] = _safe_state_summary(before)
+        after = result.payload.get("after_state")
+        if after is not None:
+            extra["after_state"] = _safe_state_summary(after)
+        logger.info("action_executed", extra=extra)
 
 
 _executor = ActionExecutor()
@@ -171,3 +175,21 @@ def _payload_summary(payload: dict[str, Any], max_length: int = 280) -> dict[str
         else:
             summary[key] = str(value)
     return summary
+
+
+_REDACTED_STATE_KEYS = {"body", "content", "notes", "text", "snippet"}
+
+
+def _safe_state_summary(state: dict[str, Any] | list) -> dict[str, Any] | list:
+    """Return a before/after state summary with sensitive fields redacted."""
+
+    if isinstance(state, list):
+        return [
+            _safe_state_summary(item) if isinstance(item, dict) else item
+            for item in state
+        ]
+    return {
+        key: value
+        for key, value in state.items()
+        if key not in _REDACTED_STATE_KEYS
+    }
