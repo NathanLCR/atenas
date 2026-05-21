@@ -81,6 +81,18 @@ class DeduplicateModulesArgs(StrictModel):
     groups: list[DeduplicateModuleGroupArgs] = Field(min_length=1)
 
 
+class ArchiveNoteArgs(StrictModel):
+    """Arguments for archiving a single note."""
+
+    note: str = Field(min_length=1, description="Note ID or exact title")
+
+
+class WebSearchArgs(StrictModel):
+    """Arguments for a guarded web search/fetch."""
+
+    query: str = Field(min_length=2, description="Search query — no sensitive records")
+
+
 class StructuredToolResult(StrictModel):
     """Structured result returned by every tool."""
 
@@ -247,3 +259,12 @@ def safe_payload(payload: dict[str, Any]) -> dict[str, Any]:
         for key, value in payload.items()
         if key not in {"body", "content", "notes"}
     }
+
+
+def wrap_web_content(url: str, content: str, max_length: int = 4000) -> str:
+    """Wrap fetched web content as untrusted data delimiters."""
+
+    snippet = content[:max_length]
+    if len(content) > max_length:
+        snippet += "... (truncated)"
+    return f'<web url="{url}">{snippet}</web>'

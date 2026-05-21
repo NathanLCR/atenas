@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from unittest.mock import patch
 
 from core.academic.models import AssignmentStatus
 from core.academic.service import AcademicService
@@ -123,3 +124,128 @@ def test_followup_uses_conversation_context_for_same_goal(tmp_db: Path) -> None:
     assert second.message == "Great, let's review CNN notes."
     assert "Review CNN notes next." in client.prompts[1]
     assert "let's review that" in client.prompts[1]
+
+
+def test_archive_note_requires_confirmation_then_executes(
+    tmp_db: Path,
+    caplog,
+) -> None:
+    academic = AcademicService(tmp_db)
+    module = academic.create_module(name="Test Module")
+    registry = ToolRegistry(tmp_db)
+    knowledge = registry._knowledge()
+    note_result = knowledge.create_note(
+        title="Important Notes",
+        body="Study material here",
+        module_id=module.id,
+    )
+    note_id = int(note_result.record_id)
+
+    client = FakeToolClient([
+        {
+            "type": "tool_call",
+            "tool_name": "archive_note",
+            "arguments": {"note": str(note_id)},
+        },
+    ])
+    agent = AgentLoop(registry=registry, client=client)
+
+    result = agent.run("archive my Important Notes", actor_user_id=123)
+
+    assert result.pending_action is not None
+    assert "Archive note" in result.message
+    assert "Important Notes" in result.message
+
+    note = knowledge.get_note(note_id)
+    assert note.archived is False
+
+    caplog.set_level(logging.INFO, logger="core.action_executor")
+    executed = registry.execute_pending(result.pending_action, actor_user_id=123)
+
+    assert executed.ok is True
+    note = knowledge.get_note(note_id)
+    assert note.archived is True
+    audit = [r for r in caplog.records if r.message == "action_executed"][-1]
+    assert audit.action_type == "archive_note"
+    assert audit.actor_user_id == 123
+    assert audit.policy_allowed is True
+    assert hasattr(audit, "before_state")
+    assert hasattr(audit, "after_state")
+
+
+def test_audit_before_after_on_delete_modules(tmp_db: Path, caplog) -> None:
+    service = AcademicService(tmp_db)
+    mod = service.create_module(name="ToDelete", code="DEL")
+    registry = ToolRegistry(tmp_db)
+
+    client = FakeToolClient([
+        {
+            "type": "tool_call",
+            "tool_name": "delete_modules",
+            "arguments": {"module_ids": [mod.id]},
+        },
+    ])
+    agent = AgentLoop(registry=registry, client=client)
+
+    result = agent.run("delete the ToDelete module", actor_user_id=456)
+
+    assert result.pending_action is not None
+    caplog.set_level(logging.INFO, logger="core.action_executor")
+    executed = registry.execute_pending(result.pending_action, actor_user_id=456)
+
+    assert executed.ok is True
+    audit = [r for r in caplog.records if r.message == "action_executed"][-1]
+    assert audit.action_type == "delete_modules"
+    assert hasattr(audit, "before_state")
+    assert hasattr(audit, "after_state")
+    assert audit.before_state is not None
+    assert audit.after_state is not None
+
+
+def test_web_tool_disabled_by_default(tmp_db: Path) -> None:
+    registry = ToolRegistry(tmp_db, web_enabled=False)
+    tool_names = [t.name for t in registry.list_tools()]
+    assert "web_search" not in tool_names
+
+
+def test_web_tool_enabled_when_flag_set(tmp_db: Path) -> None:
+    registry = ToolRegistry(tmp_db, web_enabled=True)
+    tool_names = [t.name for t in registry.list_tools()]
+    assert "web_search" in tool_names
+
+
+def test_web_search_returns_results(tmp_db: Path) -> None:
+    registry = ToolRegistry(tmp_db, web_enabled=True)
+    mock_response = json.dumps([
+        "Test Query",
+        ["Result 1", "Result 2"],
+        ["Snippet 1", "Snippet 2"],
+        ["http://example.com/1", "http://example.com/2"],
+    ]).encode("utf-8")
+
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        mock_resp = patch("urllib.request.Request")
+        mock_urlopen.return_value.__enter__ = lambda s: s
+        mock_urlopen.return_value.__exit__ = lambda s, *a: None
+        mock_urlopen.return_value.read = lambda: mock_response
+
+        run = registry.run_tool(
+            "web_search",
+            {"query": "Test Query"},
+            actor_user_id=123,
+        )
+
+    assert run.result.ok is True
+    assert "web result" in run.result.message.lower()
+    assert run.result.data["query"] == "Test Query"
+    assert len(run.result.data["results"]) == 2
+
+
+def test_web_search_short_query_rejected(tmp_db: Path) -> None:
+    registry = ToolRegistry(tmp_db, web_enabled=True)
+    run = registry.run_tool(
+        "web_search",
+        {"query": "a"},
+        actor_user_id=123,
+    )
+    assert run.result.ok is False

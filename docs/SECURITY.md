@@ -150,7 +150,6 @@ CONFIRMATION_REQUIRED = frozenset({
     "archive_plan",
     "change_config",
     "send_external_message",
-    "export_data",
 })
 ```
 
