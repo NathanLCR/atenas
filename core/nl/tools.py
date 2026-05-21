@@ -12,6 +12,7 @@ from core.action_executor import ActionExecutor
 from core.academic.service import AcademicService
 from core.academic.validators import validate_status
 from core.knowledge.service import KnowledgeService
+from core.memory_manager import MemoryManager
 from core.nl.tool_contracts import (
     ArchiveNoteArgs,
     DeduplicateModulesArgs,
@@ -19,6 +20,7 @@ from core.nl.tool_contracts import (
     ListAssignmentsArgs,
     ModuleDeleteArgs,
     PendingToolAction,
+    ReadMemoryArgs,
     RetrieveSourcesArgs,
     SearchNotesArgs,
     SetAssignmentStatusArgs,
@@ -26,7 +28,9 @@ from core.nl.tool_contracts import (
     ToolCategory,
     ToolDefinition,
     ToolRun,
+    UpdateMemoryArgs,
     WebSearchArgs,
+    WriteMemoryArgs,
     action_tool_result,
     action_tool_run,
     assignment_data,
@@ -46,7 +50,10 @@ from core.schemas import (
     ActionCriticality,
     ActionOrigin,
     ActionProposal,
+    ActionResult,
     ActionTier,
+    Importance,
+    MemoryDomain,
 )
 
 logger = logging.getLogger(__name__)
@@ -245,6 +252,32 @@ class ToolRegistry:
             handler=self._tool_archive_note,
             action_tier=ActionTier.CONFIRM_FIRST,
         ))
+        self._register(ToolDefinition(
+            name="read_memory",
+            description="Read persistent memory items (facts, preferences, user profile). Filter by domain, topic, tag, or importance.",
+            category=ToolCategory.READ,
+            args_schema=ReadMemoryArgs,
+            result_schema=StructuredToolResult,
+            handler=self._tool_read_memory,
+        ))
+        self._register(ToolDefinition(
+            name="write_memory",
+            description="Write a persistent memory item (fact, preference, or user profile entry). Set inferred=true for model-inferred facts, false for user-stated facts.",
+            category=ToolCategory.ACT,
+            args_schema=WriteMemoryArgs,
+            result_schema=StructuredToolResult,
+            handler=self._tool_write_memory,
+            action_tier=ActionTier.AUTO,
+        ))
+        self._register(ToolDefinition(
+            name="update_memory",
+            description="Update an existing memory item by ID. Does not silently overwrite; caller should resolve conflicts first.",
+            category=ToolCategory.ACT,
+            args_schema=UpdateMemoryArgs,
+            result_schema=StructuredToolResult,
+            handler=self._tool_update_memory,
+            action_tier=ActionTier.AUTO,
+        ))
         if self.web_enabled:
             self._register(ToolDefinition(
                 name="web_search",
@@ -275,6 +308,9 @@ class ToolRegistry:
             ollama_timeout=self.ollama_timeout,
             allowed_file_roots=self.allowed_file_roots,
         )
+
+    def _memory(self) -> MemoryManager:
+        return MemoryManager(self.db_path)
 
     def _tool_list_modules(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
         modules = self._academic().list_modules()
@@ -602,6 +638,160 @@ class ToolRegistry:
         if len(matches) > 1:
             return "Multiple notes match that title. Use the note ID."
         return f"Note not found: {value}"
+
+    def _tool_read_memory(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
+        parsed = typed(args, ReadMemoryArgs)
+
+        domain = None
+        if parsed.domain:
+            try:
+                domain = MemoryDomain(parsed.domain)
+            except ValueError:
+                return tool_error(
+                    f"Invalid domain: {parsed.domain}. "
+                    f"Use: studies, work, assignments, papers, projects, preferences, archive"
+                )
+
+        importance = None
+        if parsed.importance:
+            try:
+                importance = Importance(parsed.importance)
+            except ValueError:
+                return tool_error(
+                    f"Invalid importance: {parsed.importance}. Use: low, medium, high, critical"
+                )
+
+        items = self._memory().read(
+            domain=domain,
+            topic=parsed.topic,
+            tag=parsed.tag,
+            importance=importance,
+            inferred=parsed.inferred,
+            limit=parsed.limit,
+        )
+
+        data = {
+            "items": [
+                {
+                    "id": item.id,
+                    "summary": item.summary,
+                    "domain": item.domain.value,
+                    "topic": item.topic,
+                    "tags": item.tags,
+                    "importance": item.importance.value,
+                    "inferred": item.inferred,
+                }
+                for item in items
+            ],
+            "count": len(items),
+        }
+
+        if not items:
+            return done("No memory items found matching those filters.", data=data)
+
+        lines = [f"Memory items ({len(items)})"]
+        for item in items:
+            lines.append(f"#{item.id[:8]} [{item.domain.value}] {item.summary}")
+            if item.tags:
+                lines.append(f"  Tags: {', '.join(item.tags)}")
+        return done("\n".join(lines), data=data)
+
+    def _tool_write_memory(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
+        parsed = typed(args, WriteMemoryArgs)
+
+        try:
+            domain = MemoryDomain(parsed.domain)
+        except ValueError:
+            return tool_error(
+                f"Invalid domain: {parsed.domain}. "
+                f"Use: studies, work, assignments, papers, projects, preferences, archive"
+            )
+
+        try:
+            importance = Importance(parsed.importance)
+        except ValueError:
+            return tool_error(
+                f"Invalid importance: {parsed.importance}. Use: low, medium, high, critical"
+            )
+
+        created, conflicts = self._memory().write(
+            content=parsed.content,
+            summary=parsed.summary,
+            domain=domain,
+            topic=parsed.topic,
+            tags=parsed.tags,
+            importance=importance,
+            inferred=parsed.inferred,
+            sensitive=parsed.sensitive,
+        )
+
+        data = {
+            "memory_id": created.id,
+            "summary": created.summary,
+            "domain": created.domain.value,
+            "topic": created.topic,
+            "inferred": created.inferred,
+        }
+
+        if conflicts:
+            conflict_info = [
+                {"id": c.id, "summary": c.summary, "topic": c.topic}
+                for c in conflicts
+            ]
+            data["potential_conflicts"] = conflict_info
+
+        conflict_note = ""
+        if conflicts:
+            conflict_lines = [
+                f"  #{c.id[:8]} {c.summary}"
+                for c in conflicts
+            ]
+            conflict_note = (
+                "\n\nPotential conflicts detected (review and update if needed):\n"
+                + "\n".join(conflict_lines)
+            )
+
+        label = "Inferred" if parsed.inferred else "Stated"
+        message = f"{label} memory stored\n\n#{created.id[:8]} {created.summary}{conflict_note}"
+        return done(message, data=data)
+
+    def _tool_update_memory(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
+        parsed = typed(args, UpdateMemoryArgs)
+
+        existing = self._memory().read_by_id(parsed.memory_id)
+        if existing is None:
+            return tool_error(f"Memory item not found: {parsed.memory_id}")
+
+        importance = None
+        if parsed.importance:
+            try:
+                importance = Importance(parsed.importance)
+            except ValueError:
+                return tool_error(
+                    f"Invalid importance: {parsed.importance}. Use: low, medium, high, critical"
+                )
+
+        updated = self._memory().update(
+            parsed.memory_id,
+            content=parsed.content,
+            summary=parsed.summary,
+            topic=parsed.topic,
+            tags=parsed.tags,
+            importance=importance,
+        )
+
+        if updated is None:
+            return tool_error("Failed to update memory item.")
+
+        data = {
+            "memory_id": updated.id,
+            "summary": updated.summary,
+            "domain": updated.domain.value,
+            "topic": updated.topic,
+            "updated_at": updated.updated_at,
+        }
+
+        return done(f"Memory updated\n\n#{updated.id[:8]} {updated.summary}", data=data)
 
     def _tool_web_search(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
         import urllib.request

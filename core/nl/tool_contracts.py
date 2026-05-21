@@ -93,6 +93,44 @@ class WebSearchArgs(StrictModel):
     query: str = Field(min_length=2, description="Search query — no sensitive records")
 
 
+class ReadMemoryArgs(StrictModel):
+    """Arguments for reading persistent memory items."""
+
+    domain: str | None = Field(
+        default=None,
+        description="Filter by domain: studies, work, assignments, papers, projects, preferences, archive",
+    )
+    topic: str | None = Field(default=None, description="Partial topic match")
+    tag: str | None = Field(default=None, description="Filter by tag")
+    importance: str | None = Field(default=None, description="Filter: low, medium, high, critical")
+    inferred: bool | None = Field(default=None, description="Filter: true=inferred, false=stated")
+    limit: int = Field(default=10, ge=1, le=50)
+
+
+class WriteMemoryArgs(StrictModel):
+    """Arguments for writing a persistent memory item."""
+
+    content: str = Field(min_length=1, max_length=5000, description="Full memory content")
+    summary: str = Field(min_length=1, max_length=2000, description="Concise summary")
+    domain: str = Field(description="Domain: studies, work, assignments, papers, projects, preferences, archive")
+    topic: str = Field(min_length=1, max_length=100, description="Topic label")
+    tags: list[str] = Field(default_factory=list, max_length=8)
+    importance: str = Field(default="medium", description="Importance: low, medium, high, critical")
+    inferred: bool = Field(default=True, description="True if model-inferred, false if user-stated")
+    sensitive: bool = Field(default=False, description="True if the memory contains sensitive info")
+
+
+class UpdateMemoryArgs(StrictModel):
+    """Arguments for updating an existing memory item."""
+
+    memory_id: str = Field(min_length=1, description="Memory item ID to update")
+    content: str | None = Field(default=None, description="New content")
+    summary: str | None = Field(default=None, description="New summary")
+    topic: str | None = Field(default=None, description="New topic")
+    tags: list[str] | None = Field(default=None, description="New tags")
+    importance: str | None = Field(default=None, description="New importance: low, medium, high, critical")
+
+
 class StructuredToolResult(StrictModel):
     """Structured result returned by every tool."""
 
