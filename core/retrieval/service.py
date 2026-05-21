@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 from core.knowledge.models import FileRecord, Note
 from core.knowledge.repository import KnowledgeRepository
 from core.llm.client import OllamaClient
+from core.path_policy import PathPolicy, PathPolicyError
 from core.retrieval.chunking import chunk_text
 from core.retrieval.embeddings import query_terms
 from core.retrieval.models import (
@@ -49,10 +50,12 @@ class RetrievalService:
         ollama_base_url: str = "http://localhost:11434",
         ollama_model: str = "llama3.1:8b",
         ollama_timeout: int = 60,
+        allowed_file_roots: list[Path | str] | None = None,
     ) -> None:
         self.timezone = timezone if isinstance(timezone, ZoneInfo) else ZoneInfo(timezone)
         self.repository = KnowledgeRepository(db_path)
         self.store = RetrievalVectorStore(db_path)
+        self._path_policy = PathPolicy(allowed_file_roots or [Path("inbox"), Path("memory")])
         self.client = OllamaClient(
             base_url=ollama_base_url,
             model=ollama_model,
@@ -282,8 +285,9 @@ class RetrievalService:
     def _read_registered_text_file(self, file_record: FileRecord) -> str | None:
         if not _is_text_file_record(file_record):
             return None
-        path = Path(file_record.path).expanduser()
-        if not path.is_file():
+        try:
+            path = self._path_policy.validate_registered_file(file_record.path)
+        except PathPolicyError:
             return None
         try:
             with path.open("r", encoding="utf-8") as handle:

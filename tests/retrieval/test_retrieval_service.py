@@ -15,7 +15,7 @@ from core.retrieval.service import RetrievalService
 def _service(tmp_path: Path) -> RetrievalService:
     db_path = tmp_path / "atenas.sqlite"
     init_db(db_path)
-    return RetrievalService(db_path, ollama_model="test-model")
+    return RetrievalService(db_path, ollama_model="test-model", allowed_file_roots=[tmp_path])
 
 
 def _create_note(service: RetrievalService, title: str, body: str, archived: bool = False) -> Note:

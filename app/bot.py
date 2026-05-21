@@ -1086,8 +1086,7 @@ def _format_note_date(iso_str: str) -> str:
 
 
 async def add_note_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    settings = _get_bot_settings(context)
-    service = KnowledgeService(settings.db_path, timezone=settings.timezone)
+    service = _build_knowledge_service(context)
     text = update.effective_message.text or ""
     args = parse_kv_args(text)
     title = args.get("title")
@@ -1106,8 +1105,7 @@ async def add_note_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def notes_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    settings = _get_bot_settings(context)
-    service = KnowledgeService(settings.db_path, timezone=settings.timezone)
+    service = _build_knowledge_service(context)
     text = update.effective_message.text or ""
     args = parse_kv_args(text)
     module_id = args.get("module")
@@ -1128,8 +1126,7 @@ async def notes_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def note_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    settings = _get_bot_settings(context)
-    service = KnowledgeService(settings.db_path, timezone=settings.timezone)
+    service = _build_knowledge_service(context)
     text = update.effective_message.text or ""
     parts = text.split(None, 1)
     if len(parts) < 2:
@@ -1152,8 +1149,7 @@ async def note_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def archive_note_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    settings = _get_bot_settings(context)
-    service = KnowledgeService(settings.db_path, timezone=settings.timezone)
+    service = _build_knowledge_service(context)
     text = update.effective_message.text or ""
     parts = text.split(None, 1)
     if len(parts) < 2:
@@ -1169,8 +1165,7 @@ async def archive_note_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 async def add_file_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    settings = _get_bot_settings(context)
-    service = KnowledgeService(settings.db_path, timezone=settings.timezone)
+    service = _build_knowledge_service(context)
     text = update.effective_message.text or ""
     args = parse_kv_args(text)
     path = args.get("path")
@@ -1188,8 +1183,7 @@ async def add_file_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def files_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    settings = _get_bot_settings(context)
-    service = KnowledgeService(settings.db_path, timezone=settings.timezone)
+    service = _build_knowledge_service(context)
     text = update.effective_message.text or ""
     args = parse_kv_args(text)
     module_id = args.get("module")
@@ -1210,8 +1204,7 @@ async def files_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 
 async def search_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    settings = _get_bot_settings(context)
-    service = KnowledgeService(settings.db_path, timezone=settings.timezone)
+    service = _build_knowledge_service(context)
     text = update.effective_message.text or ""
     args = parse_kv_args(text)
     query = args.get("q")
@@ -1305,8 +1298,7 @@ async def sources_command(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 
 async def link_note_file_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    settings = _get_bot_settings(context)
-    service = KnowledgeService(settings.db_path, timezone=settings.timezone)
+    service = _build_knowledge_service(context)
     text = update.effective_message.text or ""
     args = parse_kv_args(text)
     note_str = args.get("note")
@@ -1324,6 +1316,15 @@ async def link_note_file_command(update: Update, context: ContextTypes.DEFAULT_T
     await _reply(update, result.message)
 
 
+def _build_knowledge_service(context: ContextTypes.DEFAULT_TYPE) -> KnowledgeService:
+    settings = _get_bot_settings(context)
+    return KnowledgeService(
+        settings.db_path,
+        timezone=settings.timezone,
+        allowed_file_roots=settings.knowledge_file_roots,
+    )
+
+
 def _build_retrieval_service(context: ContextTypes.DEFAULT_TYPE) -> RetrievalService:
     settings = _get_bot_settings(context)
     return RetrievalService(
@@ -1333,6 +1334,7 @@ def _build_retrieval_service(context: ContextTypes.DEFAULT_TYPE) -> RetrievalSer
         ollama_model=settings.ollama_model,
         ollama_timeout=settings.ollama_timeout_seconds,
         llm_log_path=settings.llm_log_path,
+        allowed_file_roots=settings.knowledge_file_roots,
     )
 
 
@@ -1345,6 +1347,7 @@ def _build_nl_tool_registry(context: ContextTypes.DEFAULT_TYPE) -> ToolRegistry:
         ollama_model=settings.ollama_model,
         ollama_timeout=settings.ollama_timeout_seconds,
         web_enabled=getattr(settings, "enable_web_tools", False),
+        allowed_file_roots=settings.knowledge_file_roots,
     )
 
 

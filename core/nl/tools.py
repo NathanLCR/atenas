@@ -64,6 +64,7 @@ class ToolRegistry:
         ollama_model: str = "llama3.1:8b",
         ollama_timeout: int = 60,
         web_enabled: bool = False,
+        allowed_file_roots: list[Path | str] | None = None,
         action_executor: ActionExecutor | None = None,
     ) -> None:
         self.db_path = db_path
@@ -72,6 +73,7 @@ class ToolRegistry:
         self.ollama_model = ollama_model
         self.ollama_timeout = ollama_timeout
         self.web_enabled = web_enabled
+        self.allowed_file_roots = allowed_file_roots
         self.action_executor = action_executor or ActionExecutor()
         self._tools: dict[str, ToolDefinition] = {}
         self._register_action_handlers()
@@ -258,7 +260,11 @@ class ToolRegistry:
         return AcademicService(self.db_path, timezone=self.timezone)
 
     def _knowledge(self) -> KnowledgeService:
-        return KnowledgeService(self.db_path, timezone=self.timezone)
+        return KnowledgeService(
+            self.db_path,
+            timezone=self.timezone,
+            allowed_file_roots=self.allowed_file_roots,
+        )
 
     def _retrieval(self) -> RetrievalService:
         return RetrievalService(
@@ -267,6 +273,7 @@ class ToolRegistry:
             ollama_base_url=self.ollama_base_url,
             ollama_model=self.ollama_model,
             ollama_timeout=self.ollama_timeout,
+            allowed_file_roots=self.allowed_file_roots,
         )
 
     def _tool_list_modules(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
