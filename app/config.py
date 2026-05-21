@@ -4,9 +4,12 @@ from functools import lru_cache
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+
+DEFAULT_OLLAMA_SMALL_MODEL = "llama3.2"
+DEFAULT_OLLAMA_MODEL = "llama3.1:8b"
 
 _UNSET_OPTIONAL_SECRET_VALUES = {
     "YOUR_TELEGRAM_BOT_TOKEN_HERE",
@@ -49,9 +52,9 @@ class Settings(BaseSettings):
 
     local_llm_provider: str = "ollama"
     ollama_base_url: str = "http://localhost:11434"
-    ollama_small_model: str = "llama3.2"
+    ollama_small_model: str = DEFAULT_OLLAMA_SMALL_MODEL
     ollama_embedding_model: str = "nomic-embed-text"
-    ollama_model: str = "llama3.1:8b"
+    ollama_model: str = DEFAULT_OLLAMA_MODEL
     ollama_timeout_seconds: int = 60
 
     cloud_llm_provider: str = "openai"
@@ -65,8 +68,30 @@ class Settings(BaseSettings):
     max_cloud_calls_per_day: int = 50
     min_confidence_threshold: float = 0.65
     max_llm_retries: int = 2
+    enable_web_tools: bool = False
 
     log_level: str = "INFO"
+
+    @model_validator(mode="before")
+    @classmethod
+    def apply_legacy_ollama_small_model_fallback(cls, data: object) -> object:
+        """Use OLLAMA_SMALL_MODEL as the generation model when OLLAMA_MODEL is unset.
+
+        Early Atenas config examples exposed only OLLAMA_SMALL_MODEL. Current
+        LLM call sites use OLLAMA_MODEL, so this preserves existing local env
+        files without preventing an explicit OLLAMA_MODEL override.
+        """
+
+        if not isinstance(data, dict):
+            return data
+        values = dict(data)
+        keys = {str(key).lower() for key in values}
+        if "ollama_model" in keys:
+            return values
+        small_model = values.get("ollama_small_model") or values.get("OLLAMA_SMALL_MODEL")
+        if isinstance(small_model, str) and small_model != DEFAULT_OLLAMA_SMALL_MODEL:
+            values["ollama_model"] = small_model
+        return values
 
     @field_validator(
         "telegram_bot_token",

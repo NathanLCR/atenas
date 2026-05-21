@@ -7,11 +7,10 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from pydantic import BaseModel
 
-from app.config import Settings, get_settings
 from core.schemas import LLMProvider
 from core.utils import utc_now
 
@@ -31,11 +30,24 @@ class LLMResponse:
     latency_ms: int
 
 
+class LLMRouterSettings(Protocol):
+    """Settings surface required by the mock LLM router."""
+
+    llm_log_path: Path
+
+
+@dataclass(frozen=True)
+class DefaultLLMRouterSettings:
+    """Local default settings for legacy direct LLMRouter construction."""
+
+    llm_log_path: Path = Path("logs") / "llm_calls.jsonl"
+
+
 class LLMRouter:
     """Mock-only LLM router used in Phase 1."""
 
-    def __init__(self, settings: Settings | None = None) -> None:
-        self.settings = settings or get_settings()
+    def __init__(self, settings: LLMRouterSettings | None = None) -> None:
+        self.settings = settings or DefaultLLMRouterSettings()
 
     def call(
         self,
@@ -97,4 +109,3 @@ class LLMRouter:
                 handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
         except OSError:
             logger.warning("llm_call_log_write_failed", extra={"event_type": "llm_call_log_write_failed"})
-

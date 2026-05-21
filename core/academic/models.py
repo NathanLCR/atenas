@@ -56,6 +56,15 @@ class StudyModule(StrictModel):
         return value
 
 
+class DuplicateModuleGroup(StrictModel):
+    """A normalized set of duplicate study modules."""
+
+    key: str
+    canonical_module: StudyModule
+    duplicate_modules: list[StudyModule]
+    all_modules: list[StudyModule]
+
+
 class ClassSession(StrictModel):
     """Weekly recurring class block."""
 

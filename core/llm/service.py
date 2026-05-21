@@ -31,6 +31,7 @@ class LLMService:
         ollama_base_url: str = "http://localhost:11434",
         ollama_model: str = "llama3.1:8b",
         ollama_timeout: int = 60,
+        llm_log_path: Path | str | None = None,
     ) -> None:
         self.timezone = timezone if isinstance(timezone, ZoneInfo) else ZoneInfo(timezone)
         self.knowledge = KnowledgeService(db_path, self.timezone)
@@ -40,6 +41,7 @@ class LLMService:
             timeout=ollama_timeout,
         )
         self._ollama_model = ollama_model
+        self._llm_log_path = Path(llm_log_path) if llm_log_path is not None else None
 
     def summarize_note(self, note_id: int) -> LLMActionResult:
         return self._run_action("summarize", note_id)
@@ -116,11 +118,10 @@ class LLMService:
     ) -> None:
         """Append LLM call metadata to the existing llm_calls JSONL log."""
 
-        from app.config import get_settings
-
+        if self._llm_log_path is None:
+            return
         try:
-            settings = get_settings()
-            path = settings.llm_log_path
+            path = self._llm_log_path
             path.parent.mkdir(parents=True, exist_ok=True)
             payload = {
                 "timestamp": utc_now(),

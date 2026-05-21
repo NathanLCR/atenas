@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 
-from core.schemas import ActionOutcome, ActionProposal
+from core.schemas import ActionOutcome, ActionProposal, ActionTier
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +30,8 @@ CONFIRMATION_REQUIRED: frozenset[str] = frozenset(
         "overwrite_memory",
         "clear_work_schedule",
         "remove_assignment",
+        "delete_modules",
+        "deduplicate_modules",
         "change_config",
         "send_external_message",
         "archive_plan",
@@ -81,6 +83,12 @@ class PolicyEngine:
                 allowed=False,
                 outcome=ActionOutcome.BLOCKED,
                 reason=f"Forbidden action: {proposal.action_type}",
+            )
+        elif proposal.action_tier == ActionTier.FORBIDDEN:
+            decision = PolicyDecision(
+                allowed=False,
+                outcome=ActionOutcome.BLOCKED,
+                reason=f"Forbidden action tier for: {proposal.action_type}",
             )
         elif (
             proposal.action_type not in ALLOWED_ACTIONS

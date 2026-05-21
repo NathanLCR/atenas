@@ -3,17 +3,28 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import sqlite3
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from core.command_catalog import format_command_catalog
 from core.db import get_connection
 from core.skill_registry import SkillInfo, SkillRegistry
 
 logger = logging.getLogger(__name__)
 STATUS_DESCRIPTION = "System health and context"
+
+
+@dataclass(frozen=True)
+class LocalLLMStatus:
+    """Reachability and configured-model status for local Ollama."""
+
+    available: bool
+    message: str
 
 
 def handle_ping() -> str:
@@ -31,16 +42,17 @@ def handle_status(
     """Return a formatted system status from SQLite counts."""
 
     counts = _load_status_counts(db_path, timezone)
-    llm_line = _local_llm_status(ollama_base_url, ollama_model)
+    llm_status = _local_llm_status(ollama_base_url, ollama_model)
+    headline = "🟢 Atenas — Online" if llm_status.available else "🟡 Atenas — Degraded"
     return "\n".join(
         [
-            "🟢 Atenas — Online",
+            headline,
             "",
             "Student: Local profile",
             f"📚 Active assignments: {counts['active_assignments']}",
             f"⏰ Deadlines this week: {counts['deadlines_this_week']}",
             f"🏢 Work shifts this week: {counts['work_shifts_this_week']}",
-            f"💡 Local LLM: {llm_line}",
+            f"💡 Local LLM: {llm_status.message}",
             "☁️  Cloud LLM: ⬜ Disabled",
         ]
     )
@@ -53,11 +65,11 @@ def handle_skills(registry: SkillRegistry) -> str:
     skills = sorted(registry.list_all(), key=lambda item: item.name)
     if not skills:
         lines.append("No skills registered")
-        return "\n".join(lines)
+        return "\n\n".join(["\n".join(lines), format_command_catalog()])
     for skill in skills:
         icon = "✅" if skill.enabled else "⬜"
         lines.append(f"{icon} {skill.name:<12} — {skill.description}")
-    return "\n".join(lines)
+    return "\n\n".join(["\n".join(lines), format_command_catalog()])
 
 
 def get_status() -> str:
@@ -185,7 +197,7 @@ def _count(
     return int(row["count"]) if row else 0
 
 
-def _local_llm_status(base_url: str, model: str) -> str:
+def _local_llm_status(base_url: str, model: str) -> LocalLLMStatus:
     """Return a short status string for the local Ollama LLM."""
 
     import urllib.error
@@ -194,8 +206,28 @@ def _local_llm_status(base_url: str, model: str) -> str:
     try:
         req = urllib.request.Request(f"{base_url.rstrip('/')}/api/tags", method="GET")
         with urllib.request.urlopen(req, timeout=3) as resp:
-            if resp.status == 200:
-                return f"✅ Ollama ({model})"
-    except Exception:
-        pass
-    return f"⬜ Ollama offline — model: {model}"
+            if resp.status != 200:
+                return LocalLLMStatus(False, f"⬜ Ollama offline — model: {model}")
+            data = json.loads(resp.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, OSError):
+        return LocalLLMStatus(False, f"⬜ Ollama offline — model: {model}")
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return LocalLLMStatus(False, f"⚠️ Ollama status unreadable — model: {model}")
+
+    models = data.get("models") if isinstance(data, dict) else None
+    if not isinstance(models, list):
+        return LocalLLMStatus(False, f"⚠️ Ollama status unreadable — model: {model}")
+
+    installed_models = {
+        name
+        for item in models
+        if isinstance(item, dict)
+        for name in (item.get("name"), item.get("model"))
+        if isinstance(name, str)
+    }
+    if model not in installed_models:
+        return LocalLLMStatus(
+            False,
+            f"⚠️ Ollama online — model missing: {model} (run: ollama pull {model})",
+        )
+    return LocalLLMStatus(True, f"✅ Ollama ({model})")

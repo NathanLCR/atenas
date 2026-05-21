@@ -4,13 +4,16 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from datetime import date, datetime, time, timedelta, timezone
-from typing import TYPE_CHECKING
+from typing import Protocol
 from zoneinfo import ZoneInfo
 
-if TYPE_CHECKING:
-    from app.config import Settings
-
 DEFAULT_TIMEZONE = "Europe/Dublin"
+
+
+class TimezoneSettings(Protocol):
+    """Settings surface needed by time helpers."""
+
+    timezone: str
 
 
 def utc_now_iso() -> str:
@@ -19,7 +22,7 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def app_timezone(settings: Settings | None = None) -> ZoneInfo:
+def app_timezone(settings: TimezoneSettings | None = None) -> ZoneInfo:
     """Return the configured application timezone."""
 
     timezone_name = getattr(settings, "timezone", None) or DEFAULT_TIMEZONE

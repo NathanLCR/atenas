@@ -123,6 +123,7 @@ class ActionExecutor:
                 "confidence": proposal.confidence,
                 "origin": proposal.origin.value,
                 "criticality": proposal.criticality.value,
+                "action_tier": proposal.action_tier.value if proposal.action_tier else None,
                 "approval_required": proposal.approval_required,
                 "policy_allowed": decision.allowed,
                 "policy_outcome": decision.outcome.value,
