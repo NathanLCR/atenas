@@ -36,6 +36,18 @@ python3.11 -m venv .venv
 .venv/bin/uvicorn app.main:app --reload
 ```
 
+### Terminal UI
+
+Atenas also has a local read-only terminal UI for quick inspection without the
+web dashboard:
+
+```bash
+.venv/bin/python -m app.tui
+```
+
+The TUI is a local support surface. It reads the same SQLite data through core
+services and does not execute writes, LLM act tools, web search, or exports.
+
 The intended local URL is `http://127.0.0.1:8000`. Do not expose the dashboard
 or REST API directly on a LAN or public host.
 

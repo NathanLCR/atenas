@@ -28,7 +28,11 @@ rather than more guardrails.
 Governance is tiered: reversible local writes run directly and are audit-logged;
 destructive and egress actions require explicit confirmation; forbidden actions
 are blocked. Web access is opt-in and guarded. Slash commands remain as
-deterministic shortcuts. Dashboard/API are local support surfaces only.
+deterministic shortcuts. Dashboard/API/TUI are local support surfaces only.
+
+The terminal UI runs with `.venv/bin/python -m app.tui`. It is read-only in its
+first version and must not call act tools or the LLM agent loop until a separate
+confirmation and audit contract exists for terminal-originated writes.
 
 When any doc describes agent behavior, `AGENT_LOOP.md` is authoritative. All
 contributors — including Codex, Claude Code, and OpenCode — follow it to keep
