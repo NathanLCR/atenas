@@ -2,8 +2,22 @@
 
 ## Status
 
-Target requirements as of 2026-05-20. These requirements supersede older
-phase-order assumptions where they conflict.
+Target requirements as of 2026-05-20, refreshed against the implementation on
+2026-05-24. These requirements supersede older phase-order assumptions where
+they conflict.
+
+Current implementation notes:
+
+- FR-01, FR-03, FR-04, FR-07, FR-08, FR-09, FR-10, and FR-12 have substantial
+  implemented coverage in the current test suite.
+- FR-06 remains the largest v1 gap: deterministic planning exists, but the full
+  falsifiable acceptance matrix below still needs complete automated coverage.
+- FR-05 is partially complete: modules, classes, work shifts, assignments, and
+  deadlines are accepted, but fatigue-level input is not exposed consistently
+  through Telegram/agent write paths.
+- The v1 storage contract is SQLite as the operational source of truth. Any
+  Markdown/YAML source-of-truth workflow is post-v1 unless implemented with a
+  reconciliation protocol.
 
 ## Functional Requirements
 

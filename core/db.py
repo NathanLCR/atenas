@@ -293,6 +293,38 @@ CREATE INDEX IF NOT EXISTS idx_agent_traces_started ON agent_traces(started_at);
 CREATE INDEX IF NOT EXISTS idx_agent_traces_status ON agent_traces(status);
 CREATE INDEX IF NOT EXISTS idx_agent_trace_steps_trace ON agent_trace_steps(trace_id);
 
+-- Agent runtime state
+CREATE TABLE IF NOT EXISTS agent_threads (
+    id TEXT PRIMARY KEY,
+    actor_user_id INTEGER NOT NULL,
+    channel TEXT NOT NULL DEFAULT 'telegram',
+    status TEXT NOT NULL DEFAULT 'active',
+    conversation_json TEXT NOT NULL DEFAULT '[]',
+    selected_tools_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS pending_actions (
+    id TEXT PRIMARY KEY,
+    thread_id TEXT NOT NULL REFERENCES agent_threads(id),
+    actor_user_id INTEGER NOT NULL,
+    tool_name TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    proposal_json TEXT NOT NULL,
+    confirmation_message TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    expires_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_threads_actor
+ON agent_threads(actor_user_id, channel, status);
+
+CREATE INDEX IF NOT EXISTS idx_pending_actions_actor_status
+ON pending_actions(actor_user_id, status, created_at);
+
 -- Phase 8: Controlled retrieval chunk index
 CREATE TABLE IF NOT EXISTS retrieval_chunks (
     id TEXT PRIMARY KEY,
@@ -391,7 +423,8 @@ VALID_TABLE_NAMES = frozenset({
     "study_modules", "assignments", "work_shifts",
     "class_sessions", "study_blocks", "memory_items", "llm_calls",
     "notes", "files", "note_file_links", "retrieval_chunks",
-    "agent_traces", "agent_trace_steps",
+    "agent_traces", "agent_trace_steps", "agent_threads",
+    "pending_actions",
 })
 
 

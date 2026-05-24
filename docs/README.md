@@ -34,12 +34,48 @@ The terminal UI runs with `.venv/bin/python -m app.tui`. It is read-only in its
 first version and must not call act tools or the LLM agent loop until a separate
 confirmation and audit contract exists for terminal-originated writes.
 
+## Current implementation snapshot
+
+Verified on 2026-05-24:
+
+- Plain Telegram messages use `AgentLoop` plus `ToolRegistry`.
+- Slash commands remain deterministic shortcuts.
+- The agent-facing tool catalog covers status, schedule overviews, deadlines,
+  availability, modules, assignments, classes, shifts, notes, retrieval, memory,
+  local LLM status, planning, deadline risk, duplicate detection, reversible
+  local writes, confirm-first destructive actions, and opt-in web search.
+- Dashboard, API, and TUI are local support surfaces; the dashboard and TUI are
+  read-only.
+- Retrieval syncs registered notes/files incrementally into SQLite
+  `retrieval_chunks` plus FTS5, with lexical fallback.
+- Editable package discovery is configured in `pyproject.toml`; runtime data
+  directories are excluded from the package set.
+
 ## Current gap spec
 
 The current implementation gap and packaging spec lives at
 `docs/superpowers/specs/2026-05-24-atenas-v1-gap-and-packaging-spec.md`.
-It tracks the remaining v1 agent-tool coverage, planning acceptance gaps,
-documentation drift, storage-contract decision, and editable-install fix.
+It now tracks the remaining v1 gaps after the latest verification: planning
+acceptance coverage, fatigue/write-path gaps, slash-command parity audit,
+storage/export follow-up, and operational packaging checks.
+
+## Local-model agent hardening
+
+The local-model agent runtime hardening spec lives at
+`docs/superpowers/specs/2026-05-24-local-model-agent-runtime-state-spec.md`,
+with an implementation breakdown and starter prompt in
+`docs/superpowers/plans/2026-05-24-local-model-agent-runtime-state.md`.
+It captures the framework patterns worth borrowing for Atenas: durable pending
+actions, model profiles, context-budgeted prompt assembly, deterministic tool
+selection, richer pending-action review, and trace replay.
+
+The Hermes-inspired hardening spec lives at
+`docs/superpowers/specs/2026-05-24-hermes-inspired-agent-hardening-spec.md`,
+with implementation phases and a starter prompt in
+`docs/superpowers/plans/2026-05-24-hermes-inspired-agent-hardening.md`.
+It covers the safe Hermes patterns for Atenas: toolsets, approved skill memory,
+backup/restore, local model profile config, session search, and a future
+channel adapter boundary.
 
 When any doc describes agent behavior, `AGENT_LOOP.md` is authoritative. All
 contributors — including Codex, Claude Code, and OpenCode — follow it to keep

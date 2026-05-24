@@ -8,6 +8,7 @@ from unittest.mock import patch
 from click.testing import CliRunner
 
 from app.cli import main
+from core.db import init_db
 
 
 def test_cli_help_renders() -> None:
@@ -16,6 +17,48 @@ def test_cli_help_renders() -> None:
     result = runner.invoke(main, ["--help"])
     assert result.exit_code == 0
     assert "Atenas" in result.output
+
+
+def test_tui_command_launches_tui_entrypoint(monkeypatch) -> None:
+    """tui should call the same entrypoint as `python -m app.tui`."""
+    import app.tui.__main__ as tui_entrypoint
+
+    calls: list[str] = []
+    monkeypatch.setattr(tui_entrypoint, "run", lambda: calls.append("run"))
+
+    runner = CliRunner()
+    result = runner.invoke(main, ["tui"])
+
+    assert result.exit_code == 0
+    assert calls == ["run"]
+
+
+def test_backup_command_creates_archive(settings) -> None:
+    """backup should create an archive with temp settings."""
+    init_db(settings.db_path)
+
+    runner = CliRunner()
+    with patch("app.cli.get_settings", return_value=settings):
+        result = runner.invoke(main, ["backup"])
+
+    assert result.exit_code == 0
+    assert "Backup created:" in result.output
+    assert list((settings.output_dir / "backups").glob("atenas-backup-*.zip"))
+
+
+def test_restore_command_refuses_overwrite_without_force(settings) -> None:
+    """restore should surface overwrite refusal as a command error."""
+    init_db(settings.db_path)
+    runner = CliRunner()
+    with patch("app.cli.get_settings", return_value=settings):
+        backup_result = runner.invoke(main, ["backup"])
+    archive_path = backup_result.output.split("Backup created:", 1)[1].strip()
+
+    with patch("app.cli.get_settings", return_value=settings):
+        restore_result = runner.invoke(main, ["restore", archive_path])
+
+    assert restore_result.exit_code != 0
+    assert "already exists" in restore_result.output
 
 
 def test_doctor_succeeds_with_mocked_ollama(settings) -> None:

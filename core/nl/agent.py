@@ -12,6 +12,7 @@ from pydantic import Field, ValidationError
 
 from core.llm.audit import log_llm_call
 from core.nl.tool_contracts import PendingToolAction
+from core.nl.toolsets import ToolsetName
 from core.nl.tools import ToolRegistry
 from core.nl.traces import AgentTraceStore
 from core.schemas import StrictModel
@@ -49,12 +50,18 @@ class AgentLoop:
         max_tool_calls: int = 5,
         llm_log_path: Path | str | None = None,
         trace_store: AgentTraceStore | None = None,
+        toolsets: set[ToolsetName] | None = None,
     ) -> None:
         self.registry = registry
         self.client = client
         self.max_tool_calls = max_tool_calls
         self._llm_log_path = Path(llm_log_path) if llm_log_path is not None else None
         self._trace_store = trace_store
+        self.toolsets = (
+            {ToolsetName.TELEGRAM_SAFE}
+            if toolsets is None
+            else {ToolsetName(toolset) for toolset in toolsets}
+        )
 
     def run(
         self,
@@ -159,6 +166,17 @@ class AgentLoop:
                 all_latency = int((time.perf_counter() - turn_started) * 1000)
                 self._finish_trace(
                     trace_id, "error",
+                    final_message=message,
+                    tool_call_count=tool_call_count,
+                    all_latency_ms=all_latency,
+                )
+                return _turn_result(history, user_message, message)
+
+            if decision.tool_name not in self._visible_tool_names():
+                message = f"Tool not available in this agent context: {decision.tool_name}"
+                all_latency = int((time.perf_counter() - turn_started) * 1000)
+                self._finish_trace(
+                    trace_id, "tool_error",
                     final_message=message,
                     tool_call_count=tool_call_count,
                     all_latency_ms=all_latency,
@@ -293,7 +311,11 @@ class AgentLoop:
         conversation: list[dict[str, str]],
         observations: list[dict[str, Any]],
     ) -> str:
-        tools_json = json.dumps(self.registry.schemas_for_llm(), ensure_ascii=False)
+        visible_tools = self.registry.list_tools_for_toolsets(self.toolsets)
+        tools_json = json.dumps(
+            [tool.schema_for_llm() for tool in visible_tools],
+            ensure_ascii=False,
+        )
         history_json = json.dumps(conversation[-MAX_HISTORY_ITEMS:], ensure_ascii=False)
         observations_json = json.dumps(observations, ensure_ascii=False)
         return AGENT_PROMPT.format(
@@ -302,6 +324,12 @@ class AgentLoop:
             observations_json=observations_json,
             user_message=user_message,
         )
+
+    def _visible_tool_names(self) -> set[str]:
+        return {
+            tool.name
+            for tool in self.registry.list_tools_for_toolsets(self.toolsets)
+        }
 
 
 AGENT_PROMPT = """You are Atenas, Nathan's Telegram-first study assistant.

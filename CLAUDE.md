@@ -52,7 +52,16 @@ adds authentication and deployment hardening.
 
 Read tools may run after allowlist auth.
 
-Write tools must:
+Auto-tier write tools may run after allowlist auth when they are reversible,
+local, and low-risk. They must:
+
+1. Validate arguments.
+2. Resolve natural-language titles/modules to stable IDs.
+3. Run the policy engine.
+4. Execute through core services.
+5. Log the outcome.
+
+Confirm-first write tools, including destructive or egress actions, must:
 
 1. Validate arguments.
 2. Resolve natural-language titles/modules to stable IDs.

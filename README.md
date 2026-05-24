@@ -89,7 +89,8 @@ docker-compose up
 - Local API: `/health`, `/status`, `/skills`.
 - Local dashboard: `/dashboard/`, `/dashboard/week`, `/dashboard/deadlines`,
   `/dashboard/plan`, `/dashboard/data`, `/dashboard/notes`,
-  `/dashboard/files`, `/dashboard/search`, `/dashboard/traces`,
+  `/dashboard/files`, `/dashboard/search`, `/dashboard/retrieval`,
+  `/dashboard/traces`,
   `/dashboard/logs`, `/dashboard/llm`.
 
 ## Current Docs

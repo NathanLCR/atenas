@@ -56,6 +56,7 @@ from core.nl.tool_contracts import (
     typed,
     wrap_web_content,
 )
+from core.nl.toolsets import ToolsetName, tool_names_for_toolsets
 from core.llm.engine import OllamaEngine
 from core.retrieval.service import RetrievalService
 from core.schemas import (
@@ -101,6 +102,17 @@ class ToolRegistry:
 
     def list_tools(self) -> list[ToolDefinition]:
         return [self._tools[name] for name in sorted(self._tools)]
+
+    def list_tools_for_toolsets(
+        self,
+        toolsets: set[ToolsetName],
+    ) -> list[ToolDefinition]:
+        names = tool_names_for_toolsets(toolsets, web_enabled=self.web_enabled)
+        return [
+            self._tools[name]
+            for name in sorted(names)
+            if name in self._tools
+        ]
 
     def schemas_for_llm(self) -> list[dict[str, Any]]:
         return [tool.schema_for_llm() for tool in self.list_tools()]
