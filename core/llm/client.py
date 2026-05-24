@@ -89,6 +89,18 @@ class OllamaClient:
         except Exception:
             return False
 
+    def list_models(self) -> list[str]:
+        """Return model names available on the Ollama server."""
+        url = f"{self.base_url}/api/tags"
+        req = urllib.request.Request(url, method="GET")
+        try:
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        except Exception as exc:
+            raise ConnectionError(f"Failed to list models: {exc}") from exc
+        models_raw = data.get("models") or []
+        return [m["name"] for m in models_raw if isinstance(m, dict) and "name" in m]
+
 
 def _read_ollama_http_error(exc: urllib.error.HTTPError) -> str:
     """Read Ollama's JSON error body when present."""

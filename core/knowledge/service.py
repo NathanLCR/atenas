@@ -13,6 +13,7 @@ from core.knowledge.validators import (
     derive_file_type, derive_mime_type, normalize_tags,
     validate_note_body, validate_note_title, validate_source_type,
 )
+from core.path_policy import PathPolicy, PathPolicyError
 from core.time import utc_now_iso
 
 
@@ -23,11 +24,17 @@ class KnowledgeService:
     repository, and delegates persistence to KnowledgeRepository.
     """
 
-    def __init__(self, db_path: Path | str, timezone: str | ZoneInfo = "Europe/Dublin") -> None:
+    def __init__(
+        self,
+        db_path: Path | str,
+        timezone: str | ZoneInfo = "Europe/Dublin",
+        allowed_file_roots: list[Path | str] | None = None,
+    ) -> None:
         self.timezone = timezone if isinstance(timezone, ZoneInfo) else ZoneInfo(timezone)
         self.repository = KnowledgeRepository(db_path)
         self.search_engine = SearchEngine(db_path)
         self._academic_repo = AcademicRepository(db_path, self.timezone)
+        self._path_policy = PathPolicy(allowed_file_roots or [Path("inbox"), Path("memory")])
 
     def create_note(self, title: str, body: str, module_id: str | None = None,
                     assignment_id: str | None = None, source_type: str = "manual",
@@ -109,15 +116,18 @@ class KnowledgeService:
                       tags: list[str] | None = None, allow_missing: bool = False) -> CommandResult:
         """Register a local file's metadata.
 
-        By default rejects paths that do not exist on disk. Set allow_missing=True
-        to register a path that may be mounted or synced later.
+        Registered files must exist and pass the canonical filesystem policy.
         """
         if not path or not path.strip():
             return CommandResult(success=False, message="File path is required.")
         path = path.strip()
-        file_path = Path(path)
-        if not allow_missing and not file_path.exists():
-            return CommandResult(success=False, message="File not found.\n\nCheck the path and try again.")
+        try:
+            resolved_path = self._path_policy.validate_registered_file(path)
+        except PathPolicyError as exc:
+            return CommandResult(success=False, message=str(exc))
+
+        path = str(resolved_path)
+        file_path = resolved_path
         existing = self.repository.find_duplicate_file(path)
         if existing is not None:
             return CommandResult(success=False, message=f"File already registered\n\n#{existing.id} \u2014 {existing.title or existing.filename}")

@@ -28,6 +28,7 @@ CONFIRMATION_REQUIRED: frozenset[str] = frozenset(
     {
         "delete_file",
         "overwrite_memory",
+        "update_memory",
         "clear_work_schedule",
         "remove_assignment",
         "delete_modules",
@@ -36,6 +37,7 @@ CONFIRMATION_REQUIRED: frozenset[str] = frozenset(
         "send_external_message",
         "archive_plan",
         "archive_note",
+        "web_search",
     }
 )
 

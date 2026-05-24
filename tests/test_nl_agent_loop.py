@@ -11,6 +11,7 @@ from core.academic.models import AssignmentStatus
 from core.academic.service import AcademicService
 from core.llm.client import OllamaResponse
 from core.nl.agent import AgentLoop
+from core.nl.tool_contracts import ToolCategory
 from core.nl.tools import ToolRegistry
 
 
@@ -101,6 +102,38 @@ def test_auto_tier_assignment_status_executes_without_confirmation(
     assert assignment.status == AssignmentStatus.DONE
     audit = [record for record in caplog.records if record.message == "action_executed"][-1]
     assert audit.action_type == "set_assignment_status"
+    assert audit.actor_user_id == 123
+    assert audit.policy_allowed is True
+    assert audit.user_confirmed is False
+
+
+def test_auto_tier_assignment_hours_executes_without_confirmation(
+    tmp_db: Path,
+    caplog,
+) -> None:
+    service = AcademicService(tmp_db)
+    added = service.add_assignment(title="ML essay", due_at="2026-06-01 23:59", estimated_hours=5.0)
+    registry = ToolRegistry(tmp_db)
+    client = FakeToolClient([
+        {
+            "type": "tool_call",
+            "tool_name": "set_assignment_hours",
+            "arguments": {"assignment": "ML essay", "completed_hours": 2.0},
+        },
+        {"type": "final", "message": "Progress updated\n\n#........ ‑ ML essay\nCompleted: 2.00h\nRemaining: 3.00h"},
+    ])
+    agent = AgentLoop(registry=registry, client=client)
+    caplog.set_level(logging.INFO, logger="core.action_executor")
+
+    result = agent.run("I have worked 2 hours on my ML essay", actor_user_id=123)
+
+    assert result.pending_action is None
+    assert result.message == "Progress updated\n\n#........ ‑ ML essay\nCompleted: 2.00h\nRemaining: 3.00h"
+    assignment = service.repository.get_assignment_by_id(added.record_id or "")
+    assert assignment is not None
+    assert assignment.completed_hours == 2.0
+    audit = [record for record in caplog.records if record.message == "action_executed"][-1]
+    assert audit.action_type == "set_assignment_hours"
     assert audit.actor_user_id == 123
     assert audit.policy_allowed is True
     assert audit.user_confirmed is False
@@ -214,7 +247,8 @@ def test_web_tool_enabled_when_flag_set(tmp_db: Path) -> None:
     assert "web_search" in tool_names
 
 
-def test_web_search_returns_results(tmp_db: Path) -> None:
+def test_web_search_returns_pending_confirm(tmp_db: Path) -> None:
+    """Web search should return a pending confirmation via the gate action."""
     registry = ToolRegistry(tmp_db, web_enabled=True)
     mock_response = json.dumps([
         "Test Query",
@@ -224,7 +258,6 @@ def test_web_search_returns_results(tmp_db: Path) -> None:
     ]).encode("utf-8")
 
     with patch("urllib.request.urlopen") as mock_urlopen:
-        mock_resp = patch("urllib.request.Request")
         mock_urlopen.return_value.__enter__ = lambda s: s
         mock_urlopen.return_value.__exit__ = lambda s, *a: None
         mock_urlopen.return_value.read = lambda: mock_response
@@ -236,9 +269,9 @@ def test_web_search_returns_results(tmp_db: Path) -> None:
         )
 
     assert run.result.ok is True
-    assert "web result" in run.result.message.lower()
-    assert run.result.data["query"] == "Test Query"
-    assert len(run.result.data["results"]) == 2
+    assert run.result.pending is True
+    assert run.pending_action is not None
+    assert run.pending_action.tool_name == "web_search"
 
 
 def test_web_search_short_query_rejected(tmp_db: Path) -> None:
@@ -249,3 +282,161 @@ def test_web_search_short_query_rejected(tmp_db: Path) -> None:
         actor_user_id=123,
     )
     assert run.result.ok is False
+
+
+EXPECTED_TOOL_NAMES = {
+    "list_modules",
+    "list_assignments",
+    "suggest_next_task",
+    "search_notes",
+    "retrieve_sources",
+    "detect_duplicate_modules",
+    "set_assignment_status",
+    "set_assignment_hours",
+    "delete_modules",
+    "deduplicate_modules",
+    "archive_note",
+    "read_memory",
+    "write_memory",
+    "update_memory",
+    "get_status",
+    "get_today_overview",
+    "get_week_overview",
+    "get_deadlines",
+    "get_availability",
+    "list_class_sessions",
+    "list_work_shifts",
+    "get_local_llm_status",
+    "generate_study_plan",
+    "explain_deadline_risk",
+    "add_assignment",
+    "add_note",
+    "add_class_session",
+    "add_work_shift",
+}
+
+
+def test_catalog_tool_names_without_web(tmp_db: Path) -> None:
+    registry = ToolRegistry(tmp_db, web_enabled=False)
+    names = {t.name for t in registry.list_tools()}
+    assert names == EXPECTED_TOOL_NAMES
+
+
+def test_catalog_tool_names_with_web(tmp_db: Path) -> None:
+    registry = ToolRegistry(tmp_db, web_enabled=True)
+    names = {t.name for t in registry.list_tools()}
+    assert names == EXPECTED_TOOL_NAMES | {"web_search"}
+
+
+def test_all_act_tools_declare_explicit_tier(tmp_db: Path) -> None:
+    registry = ToolRegistry(tmp_db, web_enabled=True)
+    for tool in registry.list_tools():
+        if tool.category == ToolCategory.ACT or tool.category == ToolCategory.WEB:
+            assert tool.action_tier is not None, f"{tool.name} missing action_tier"
+
+
+def test_schemas_for_llm_structure(tmp_db: Path) -> None:
+    registry = ToolRegistry(tmp_db, web_enabled=True)
+    schemas = registry.schemas_for_llm()
+    for schema in schemas:
+        assert "name" in schema
+        assert "description" in schema
+        assert "category" in schema
+        assert "parameters" in schema
+        assert "returns" in schema
+
+
+# ── Agent Trace Integration Tests ──────────────────────────────────────────
+
+
+def test_auto_tier_creates_success_trace(tmp_db: Path) -> None:
+    """An auto-tier write should create a trace with tool call and success."""
+    from core.nl.traces import AgentTraceStore
+
+    trace_store = AgentTraceStore(tmp_db)
+    service = AcademicService(tmp_db)
+    service.add_assignment(title="ML essay", due_at="2026-06-01 23:59")
+    registry = ToolRegistry(tmp_db)
+    client = FakeToolClient([
+        {
+            "type": "tool_call",
+            "tool_name": "set_assignment_status",
+            "arguments": {"assignment": "ML essay", "status": "done"},
+        },
+        {"type": "final", "message": "Marked ML essay as done."},
+    ])
+    agent = AgentLoop(registry=registry, client=client, trace_store=trace_store)
+
+    result = agent.run("mark my ML essay done", actor_user_id=123)
+
+    assert result.pending_action is None
+    traces = trace_store.list_recent(limit=5)
+    assert len(traces) >= 1
+    latest = traces[0]
+    assert latest["status"] == "success"
+    assert latest["user_message_summary"] == "mark my ML essay done"
+
+
+def test_confirm_first_action_creates_pending_trace(tmp_db: Path) -> None:
+    """A confirm-first action should create a trace with pending action type."""
+    from core.nl.traces import AgentTraceStore
+
+    service = AcademicService(tmp_db)
+    mod = service.create_module(name="ToDelete", code="DEL")
+    trace_store = AgentTraceStore(tmp_db)
+    registry = ToolRegistry(tmp_db)
+    client = FakeToolClient([
+        {
+            "type": "tool_call",
+            "tool_name": "delete_modules",
+            "arguments": {"module_ids": [mod.id]},
+        },
+    ])
+    agent = AgentLoop(registry=registry, client=client, trace_store=trace_store)
+
+    result = agent.run("delete module", actor_user_id=123)
+
+    assert result.pending_action is not None
+    traces = trace_store.list_recent(limit=5)
+    latest = traces[0]
+    assert latest["status"] == "success"
+    assert latest["pending_action_type"] == "delete_modules"
+    assert latest["tool_call_count"] >= 1
+
+
+def test_invalid_decision_creates_error_trace(tmp_db: Path) -> None:
+    """Invalid model JSON should create an error trace."""
+    from core.nl.traces import AgentTraceStore
+
+    class InvalidClient:
+        def generate(self, prompt: str):
+            return OllamaResponse(text="not valid json at all", model="test")
+
+    trace_store = AgentTraceStore(tmp_db)
+    registry = ToolRegistry(tmp_db)
+    agent = AgentLoop(registry=registry, client=InvalidClient(), trace_store=trace_store)
+
+    agent.run("hello", actor_user_id=123)
+
+    traces = trace_store.list_recent(limit=5)
+    latest = traces[0]
+    assert latest["status"] == "error"
+
+
+def test_llm_unavailable_creates_llm_error_trace(tmp_db: Path) -> None:
+    """LLM unavailable should create an llm_error trace."""
+    from core.nl.traces import AgentTraceStore
+
+    class UnavailableClient:
+        def generate(self, prompt: str):
+            raise ConnectionError("Ollama not running")
+
+    trace_store = AgentTraceStore(tmp_db)
+    registry = ToolRegistry(tmp_db)
+    agent = AgentLoop(registry=registry, client=UnavailableClient(), trace_store=trace_store)
+
+    agent.run("hello", actor_user_id=123)
+
+    traces = trace_store.list_recent(limit=5)
+    latest = traces[0]
+    assert latest["status"] == "llm_error"

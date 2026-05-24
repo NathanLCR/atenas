@@ -59,6 +59,7 @@ class PlannedStudyBlock:
     due_at: datetime
     priority: int
     reason: str
+    intensity: str = "medium"
 
 
 @dataclass(frozen=True)
@@ -103,6 +104,7 @@ class StudyPlan:
 class _PlanningWindow:
     start_at: datetime
     end_at: datetime
+    max_intensity: str = "deep"
 
 
 def build_study_plan(
@@ -133,7 +135,7 @@ def build_study_plan(
     )
 
     windows = [
-        _PlanningWindow(start_at=window.start_at, end_at=window.end_at)
+        _PlanningWindow(start_at=window.start_at, end_at=window.end_at, max_intensity=getattr(window, "max_intensity", "deep"))
         for day in availability.days
         for window in day.study_windows
     ]
@@ -302,6 +304,7 @@ def _allocate_workload(
                     due_at=workload.due_at,
                     priority=workload.priority,
                     reason=_planning_reason(workload, now),
+                    intensity=_block_intensity(window),
                 )
             )
             remaining_minutes -= duration
@@ -354,3 +357,10 @@ def _planning_reason(workload: AssignmentWorkload, now: datetime) -> str:
 
 def _duration_minutes(start_at: datetime, end_at: datetime) -> int:
     return int((end_at - start_at).total_seconds() // 60)
+
+
+def _block_intensity(window: _PlanningWindow) -> str:
+    cap = getattr(window, "max_intensity", "deep")
+    if cap in {"recovery", "light", "medium", "deep"}:
+        return cap
+    return "medium"

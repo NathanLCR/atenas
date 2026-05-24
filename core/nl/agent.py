@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import json
 import logging
+import time
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import Field, ValidationError
 
-from core.llm.client import OllamaClient
+from core.llm.audit import log_llm_call
 from core.nl.tool_contracts import PendingToolAction
 from core.nl.tools import ToolRegistry
+from core.nl.traces import AgentTraceStore
 from core.schemas import StrictModel
 
 logger = logging.getLogger(__name__)
@@ -42,12 +45,16 @@ class AgentLoop:
         self,
         *,
         registry: ToolRegistry,
-        client: OllamaClient,
+        client: Any,
         max_tool_calls: int = 5,
+        llm_log_path: Path | str | None = None,
+        trace_store: AgentTraceStore | None = None,
     ) -> None:
         self.registry = registry
         self.client = client
         self.max_tool_calls = max_tool_calls
+        self._llm_log_path = Path(llm_log_path) if llm_log_path is not None else None
+        self._trace_store = trace_store
 
     def run(
         self,
@@ -56,11 +63,13 @@ class AgentLoop:
         conversation: list[dict[str, str]] | None = None,
         actor_user_id: int | None = None,
     ) -> AgentTurnResult:
-        """Run one bounded agent turn."""
+        """Run one bounded agent turn with optional trace recording."""
 
         history = _clean_history(conversation or [])
         observations: list[dict[str, Any]] = []
         tool_call_count = 0
+        trace_id = self._start_trace(user_message, actor_user_id)
+        turn_started = time.perf_counter()
 
         while tool_call_count <= self.max_tool_calls:
             prompt = self._build_prompt(
@@ -68,14 +77,42 @@ class AgentLoop:
                 conversation=history,
                 observations=observations,
             )
+            started = time.perf_counter()
             try:
                 response = self.client.generate(prompt)
+                latency_ms = int((time.perf_counter() - started) * 1000)
+                log_llm_call(
+                    self._llm_log_path,
+                    provider="local",
+                    model=response.model,
+                    task_type="agent_turn",
+                    success=True,
+                    latency_ms=latency_ms,
+                )
             except (ConnectionError, TimeoutError, OSError) as exc:
+                latency_ms = int((time.perf_counter() - started) * 1000)
+                log_llm_call(
+                    self._llm_log_path,
+                    provider="local",
+                    model=getattr(self.client, 'model', 'unknown'),
+                    task_type="agent_turn",
+                    success=False,
+                    latency_ms=latency_ms,
+                    error=str(exc),
+                )
                 logger.info(
                     "agent_llm_unavailable",
                     extra={"event_type": "agent_llm_unavailable", "error": str(exc)},
                 )
                 fallback = _fallback_after_llm_error(observations, str(exc))
+                all_latency = int((time.perf_counter() - turn_started) * 1000)
+                self._finish_trace(
+                    trace_id, "llm_error",
+                    final_message=fallback,
+                    tool_call_count=tool_call_count,
+                    all_latency_ms=all_latency,
+                    error=str(exc),
+                )
                 return _turn_result(history, user_message, fallback)
 
             decision = _parse_decision(response.text)
@@ -84,20 +121,48 @@ class AgentLoop:
                     "I could not get a valid tool decision, so nothing else changed. "
                     "Please try that again a little more specifically."
                 )
+                all_latency = int((time.perf_counter() - turn_started) * 1000)
+                self._finish_trace(
+                    trace_id, "error",
+                    final_message=message,
+                    tool_call_count=tool_call_count,
+                    all_latency_ms=all_latency,
+                )
                 return _turn_result(history, user_message, message)
 
             if decision.type == "final":
                 message = (decision.message or "").strip()
                 if not message:
                     message = "I do not have enough information to answer that yet."
+                all_latency = int((time.perf_counter() - turn_started) * 1000)
+                self._finish_trace(
+                    trace_id, "success",
+                    final_message=message,
+                    tool_call_count=tool_call_count,
+                    all_latency_ms=all_latency,
+                )
                 return _turn_result(history, user_message, message)
 
             if tool_call_count >= self.max_tool_calls:
                 message = _tool_cap_message(observations)
+                all_latency = int((time.perf_counter() - turn_started) * 1000)
+                self._finish_trace(
+                    trace_id, "tool_cap",
+                    final_message=message,
+                    tool_call_count=tool_call_count,
+                    all_latency_ms=all_latency,
+                )
                 return _turn_result(history, user_message, message)
 
             if not decision.tool_name:
                 message = "The model proposed a tool call without a tool name. Nothing changed."
+                all_latency = int((time.perf_counter() - turn_started) * 1000)
+                self._finish_trace(
+                    trace_id, "error",
+                    final_message=message,
+                    tool_call_count=tool_call_count,
+                    all_latency_ms=all_latency,
+                )
                 return _turn_result(history, user_message, message)
 
             run = self.registry.run_tool(
@@ -113,11 +178,37 @@ class AgentLoop:
                     "result": run.result.model_dump(mode="json"),
                 }
             )
+            self._record_step(
+                trace_id,
+                step_index=tool_call_count - 1,
+                tool_name=decision.tool_name,
+                arguments=decision.arguments,
+                ok=run.result.ok,
+                executed=run.result.executed,
+                pending=run.result.pending,
+                message=run.result.message,
+                latency_ms=latency_ms,
+            )
 
             if not run.result.ok:
                 message = f"{run.result.message}\n\nNothing else changed."
+                all_latency = int((time.perf_counter() - turn_started) * 1000)
+                self._finish_trace(
+                    trace_id, "tool_error",
+                    final_message=message,
+                    tool_call_count=tool_call_count,
+                    all_latency_ms=all_latency,
+                )
                 return _turn_result(history, user_message, message)
             if run.pending_action is not None:
+                all_latency = int((time.perf_counter() - turn_started) * 1000)
+                self._finish_trace(
+                    trace_id, "success",
+                    final_message=run.result.message,
+                    tool_call_count=tool_call_count,
+                    pending_action_type=run.pending_action.tool_name,
+                    all_latency_ms=all_latency,
+                )
                 return _turn_result(
                     history,
                     user_message,
@@ -126,7 +217,74 @@ class AgentLoop:
                 )
 
         message = _tool_cap_message(observations)
+        all_latency = int((time.perf_counter() - turn_started) * 1000)
+        self._finish_trace(
+            trace_id, "tool_cap",
+            final_message=message,
+            tool_call_count=tool_call_count,
+            all_latency_ms=all_latency,
+        )
         return _turn_result(history, user_message, message)
+
+    def _start_trace(
+        self,
+        user_message: str,
+        actor_user_id: int | None,
+    ) -> str | None:
+        if self._trace_store is None:
+            return None
+        return self._trace_store.start_trace(
+            actor_user_id=actor_user_id,
+            model=getattr(self.client, 'model', None),
+            user_message=user_message,
+        )
+
+    def _record_step(
+        self,
+        trace_id: str | None,
+        step_index: int,
+        tool_name: str,
+        arguments: dict[str, Any],
+        ok: bool,
+        executed: bool,
+        pending: bool,
+        message: str | None = None,
+        latency_ms: int | None = None,
+    ) -> None:
+        if trace_id is not None and self._trace_store is not None:
+            self._trace_store.record_step(
+                trace_id,
+                step_index=step_index,
+                tool_name=tool_name,
+                arguments=arguments,
+                ok=ok,
+                executed=executed,
+                pending=pending,
+                message=message,
+                latency_ms=latency_ms,
+            )
+
+    def _finish_trace(
+        self,
+        trace_id: str | None,
+        status: str,
+        *,
+        final_message: str | None = None,
+        tool_call_count: int = 0,
+        pending_action_type: str | None = None,
+        all_latency_ms: int | None = None,
+        error: str | None = None,
+    ) -> None:
+        if trace_id is not None and self._trace_store is not None:
+            self._trace_store.finish_trace(
+                trace_id,
+                status=status,
+                final_message=final_message,
+                tool_call_count=tool_call_count,
+                pending_action_type=pending_action_type,
+                latency_ms=all_latency_ms,
+                error=error,
+            )
 
     def _build_prompt(
         self,

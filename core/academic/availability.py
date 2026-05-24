@@ -13,6 +13,7 @@ from core.academic.models import (
     WeekAvailability,
     WorkShift,
 )
+from core.schemas import FatigueLevel
 from core.time import combine_local, ensure_local_datetime, iter_dates, parse_hhmm
 
 DEFAULT_DAY_START = time(8, 0)
@@ -81,6 +82,7 @@ def _calculate_day(
         boundary_end,
         now if now is not None and now.date() == day else None,
         minimum_study_window_minutes,
+        work_shifts=work_shifts,
     )
     return DayAvailability(
         date=day,
@@ -88,6 +90,27 @@ def _calculate_day(
         study_windows=study_windows,
         total_study_minutes=sum(window.minutes for window in study_windows),
     )
+
+
+def _max_intensity_for_window(start_at: datetime, work_shifts: list[WorkShift]) -> str:
+    """Return max intensity cap for a study window based on prior work fatigue."""
+    from datetime import timedelta
+    previous_late_high = any(
+        getattr(shift, "fatigue_level", None) == FatigueLevel.HIGH
+        and shift.end_at.date() == start_at.date() - timedelta(days=1)
+        and shift.end_at.hour >= 23
+        for shift in work_shifts
+    )
+    if previous_late_high and start_at.hour < 10:
+        return "light"
+    same_day_high = any(
+        getattr(shift, "fatigue_level", None) == FatigueLevel.HIGH
+        and shift.start_at.date() == start_at.date()
+        for shift in work_shifts
+    )
+    if same_day_high:
+        return "light"
+    return "deep"
 
 
 def _class_blocks(
@@ -186,6 +209,7 @@ def _free_windows(
     boundary_end: datetime,
     now: datetime | None,
     minimum_study_window_minutes: int,
+    work_shifts: list[WorkShift] | None = None,
 ) -> list[StudyWindow]:
     cursor = max(boundary_start, now) if now is not None else boundary_start
     if cursor >= boundary_end:
@@ -196,11 +220,11 @@ def _free_windows(
         if block.end_at <= cursor:
             continue
         if block.start_at > cursor:
-            _append_window(windows, cursor, block.start_at, minimum_study_window_minutes)
+            _append_window(windows, cursor, block.start_at, minimum_study_window_minutes, work_shifts=work_shifts)
         cursor = max(cursor, block.end_at)
         if cursor >= boundary_end:
             return windows
-    _append_window(windows, cursor, boundary_end, minimum_study_window_minutes)
+    _append_window(windows, cursor, boundary_end, minimum_study_window_minutes, work_shifts=work_shifts)
     return windows
 
 
@@ -209,7 +233,13 @@ def _append_window(
     start_at: datetime,
     end_at: datetime,
     minimum_study_window_minutes: int,
+    work_shifts: list[WorkShift] | None = None,
 ) -> None:
     minutes = int((end_at - start_at).total_seconds() // 60)
     if minutes >= minimum_study_window_minutes:
-        windows.append(StudyWindow(start_at=start_at, end_at=end_at, minutes=minutes))
+        windows.append(StudyWindow(
+            start_at=start_at,
+            end_at=end_at,
+            minutes=minutes,
+            max_intensity=_max_intensity_for_window(start_at, work_shifts or []),
+        ))

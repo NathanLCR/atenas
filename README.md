@@ -36,6 +36,32 @@ python3.11 -m venv .venv
 .venv/bin/uvicorn app.main:app --reload
 ```
 
+### CLI
+
+Atenas ships a Click-based CLI accessed via the `atenas` command:
+
+```bash
+atenas doctor        # Check DB, Ollama, config, Telegram, web tools
+atenas traces        # Show recent agent trace records (--limit N)
+atenas tui           # Launch the terminal TUI dashboard
+```
+
+Install the CLI with `pip install -e .` after creating the venv.
+
+### Terminal UI
+
+Atenas also has a local read-only terminal UI for quick inspection without the
+web dashboard:
+
+```bash
+.venv/bin/python -m app.tui
+# or after pip install -e .
+atenas tui
+```
+
+The TUI is a local support surface. It reads the same SQLite data through core
+services and does not execute writes, LLM act tools, web search, or exports.
+
 The intended local URL is `http://127.0.0.1:8000`. Do not expose the dashboard
 or REST API directly on a LAN or public host.
 
@@ -63,7 +89,8 @@ docker-compose up
 - Local API: `/health`, `/status`, `/skills`.
 - Local dashboard: `/dashboard/`, `/dashboard/week`, `/dashboard/deadlines`,
   `/dashboard/plan`, `/dashboard/data`, `/dashboard/notes`,
-  `/dashboard/files`, `/dashboard/search`, `/dashboard/logs`, `/dashboard/llm`.
+  `/dashboard/files`, `/dashboard/search`, `/dashboard/traces`,
+  `/dashboard/logs`, `/dashboard/llm`.
 
 ## Current Docs
 

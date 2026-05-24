@@ -123,7 +123,8 @@ Domain and application logic:
 
 - Academic scheduling, assignments, availability, and planning.
 - Knowledge notes/files/search/retrieval.
-- LLM client/service abstractions.
+- LLM client/service abstractions (with an engine interface wrapping
+  OllamaClient that exposes `generate`, `health`, `list_models`).
 - Policy engine and action execution.
 - Database schema and repository access.
 
@@ -232,7 +233,8 @@ must not rebuild the full chunks table on every request.
 |---|---|
 | Academic state | SQLite |
 | Notes/files metadata | SQLite plus local registered files |
-| Retrieval chunks | SQLite, single canonical schema |
+| Retrieval chunks + FTS5 index | SQLite (`retrieval_chunks` + `retrieval_chunks_fts`) |
+| Agent trace metadata | SQLite (`agent_traces`, `agent_trace_steps`) |
 | LLM calls | JSONL/SQLite audit logs |
 | Tool/action events | JSONL audit logs |
 
