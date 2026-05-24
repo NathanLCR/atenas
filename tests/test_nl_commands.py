@@ -14,6 +14,7 @@ from app.config import Settings
 from app.bot import AllowlistFilter, natural_language_handler
 from core.academic.service import AcademicService
 from core.llm.client import OllamaClient, OllamaResponse
+from core.nl.runtime_state import AgentRuntimeStore
 
 Callback = Callable[[SimpleNamespace, SimpleNamespace], Awaitable[None]]
 
@@ -27,14 +28,18 @@ def _make_update(user_id: int, text: str) -> SimpleNamespace:
     )
 
 
-def _make_context(db_path: Path | None = None) -> SimpleNamespace:
+def _make_context(
+    db_path: Path | None = None,
+    *,
+    allowed_user_ids: list[int] | None = None,
+) -> SimpleNamespace:
     if db_path is None:
         settings = MagicMock()
     else:
         settings = Settings(
             _env_file=None,
             data_dir=db_path.parent,
-            telegram_allowed_user_ids=[123],
+            telegram_allowed_user_ids=allowed_user_ids or [123],
         )
     return SimpleNamespace(
         bot=SimpleNamespace(send_message=AsyncMock()),
@@ -207,6 +212,148 @@ class TestNLHandlerWriteIntent:
         assert isinstance(reply, str)
         assert confirm_context.user_data.get("nl_pending_action") is None
         assert [module.id for module in service.list_modules()] == [keep.id]
+
+    @pytest.mark.asyncio
+    async def test_confirmation_yes_survives_context_restart(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_db: Path,
+    ) -> None:
+        service = AcademicService(tmp_db)
+        keep = service.create_module(name="Machine Learning", code="ML")
+        delete = service.create_module(name="Machine Learning", code="ML")
+        update = _make_update(user_id=123, text="delete duplicate modules")
+        context = _make_context(tmp_db)
+
+        _patch_generate_sequence(
+            monkeypatch,
+            [
+                {"type": "tool_call", "tool_name": "detect_duplicate_modules", "arguments": {}},
+                {
+                    "type": "tool_call",
+                    "tool_name": "deduplicate_modules",
+                    "arguments": {
+                        "groups": [
+                            {
+                                "canonical_module_id": keep.id,
+                                "duplicate_module_ids": [delete.id],
+                            }
+                        ]
+                    },
+                },
+            ],
+        )
+
+        if AllowlistFilter(allowed_user_ids=[123]).filter(update):
+            await natural_language_handler(update, context)
+
+        confirm_update = _make_update(user_id=123, text="yes")
+        fresh_context = _make_context(tmp_db)
+
+        if AllowlistFilter(allowed_user_ids=[123]).filter(confirm_update):
+            await natural_language_handler(confirm_update, fresh_context)
+
+        reply = confirm_update.effective_message.reply_text.await_args.args[0]
+        assert isinstance(reply, str)
+        assert fresh_context.user_data.get("nl_pending_action") is None
+        assert [module.id for module in service.list_modules()] == [keep.id]
+        assert AgentRuntimeStore(tmp_db).get_active_pending_action(actor_user_id=123) is None
+
+    @pytest.mark.asyncio
+    async def test_confirmation_no_survives_context_restart(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_db: Path,
+    ) -> None:
+        service = AcademicService(tmp_db)
+        keep = service.create_module(name="Machine Learning", code="ML")
+        delete = service.create_module(name="Machine Learning", code="ML")
+        update = _make_update(user_id=123, text="delete duplicate modules")
+        context = _make_context(tmp_db)
+
+        _patch_generate_sequence(
+            monkeypatch,
+            [
+                {"type": "tool_call", "tool_name": "detect_duplicate_modules", "arguments": {}},
+                {
+                    "type": "tool_call",
+                    "tool_name": "deduplicate_modules",
+                    "arguments": {
+                        "groups": [
+                            {
+                                "canonical_module_id": keep.id,
+                                "duplicate_module_ids": [delete.id],
+                            }
+                        ]
+                    },
+                },
+            ],
+        )
+
+        if AllowlistFilter(allowed_user_ids=[123]).filter(update):
+            await natural_language_handler(update, context)
+
+        cancel_update = _make_update(user_id=123, text="no")
+        fresh_context = _make_context(tmp_db)
+
+        if AllowlistFilter(allowed_user_ids=[123]).filter(cancel_update):
+            await natural_language_handler(cancel_update, fresh_context)
+
+        reply = cancel_update.effective_message.reply_text.await_args.args[0]
+        assert "Cancelled" in reply
+        assert fresh_context.user_data.get("nl_pending_action") is None
+        assert len(service.list_modules()) == 2
+        assert (
+            AgentRuntimeStore(tmp_db).get_active_pending_action(actor_user_id=123)
+            is None
+        )
+
+    @pytest.mark.asyncio
+    async def test_different_actor_cannot_confirm_durable_pending_action(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_db: Path,
+    ) -> None:
+        service = AcademicService(tmp_db)
+        keep = service.create_module(name="Machine Learning", code="ML")
+        delete = service.create_module(name="Machine Learning", code="ML")
+        update = _make_update(user_id=123, text="delete duplicate modules")
+        allowed_user_ids = [123, 999]
+        context = _make_context(tmp_db, allowed_user_ids=allowed_user_ids)
+
+        _patch_generate_sequence(
+            monkeypatch,
+            [
+                {"type": "tool_call", "tool_name": "detect_duplicate_modules", "arguments": {}},
+                {
+                    "type": "tool_call",
+                    "tool_name": "deduplicate_modules",
+                    "arguments": {
+                        "groups": [
+                            {
+                                "canonical_module_id": keep.id,
+                                "duplicate_module_ids": [delete.id],
+                            }
+                        ]
+                    },
+                },
+            ],
+        )
+
+        if AllowlistFilter(allowed_user_ids=allowed_user_ids).filter(update):
+            await natural_language_handler(update, context)
+
+        store = AgentRuntimeStore(tmp_db)
+        assert store.get_active_pending_action(actor_user_id=123) is not None
+
+        confirm_update = _make_update(user_id=999, text="yes")
+        fresh_context = _make_context(tmp_db, allowed_user_ids=allowed_user_ids)
+
+        if AllowlistFilter(allowed_user_ids=allowed_user_ids).filter(confirm_update):
+            await natural_language_handler(confirm_update, fresh_context)
+
+        assert len(service.list_modules()) == 2
+        assert store.get_active_pending_action(actor_user_id=123) is not None
 
     @pytest.mark.asyncio
     async def test_confirmation_no_cancels(self, monkeypatch: pytest.MonkeyPatch, tmp_db: Path) -> None:

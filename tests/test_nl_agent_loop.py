@@ -12,6 +12,7 @@ from core.academic.service import AcademicService
 from core.llm.client import OllamaResponse
 from core.nl.agent import AgentLoop
 from core.nl.tool_contracts import ToolCategory
+from core.nl.toolsets import ToolsetName
 from core.nl.tools import ToolRegistry
 
 
@@ -27,6 +28,12 @@ class FakeToolClient:
         if not self.responses:
             return OllamaResponse(text=json.dumps({"type": "final", "message": "done"}), model="test")
         return OllamaResponse(text=self.responses.pop(0), model="test")
+
+
+DESTRUCTIVE_TOOLSETS = {
+    ToolsetName.TELEGRAM_SAFE,
+    ToolsetName.TELEGRAM_DESTRUCTIVE,
+}
 
 
 def test_delete_duplicate_modules_requires_confirmation_then_audits(
@@ -52,7 +59,7 @@ def test_delete_duplicate_modules_requires_confirmation_then_audits(
             },
         },
     ])
-    agent = AgentLoop(registry=registry, client=client)
+    agent = AgentLoop(registry=registry, client=client, toolsets=DESTRUCTIVE_TOOLSETS)
 
     result = agent.run("delete my duplicate modules", actor_user_id=123)
 
@@ -181,7 +188,7 @@ def test_archive_note_requires_confirmation_then_executes(
             "arguments": {"note": str(note_id)},
         },
     ])
-    agent = AgentLoop(registry=registry, client=client)
+    agent = AgentLoop(registry=registry, client=client, toolsets=DESTRUCTIVE_TOOLSETS)
 
     result = agent.run("archive my Important Notes", actor_user_id=123)
 
@@ -218,7 +225,7 @@ def test_audit_before_after_on_delete_modules(tmp_db: Path, caplog) -> None:
             "arguments": {"module_ids": [mod.id]},
         },
     ])
-    agent = AgentLoop(registry=registry, client=client)
+    agent = AgentLoop(registry=registry, client=client, toolsets=DESTRUCTIVE_TOOLSETS)
 
     result = agent.run("delete the ToDelete module", actor_user_id=456)
 
@@ -282,6 +289,62 @@ def test_web_search_short_query_rejected(tmp_db: Path) -> None:
         actor_user_id=123,
     )
     assert run.result.ok is False
+
+
+def test_agent_loop_uses_telegram_safe_toolset_by_default(tmp_db: Path) -> None:
+    registry = ToolRegistry(tmp_db, web_enabled=True)
+    client = FakeToolClient([
+        {"type": "final", "message": "done"},
+    ])
+    agent = AgentLoop(registry=registry, client=client)
+
+    agent.run("hello", actor_user_id=123)
+
+    prompt = client.prompts[0]
+    assert '"name": "set_assignment_status"' in prompt
+    assert '"name": "web_search"' not in prompt
+    assert '"name": "delete_modules"' not in prompt
+
+
+def test_agent_loop_can_explicitly_expose_egress_and_destructive_toolsets(
+    tmp_db: Path,
+) -> None:
+    registry = ToolRegistry(tmp_db, web_enabled=True)
+    client = FakeToolClient([
+        {"type": "final", "message": "done"},
+    ])
+    agent = AgentLoop(
+        registry=registry,
+        client=client,
+        toolsets={
+            ToolsetName.TELEGRAM_SAFE,
+            ToolsetName.TELEGRAM_EGRESS,
+            ToolsetName.TELEGRAM_DESTRUCTIVE,
+        },
+    )
+
+    agent.run("hello", actor_user_id=123)
+
+    prompt = client.prompts[0]
+    assert '"name": "web_search"' in prompt
+    assert '"name": "delete_modules"' in prompt
+
+
+def test_agent_loop_rejects_tool_hidden_by_selected_toolsets(tmp_db: Path) -> None:
+    registry = ToolRegistry(tmp_db, web_enabled=True)
+    client = FakeToolClient([
+        {
+            "type": "tool_call",
+            "tool_name": "web_search",
+            "arguments": {"query": "python"},
+        },
+    ])
+    agent = AgentLoop(registry=registry, client=client)
+
+    result = agent.run("search the web for python", actor_user_id=123)
+
+    assert result.pending_action is None
+    assert result.message == "Tool not available in this agent context: web_search"
 
 
 EXPECTED_TOOL_NAMES = {
@@ -392,7 +455,12 @@ def test_confirm_first_action_creates_pending_trace(tmp_db: Path) -> None:
             "arguments": {"module_ids": [mod.id]},
         },
     ])
-    agent = AgentLoop(registry=registry, client=client, trace_store=trace_store)
+    agent = AgentLoop(
+        registry=registry,
+        client=client,
+        trace_store=trace_store,
+        toolsets=DESTRUCTIVE_TOOLSETS,
+    )
 
     result = agent.run("delete module", actor_user_id=123)
 

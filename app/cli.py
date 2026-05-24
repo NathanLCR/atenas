@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import logging
 import sys
+import zipfile
+from pathlib import Path
 
 import click
 
 from app.config import Settings, get_settings
+from core.backup import BackupService
 from core.db import get_connection, init_db
 from core.llm.client import OllamaClient
 from core.llm.engine import EngineHealth, OllamaEngine
@@ -39,6 +42,28 @@ def tui() -> None:
     """Launch the terminal TUI dashboard."""
     from app.tui.__main__ import main as tui_main
     tui_main()
+
+
+@main.command()
+@click.option("--include-logs", is_flag=True)
+def backup(include_logs: bool) -> None:
+    """Create a local backup archive."""
+    settings = get_settings()
+    archive_path = BackupService(settings).create_backup(include_logs=include_logs)
+    click.echo(f"Backup created: {archive_path}")
+
+
+@main.command()
+@click.argument("archive_path")
+@click.option("--force", is_flag=True)
+def restore(archive_path: str, force: bool) -> None:
+    """Restore a local backup archive."""
+    settings = get_settings()
+    try:
+        BackupService(settings).restore_backup(Path(archive_path), force=force)
+    except (FileExistsError, ValueError, zipfile.BadZipFile) as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo("Backup restored.")
 
 
 def _run_doctor() -> None:

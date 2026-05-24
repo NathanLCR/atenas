@@ -4,18 +4,21 @@
 
 | Layer | Technology | Role |
 |---|---|---|
-| **Source of truth** | Markdown / YAML files in `memory/` | Human-readable, user-owned |
-| **Operational store** | SQLite (`data/atenas.sqlite`) | Fast queries, metadata, logs (graph tables reserved, post-v1) |
+| **Source of truth for v1** | SQLite (`data/atenas.sqlite`) | Academic data, notes/files metadata, memory items, retrieval chunks, traces, and LLM call records |
+| **Human-readable files** | Registered files under allowed roots such as `inbox/` and `memory/` | User-provided source material for retrieval; not the canonical store for operational rows in v1 |
 
-SQLite is always a derivative of the filesystem. If lost, rebuild from `memory/` files.
+SQLite is the v1 operational source of truth. If lost, restore from a database
+backup or a future export; the current implementation does not rebuild all user
+state from Markdown/YAML files.
 
 ---
 
-## Source-of-Truth Coherence Protocol
+## Deferred Markdown/YAML Source-Of-Truth Protocol
 
-There are multiple writers (skills, the dashboard) and the user may hand-edit
-YAML. Without a defined protocol that is a silent-corruption hazard. The
-rules:
+The original design proposed Markdown/YAML files in `memory/` as canonical and
+SQLite as a derived cache. That is **not** the v1 implementation. To make
+Markdown/YAML canonical in a later release, Atenas must first implement the
+following protocol:
 
 1. **YAML/Markdown files are canonical. SQLite is a derived cache.** On any
    disagreement, the file wins. SQLite is never the only copy of user data.
@@ -40,6 +43,10 @@ rules:
 6. **No dual ownership of a field.** A field is owned by exactly one file.
    Derived/computed values (e.g. `deadline_risk`) live only in SQLite and are
    recomputed, never hand-edited.
+
+Until that protocol exists in code and tests, contributors must treat SQLite as
+canonical for v1 and avoid docs or features that assume a file-backed rebuild is
+available.
 
 ---
 

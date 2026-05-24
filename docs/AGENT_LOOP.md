@@ -2,11 +2,11 @@
 
 ## Status
 
-Canonical contract as of 2026-05-20. This is the single source of truth for how
-the Telegram LLM agent behaves. When `ARCHITECTURE.md`, `AGENT_POLICY.md`, or
-`SECURITY.md` describe agent behavior, they defer to this file. Codex, Claude
-Code, and OpenCode must all follow this contract to keep the implementation
-from diverging.
+Canonical contract as of 2026-05-20, verified against the current code on
+2026-05-24. This is the single source of truth for how the Telegram LLM agent
+behaves. When `ARCHITECTURE.md`, `AGENT_POLICY.md`, or `SECURITY.md` describe
+agent behavior, they defer to this file. Codex, Claude Code, and OpenCode must
+all follow this contract to keep the implementation from diverging.
 
 ## Why this exists
 
@@ -20,9 +20,11 @@ handler. That made Atenas a static-data desk, not an agent:
   because the classifier is stateless and re-matched the word to the nearest
   intent with no memory of the goal.
 
-Atenas v2 replaces the classifier with a real **tool-calling agent loop**. The
-local model is weak at reasoning, so we compensate with **strong tools**, not
-more guardrails.
+Atenas uses a real **tool-calling agent loop** for the canonical Telegram
+natural-language path. The local model is weak at reasoning, so we compensate
+with **strong tools**, not more guardrails. `NLRouter` and `NLClassifier` remain
+legacy compatibility surfaces only; new product behavior belongs in
+`AgentLoop` and `ToolRegistry`.
 
 ## The Loop
 
@@ -113,15 +115,26 @@ Web is **opt-in and disabled by default**. When enabled:
 - Spec-driven development — but specs describe the loop and tiers above, not a
   fixed intent menu.
 
-## Not Yet Built
+## Current Implementation State
 
-All items from the original punch list have been shipped:
+The canonical path is implemented in `core/nl/agent.py` and
+`core/nl/tools.py`. Plain Telegram messages build `AgentLoop` plus
+`ToolRegistry`; the loop is bounded, records traces, logs LLM calls, and stores
+pending confirm-first actions in Telegram `user_data`.
 
-1. **Web tool** — `web_search` registered when `web_enabled=True` (default off).
-   Query text is egress; returned content is wrapped as `<web>` untrusted data;
-   never triggers automatic writes.
-2. **archive_note** — wired as `ActionTier.CONFIRM_FIRST` act tool. `export_data`
-   removed from `CONFIRMATION_REQUIRED` (out of scope).
-3. **Audit before/after** — confirm-first mutations (delete_modules,
-   deduplicate_modules, archive_note) capture prior state in `before_state` and
-   post-execution state in `after_state`, both logged without sensitive content.
+Shipped tool-loop behavior:
+
+1. **Expanded tool catalog** — read, compute, act, system, and opt-in web tools
+   are registered through `ToolRegistry`.
+2. **Web tool** — `web_search` is registered only when `web_enabled=True`
+   (default off). Query text is egress; returned content is wrapped as `<web>`
+   untrusted data; it never triggers automatic writes.
+3. **archive_note** — wired as an `ActionTier.CONFIRM_FIRST` act tool.
+   `export_data` is out of v1 scope.
+4. **Audit before/after** — confirm-first mutations such as `delete_modules`,
+   `deduplicate_modules`, `archive_note`, and `update_memory` capture prior
+   state in `before_state` and post-execution state in `after_state` where
+   meaningful, with sensitive content summarized or redacted.
+
+Remaining v1 work is tracked in
+`docs/superpowers/specs/2026-05-24-atenas-v1-gap-and-packaging-spec.md`.
