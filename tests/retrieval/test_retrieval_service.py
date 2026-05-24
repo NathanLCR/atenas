@@ -5,17 +5,19 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from core.db import init_db
+from core.db import get_connection, init_db
 from core.knowledge.models import FileRecord, Note
 from core.llm.client import OllamaResponse
-from core.retrieval.models import NO_SOURCE_FALLBACK
+from core.retrieval.models import NO_SOURCE_FALLBACK, RetrievalChunk
 from core.retrieval.service import RetrievalService
+from core.retrieval.vector_store import RetrievalVectorStore
+from core.time import utc_now_iso
 
 
 def _service(tmp_path: Path) -> RetrievalService:
     db_path = tmp_path / "atenas.sqlite"
     init_db(db_path)
-    return RetrievalService(db_path, ollama_model="test-model")
+    return RetrievalService(db_path, ollama_model="test-model", allowed_file_roots=[tmp_path])
 
 
 def _create_note(service: RetrievalService, title: str, body: str, archived: bool = False) -> Note:
@@ -129,3 +131,85 @@ def test_ask_note_rejects_archived_note(tmp_path: Path) -> None:
 
     assert result.success is False
     assert "archived" in result.error
+
+
+# ── FTS5 retrieval integration ────────────────────────────────────────────────
+
+
+def _chunk(source_kind: str, source_id: int, title: str, text: str) -> RetrievalChunk:
+    return RetrievalChunk(
+        source_kind=source_kind,
+        source_id=source_id,
+        chunk_index=0,
+        title=title,
+        text=text,
+        updated_at=utc_now_iso(),
+    )
+
+
+def test_fts_table_populated_during_sync(tmp_path: Path) -> None:
+    """rebuild should populate the FTS5 virtual table."""
+    db_path = tmp_path / "atenas.sqlite"
+    init_db(db_path)
+    store = RetrievalVectorStore(db_path)
+
+    chunks = [
+        _chunk("note", 1, "Machine Learning", "Neural networks use backpropagation"),
+        _chunk("note", 2, "Linear Algebra", "Matrix multiplication is fundamental"),
+    ]
+    store.rebuild(chunks)
+
+    with get_connection(db_path) as conn:
+        count = conn.execute("SELECT count(*) AS c FROM retrieval_chunks_fts").fetchone()["c"]
+    assert count == 2
+
+
+def test_fts_ranks_title_match_higher(tmp_path: Path) -> None:
+    """FTS should rank chunks with matching titles higher."""
+    db_path = tmp_path / "atenas.sqlite"
+    init_db(db_path)
+    store = RetrievalVectorStore(db_path)
+
+    chunks = [
+        _chunk("note", 1, "Neural Networks", "This chapter covers neural network architectures"),
+        _chunk("note", 2, "Linear Algebra", "Neural networks use linear algebra concepts"),
+    ]
+    store.rebuild(chunks)
+
+    results = store.query("neural networks", limit=5)
+    assert len(results) >= 2
+    assert results[0].source_id == 1
+
+
+def test_fts_fallback_on_unavailable(tmp_path: Path) -> None:
+    """When FTS table is missing, fall back to lexical scoring."""
+    db_path = tmp_path / "atenas.sqlite"
+    init_db(db_path)
+
+    with get_connection(db_path) as conn:
+        conn.execute("DROP TABLE IF EXISTS retrieval_chunks_fts")
+        conn.commit()
+
+    store = RetrievalVectorStore(db_path)
+    chunks = [
+        _chunk("note", 1, "Test", "This is some test content for retrieval"),
+    ]
+    store.rebuild(chunks)
+
+    results = store.query("test content", limit=5)
+    assert len(results) >= 1
+
+
+def test_fts_fallback_on_bad_query(tmp_path: Path) -> None:
+    """When FTS MATCH query fails, fall back to lexical scoring."""
+    db_path = tmp_path / "atenas.sqlite"
+    init_db(db_path)
+    store = RetrievalVectorStore(db_path)
+
+    chunks = [
+        _chunk("note", 1, "Test", "Some content here"),
+    ]
+    store.rebuild(chunks)
+
+    results = store.query("*", limit=5)
+    assert results is not None

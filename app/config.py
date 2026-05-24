@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 from pathlib import Path
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, field_validator, model_validator
@@ -49,6 +50,9 @@ class Settings(BaseSettings):
     output_dir: Path = Path("output")
     inbox_dir: Path = Path("inbox")
     logs_dir: Path = Path("logs")
+    knowledge_file_roots: list[Path] = Field(
+        default_factory=lambda: [Path("inbox"), Path("memory")]
+    )
 
     local_llm_provider: str = "ollama"
     ollama_base_url: str = "http://localhost:11434"
@@ -69,6 +73,8 @@ class Settings(BaseSettings):
     min_confidence_threshold: float = 0.65
     max_llm_retries: int = 2
     enable_web_tools: bool = False
+    allow_external_ollama: bool = False
+    allow_non_loopback_clients: bool = False
 
     log_level: str = "INFO"
 
@@ -135,6 +141,28 @@ class Settings(BaseSettings):
         if isinstance(value, str):
             return [int(item.strip()) for item in value.split(",") if item.strip()]
         return value
+
+    @field_validator("knowledge_file_roots", mode="before")
+    @classmethod
+    def parse_knowledge_file_roots(cls, value: object) -> object:
+        """Parse comma-separated allowed file roots from environment variables."""
+
+        if value is None or value == "":
+            return [Path("inbox"), Path("memory")]
+        if isinstance(value, str):
+            return [Path(item.strip()) for item in value.split(",") if item.strip()]
+        return value
+
+    @model_validator(mode="after")
+    def validate_local_egress_settings(self) -> "Settings":
+        """Reject non-loopback Ollama URLs unless explicitly opted in."""
+        parsed = urlparse(self.ollama_base_url)
+        host = parsed.hostname
+        if host and not self.allow_external_ollama and not _is_loopback_host(host):
+            raise ValueError(
+                "Refusing non-loopback Ollama URL without allow_external_ollama=true."
+            )
+        return self
 
     @property
     def db_path(self) -> Path:
@@ -214,3 +242,14 @@ def clear_settings_cache() -> None:
     """Clear the cached settings singleton. Useful for testing."""
 
     get_settings.cache_clear()
+
+
+def _is_loopback_host(host: str) -> bool:
+    """Return whether a hostname is a loopback address."""
+    if host in {"localhost", "127.0.0.1", "::1"}:
+        return True
+    try:
+        import ipaddress
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False

@@ -242,7 +242,55 @@ CREATE INDEX IF NOT EXISTS idx_memory_items_domain ON memory_items(domain);
 CREATE INDEX IF NOT EXISTS idx_memory_items_topic ON memory_items(topic);
 CREATE INDEX IF NOT EXISTS idx_llm_calls_task_type ON llm_calls(task_type);
 CREATE INDEX IF NOT EXISTS idx_llm_calls_provider ON llm_calls(provider);
+
+-- FTS5 virtual table for retrieval full-text search
+CREATE VIRTUAL TABLE IF NOT EXISTS retrieval_chunks_fts
+USING fts5(chunk_id UNINDEXED, title, text);
+
+-- Agent trace tables (operational metadata, no full prompt/note/file bodies)
+CREATE TABLE IF NOT EXISTS agent_traces (
+    id TEXT PRIMARY KEY,
+    actor_user_id INTEGER,
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    model TEXT,
+    status TEXT NOT NULL,
+    user_message_summary TEXT NOT NULL,
+    final_message_summary TEXT,
+    tool_call_count INTEGER NOT NULL DEFAULT 0,
+    pending_action_type TEXT,
+    latency_ms INTEGER,
+    error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS agent_trace_steps (
+    id TEXT PRIMARY KEY,
+    trace_id TEXT NOT NULL REFERENCES agent_traces(id),
+    step_index INTEGER NOT NULL,
+    tool_name TEXT NOT NULL,
+    arguments_summary TEXT NOT NULL,
+    ok INTEGER NOT NULL,
+    executed INTEGER NOT NULL,
+    pending INTEGER NOT NULL,
+    message_summary TEXT,
+    latency_ms INTEGER,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_traces_started ON agent_traces(started_at);
+CREATE INDEX IF NOT EXISTS idx_agent_traces_status ON agent_traces(status);
+CREATE INDEX IF NOT EXISTS idx_agent_trace_steps_trace ON agent_trace_steps(trace_id);
 ```
+
+---
+
+## FTS5 Retrieval
+
+Retrieval uses SQLite FTS5 for full-text search with BM25 ranking, falling back
+to deterministic lexical scoring when FTS5 is unavailable or the MATCH query
+fails. The `retrieval_chunks_fts` virtual table mirrors `retrieval_chunks` and
+is kept in sync during rebuild, replace_source, and delete_stale_sources
+operations.
 
 ---
 

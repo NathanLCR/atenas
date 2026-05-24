@@ -210,6 +210,19 @@ async def llm(request: Request) -> HTMLResponse:
     )
 
 
+@router.get("/traces", response_class=HTMLResponse)
+async def traces(request: Request) -> HTMLResponse:
+    """Render a read-only agent trace page."""
+
+    settings = _get_request_settings(request)
+    records = _load_trace_records(settings)
+    return templates.TemplateResponse(
+        request,
+        "traces.html",
+        {"records": records},
+    )
+
+
 def _get_request_settings(request: Request) -> Settings:
     """Return app-scoped settings when available."""
 
@@ -242,6 +255,30 @@ def _load_llm_call_records(settings: Settings) -> list[dict[str, object]]:
     return [dict(row) for row in rows]
 
 
+def _load_trace_records(settings: Settings) -> list[dict[str, object]]:
+    """Load recent agent traces from SQLite."""
+    connection = get_connection(settings.db_path)
+    try:
+        rows = connection.execute(
+            """
+            SELECT id, actor_user_id, started_at, completed_at, model,
+                   status, user_message_summary, final_message_summary,
+                   tool_call_count, pending_action_type, latency_ms, error
+            FROM agent_traces
+            ORDER BY started_at DESC
+            LIMIT 50
+            """
+        ).fetchall()
+    except sqlite3.OperationalError as exc:
+        if "no such table: agent_traces" not in str(exc):
+            raise
+        logger.debug("agent_traces_table_missing")
+        return []
+    finally:
+        connection.close()
+    return [dict(row) for row in rows]
+
+
 def _get_academic_service(settings: Settings) -> AcademicService:
     """Build the request-scoped academic service."""
 
@@ -251,7 +288,11 @@ def _get_academic_service(settings: Settings) -> AcademicService:
 def _get_knowledge_service(settings: Settings) -> KnowledgeService:
     """Build the request-scoped knowledge service."""
 
-    return KnowledgeService(settings.db_path, timezone=settings.timezone)
+    return KnowledgeService(
+        settings.db_path,
+        timezone=settings.timezone,
+        allowed_file_roots=settings.knowledge_file_roots,
+    )
 
 
 def _get_retrieval_service(settings: Settings) -> RetrievalService:
@@ -263,6 +304,8 @@ def _get_retrieval_service(settings: Settings) -> RetrievalService:
         ollama_base_url=settings.ollama_base_url,
         ollama_model=settings.ollama_model,
         ollama_timeout=settings.ollama_timeout_seconds,
+        llm_log_path=settings.llm_log_path,
+        allowed_file_roots=settings.knowledge_file_roots,
     )
 
 
