@@ -7,9 +7,10 @@ Atenas
 `study-agent-cd`
 
 ## Status
-Target product contract as of 2026-05-20. This document describes the intended
-local-running, Telegram-first system. If implementation differs, the code is
-behind the spec.
+Target product contract as of 2026-05-20, with implementation status refreshed
+on 2026-05-24. This document describes the intended local-running,
+Telegram-first v1 system. If implementation differs, the code is behind the
+spec unless the difference is explicitly recorded as a current v1 gap below.
 
 ---
 
@@ -102,6 +103,34 @@ content is untrusted data, never instructions.
 | Retrieval | Answer questions over registered notes/files with explicit sources |
 | LLM study help | Summarise, explain, draft questions, rewrite, and generate flashcards from selected local context |
 | Governed writes | The agent acts directly on reversible local writes; destructive and egress actions require confirmation; every change is validated, policy-checked, and audit-logged |
+
+## Current Implementation Snapshot
+
+Verified on 2026-05-24:
+
+- Telegram slash commands cover core status, schedule/planning, academic data,
+  notes/files, retrieval, LLM note helpers, reminders, and confirmation
+  replies.
+- Plain Telegram messages use the canonical bounded `AgentLoop` and
+  `ToolRegistry`, not the legacy fixed-intent router.
+- `ToolRegistry` currently exposes v1 read, compute, act, system, and opt-in
+  web tools for the main product areas listed above.
+- Confirm-first destructive/egress tools create pending Telegram confirmations;
+  auto-tier local writes execute through policy and audit logging.
+- The local dashboard and TUI exist as read-only support surfaces.
+- Retrieval uses registered, non-archived notes/files, incremental SQLite/FTS5
+  indexing, and local Ollama for generated answers when available.
+- Editable install package discovery is configured so only `app*`, `core*`, and
+  `skills*` are importable packages.
+
+Remaining v1 gaps:
+
+- Planning has deterministic availability and slot allocation, but the full
+  falsifiable FR-06 acceptance suite is not yet complete.
+- Work shifts store `fatigue_level`, but common Telegram/agent write paths
+  still expose `energy_cost` rather than a complete fatigue-level input.
+- Slash-command and agent-tool parity still needs a final audit so shared
+  validation, policy, and audit behavior are consistent everywhere.
 
 ---
 

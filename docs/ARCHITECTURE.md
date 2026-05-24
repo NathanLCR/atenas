@@ -2,8 +2,9 @@
 
 ## Status
 
-Target architecture as of 2026-05-20. This is the contract the code should be
-refactored toward. It does not claim every path is already implemented.
+Target architecture as of 2026-05-20, refreshed against the implementation on
+2026-05-24. This is the current contract for new work; legacy compatibility
+surfaces are called out explicitly below.
 
 ## Guiding Principle
 
@@ -238,6 +239,10 @@ must not rebuild the full chunks table on every request.
 | LLM calls | JSONL/SQLite audit logs |
 | Tool/action events | JSONL audit logs |
 
+SQLite is the v1 operational source of truth for persisted Atenas rows. A
+Markdown/YAML source-of-truth workflow is post-v1 unless the reconciliation
+protocol in `docs/DATA_MODEL.md` is implemented.
+
 Do not maintain duplicate schema definitions for the same table. Schema changes
 belong in one canonical migration/schema owner.
 
@@ -252,20 +257,31 @@ Required startup validation:
 - Dashboard/API bind host must default to `127.0.0.1`.
 - External LLM provider settings must be explicit opt-in.
 
-## Implementation Priorities
+## Current Implementation State
 
-1. Replace the single-shot intent classifier (`core/nl/`) with the tool-calling
-   agent loop defined in `docs/AGENT_LOOP.md`.
-2. Introduce the LLM tool registry: read, compute, and act tools with validated
-   argument/result schemas and a declared action tier.
-3. Implement the action-tier gate as a shared primitive: auto-run reversible
-   writes, hold confirm-first actions, deny forbidden ones, audit-log all.
-4. Add the missing act and compute tools (e.g. delete/dedup modules) so the
-   agent can finish tasks instead of degrading to a read.
-5. Lock the local-only transport posture and make Telegram allowlist failure
-   loud at startup.
-6. Decide and document which slash-command writes use the same tier gate.
-7. Add the web tool as opt-in, guarded egress (off by default).
-8. Remove or quarantine dead modules and fake LLM telemetry.
-9. Fix retrieval indexing so queries do not rebuild everything.
-10. Push dependency direction to `app -> core`, never `core -> app`.
+Implemented:
+
+1. Telegram plain messages use the bounded `AgentLoop` and `ToolRegistry`.
+2. The tool registry exposes read, compute, act, system, and opt-in web tools
+   with Pydantic argument/result schemas and declared action tiers.
+3. The action-tier gate auto-runs reversible local writes, holds
+   confirm-first actions, denies forbidden or unknown actions through policy,
+   and audit-logs action outcomes.
+4. Duplicate detection, delete/deduplicate modules, `archive_note`,
+   `update_memory`, and opt-in `web_search` are present as agent tools.
+5. Dashboard/API are local-only by default; Telegram allowlist startup failure
+   is loud when Telegram is enabled.
+6. Retrieval indexing uses incremental sync into SQLite/FTS5 with lexical
+   fallback.
+7. `NLRouter` and `NLClassifier` are quarantined as legacy compatibility
+   surfaces; new NL product work belongs in `AgentLoop` and `ToolRegistry`.
+
+Remaining v1 architecture work:
+
+1. Finish slash-command parity auditing so equivalent command and agent paths
+   share service, validation, policy, and audit behavior.
+2. Complete the FR-06 planning acceptance test matrix and adjust planner
+   behavior where tests expose gaps.
+3. Expose fatigue-level input consistently across Telegram commands, agent
+   tools, imports, and planning.
+4. Add release/deployment checks for local bind and Compose publishing.

@@ -3,5 +3,10 @@
 from app.tui.runtime import run
 
 
-if __name__ == "__main__":
+def main() -> None:
+    """Launch the local terminal UI."""
     run()
+
+
+if __name__ == "__main__":
+    main()

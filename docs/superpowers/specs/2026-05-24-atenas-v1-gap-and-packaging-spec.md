@@ -2,38 +2,43 @@
 
 ## Purpose
 
-This spec defines the remaining work needed to make Atenas v1 match the
-canonical product contract and fixes the editable-install failure reported when
-running:
+This spec tracks the remaining work needed to make Atenas v1 match the
+canonical product contract. It originally also captured the editable-install
+failure reported when running:
 
 ```bash
 pip3 install -e .
 ```
 
-The current codebase is test-green and already implements the core local,
-Telegram-first posture, but the implementation is not yet fully aligned with
-the v1 success criteria in `docs/PRODUCT_SPEC.md` and `docs/REQUIREMENTS.md`.
+As of 2026-05-24, the editable-install package-discovery fix is implemented and
+the dry run succeeds when pip can fetch build requirements. The remaining open
+items are feature/acceptance alignment, not the original setuptools discovery
+error.
 
 ## Current Verified State
 
-- Full test suite passed on 2026-05-24 with `561 passed`.
+- Full test suite passed on 2026-05-24 with `562 passed`.
 - Telegram slash commands cover status, schedule, planning, academic records,
   notes/files, retrieval, LLM study commands, reminders, and confirmations.
 - Plain Telegram messages use `AgentLoop` and `ToolRegistry`.
+- The agent tool catalog includes the required read, compute, auto-tier act,
+  confirm-first act, system, and opt-in web tools listed below.
 - Destructive and egress agent tools create pending confirmations.
 - Dashboard/API are guarded as local-only surfaces.
 - Retrieval uses incremental sync and FTS5 with lexical fallback.
-- CLI and TUI source code exist, but editable installation must work before
-  the `atenas` console command is reliably available.
+- CLI and TUI source code exist, and package discovery is configured for the
+  `atenas` console command. The verified command was
+  `pip3 install -e . --no-deps --dry-run`.
 
-## Problem 1: v1 Feature Gap
+## Problem 1: Slash Command And Agent-Tool Parity
 
 The product spec says the LLM agent should be able to answer and act through
 controlled tools for scheduling, planning, notes, retrieval, and data updates.
-Today, many capabilities exist only as slash commands or service methods, while
-the agent-facing `ToolRegistry` has a smaller tool catalog.
+The agent-facing `ToolRegistry` now has the expected v1 tool catalog. The
+remaining gap is parity: equivalent slash-command and agent-tool paths must keep
+using shared service, validation, policy, and audit behavior.
 
-### Required Agent Tool Coverage
+### Implemented Agent Tool Coverage
 
 The v1 agent tool catalog must include read tools for:
 
@@ -76,10 +81,11 @@ It must include confirm-first act or web tools for destructive or egress work:
 - `update_memory`
 - `web_search` when enabled
 
-Any agent tool that changes state must resolve natural-language references to
-stable IDs, validate arguments, pass the policy engine, and audit the result.
+Any agent tool that changes state must continue to resolve natural-language
+references to stable IDs, validate arguments, pass the policy engine, and audit
+the result.
 
-### Slash Command Parity
+### Remaining Slash Command Parity Work
 
 Slash commands remain deterministic shortcuts. Where a slash command and an
 agent tool share behavior, they must call the same core service path or a thin
@@ -121,6 +127,10 @@ both, but the behavior must be deterministic and explained in planner output.
 a derived cache. The current implementation writes operational records directly
 to SQLite.
 
+Status on 2026-05-24: v1 decision recorded. SQLite is the v1 operational source
+of truth; the Markdown/YAML coherence protocol is deferred until it exists in
+code and tests.
+
 The project must choose one v1 contract:
 
 1. Keep SQLite as the v1 source of truth for academic, knowledge, memory, trace,
@@ -135,9 +145,9 @@ code, test suite, dashboard, TUI, and retrieval design.
 Acceptance criteria:
 
 - `docs/DATA_MODEL.md`, `docs/ARCHITECTURE.md`, and `docs/REQUIREMENTS.md`
-  describe the same storage contract.
+  describe the same storage contract. **Done 2026-05-24.**
 - No doc says SQLite is merely derived unless the reconciliation implementation
-  exists.
+  exists. **Done for canonical docs 2026-05-24.**
 - Backup/export work is explicitly scoped if human-readable files remain a
   product goal.
 
@@ -151,13 +161,15 @@ fix targets. The docs must distinguish:
 - post-v1 deferred work
 - legacy compatibility surfaces
 
-Required updates:
+Status on 2026-05-24: canonical docs were refreshed for the current agent loop,
+tool coverage, storage contract, security state, and packaging status. Historical
+plan documents remain as archived implementation records.
 
-- Refresh `docs/ARCHITECTURE.md` implementation priorities.
-- Refresh `docs/SECURITY.md` current fix targets after verifying tests.
-- Mark `NLRouter` and `NLClassifier` as compatibility-only in user-facing docs.
+Remaining updates:
+
 - Convert completed plan documents to historical records or add completion
   notes so unchecked boxes are not mistaken for current truth.
+- Keep this spec as the single current v1 gap tracker.
 
 Acceptance criteria:
 
@@ -169,7 +181,10 @@ Acceptance criteria:
 
 ## Problem 5: Editable Install Failure
 
-### Failure
+Status on 2026-05-24: resolved in `pyproject.toml` and covered by
+`tests/test_packaging.py`.
+
+### Original Failure
 
 `pip3 install -e .` fails during editable build requirements with:
 
@@ -212,9 +227,10 @@ data so non-editable installs can render the local dashboard.
 Acceptance criteria:
 
 - `pip install -e .` succeeds from a clean checkout with the existing flat
-  layout.
+  layout. **Dry-run verified 2026-05-24 with build dependencies available.**
 - The `atenas` console script is installed and `atenas --help` renders.
 - Runtime directories are not included as importable Python packages.
+  **Covered by test.**
 - `pytest tests/test_packaging.py -q` passes.
 
 ## Out Of Scope

@@ -141,15 +141,17 @@ FORBIDDEN_ACTIONS = frozenset({
 ```python
 CONFIRMATION_REQUIRED = frozenset({
     "delete_file",
-    "delete_modules",
-    "deduplicate_modules",
     "overwrite_memory",
+    "update_memory",
     "clear_work_schedule",
     "remove_assignment",
-    "archive_note",
-    "archive_plan",
+    "delete_modules",
+    "deduplicate_modules",
     "change_config",
     "send_external_message",
+    "archive_plan",
+    "archive_note",
+    "web_search",
 })
 ```
 
@@ -245,16 +247,26 @@ If a forbidden or invalid action is attempted:
 3. Notify the allowed Telegram user with a concise blocked-action message.
 4. Do not retry automatically.
 
-## Current Fix Targets
+## Current Enforcement State
 
-The following implementation gaps must be resolved before treating this policy
-as enforced:
+Verified on 2026-05-24:
 
-- Dashboard/API bind and Docker publish must remain localhost-only and covered
-  by tests or deployment checks.
-- Empty Telegram allowlist must fail startup when Telegram is enabled.
-- LLM/agent writes must route through validation, the action-tier gate, policy,
-  service execution, and audit. Auto-tier writes execute directly; confirm-first
-  actions add explicit confirmation. No path may bypass the tier gate.
-- REST endpoints must stop using a fake `user_id=0` actor.
-- Prompt templates must delimit untrusted user/source text.
+- The FastAPI app installs a local-only middleware guard by default; Docker
+  Compose publishes `127.0.0.1:8000:8000`.
+- Telegram startup fails when a bot token is configured without a non-empty
+  allowlist.
+- Plain Telegram messages route through `AgentLoop` and `ToolRegistry`, with
+  Pydantic argument validation, deterministic action tiers, policy checks,
+  pending confirmation for confirm-first tools, and audit logging.
+- Web search is disabled by default and, when enabled, is confirm-first egress.
+- Retrieval and agent prompts delimit untrusted user/source/web content.
+
+Remaining security follow-up:
+
+- Keep REST endpoints read-only unless a future authenticated local-write spec
+  exists. The current `/status` and `/skills` endpoints use a local read actor
+  only.
+- Finish slash-command parity auditing so command writes and equivalent agent
+  tools share the same validation, policy, and audit expectations.
+- Add deployment checks around bind host and Compose publishing before any
+  release packaging step.

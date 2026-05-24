@@ -16,6 +16,7 @@ from core.llm.client import OllamaClient
 from core.llm.service import LLMService
 from core.nl.agent import AgentLoop
 from core.nl.runtime_state import AgentRuntimeStore
+from core.nl.toolsets import toolsets_for_telegram_message
 from core.nl.tools import ToolRegistry
 from core.notifications.service import NotificationService, seconds_until, seconds_until_weekday
 from core.retrieval.models import NO_SOURCE_FALLBACK
@@ -40,6 +41,7 @@ SOURCES_USAGE = (
     'Usage: /sources q="citation grounding" '
     "[module=module_id] [assignment=assignment_id] [limit=8]"
 )
+_NL_SELECTED_TOOLSETS_KEY = "_nl_selected_toolsets"
 
 
 class AllowlistFilter:
@@ -214,7 +216,14 @@ async def natural_language_handler(update: Update, context: ContextTypes.DEFAULT
         await _reply(update, 'Please reply "yes" to confirm or "no" to cancel.')
         return
 
-    agent = _build_nl_agent(context)
+    user_data[_NL_SELECTED_TOOLSETS_KEY] = toolsets_for_telegram_message(
+        text.strip(),
+        web_enabled=getattr(settings, "enable_web_tools", False),
+    )
+    try:
+        agent = _build_nl_agent(context)
+    finally:
+        user_data.pop(_NL_SELECTED_TOOLSETS_KEY, None)
     result = agent.run(
         text.strip(),
         conversation=user_data.get("nl_agent_history", thread.conversation),
@@ -1387,10 +1396,13 @@ def _build_nl_agent(context: ContextTypes.DEFAULT_TYPE) -> AgentLoop:
         model=settings.ollama_model,
         timeout=settings.ollama_timeout_seconds,
     )
+    user_data = getattr(context, "user_data", {})
+    toolsets = user_data.get(_NL_SELECTED_TOOLSETS_KEY)
     return AgentLoop(
         registry=registry,
         client=client,
         llm_log_path=settings.llm_log_path,
+        toolsets=toolsets,
     )
 
 
