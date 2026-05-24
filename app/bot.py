@@ -15,6 +15,7 @@ from core.knowledge.service import KnowledgeService
 from core.llm.client import OllamaClient
 from core.llm.service import LLMService
 from core.nl.agent import AgentLoop
+from core.nl.runtime_state import AgentRuntimeStore
 from core.nl.tools import ToolRegistry
 from core.notifications.service import NotificationService, seconds_until, seconds_until_weekday
 from core.retrieval.models import NO_SOURCE_FALLBACK
@@ -170,23 +171,44 @@ async def natural_language_handler(update: Update, context: ContextTypes.DEFAULT
             extra={"event_type": "blocked_telegram_update", "user_id": user_id},
         )
         return
+    if user_id is None:
+        return
 
     user_data = getattr(context, "user_data", None)
     if user_data is None:
         user_data = {}
         context.user_data = user_data
 
-    pending = user_data.get("nl_pending_action")
+    runtime_store = AgentRuntimeStore(settings.db_path)
+    thread = runtime_store.get_or_create_thread(
+        actor_user_id=user_id,
+        channel="telegram",
+    )
+    pending_record = runtime_store.get_active_pending_action(
+        actor_user_id=user_id,
+        channel="telegram",
+    )
+    pending = (
+        pending_record.pending
+        if pending_record is not None
+        else user_data.get("nl_pending_action")
+    )
+    if pending is not None:
+        user_data["nl_pending_action"] = pending
     if pending is not None:
         lower = text.strip().lower()
         if lower in ("yes", "y", "confirm"):
             user_data.pop("nl_pending_action", None)
             registry = _build_nl_tool_registry(context)
             result = registry.execute_pending(pending, actor_user_id=user_id)
+            if pending_record is not None:
+                runtime_store.mark_pending_action(pending_record.id, status="executed")
             await _reply(update, result.message)
             return
         if lower in ("no", "n", "cancel"):
             user_data.pop("nl_pending_action", None)
+            if pending_record is not None:
+                runtime_store.mark_pending_action(pending_record.id, status="cancelled")
             await _reply(update, "Cancelled.")
             return
         await _reply(update, 'Please reply "yes" to confirm or "no" to cancel.')
@@ -195,12 +217,22 @@ async def natural_language_handler(update: Update, context: ContextTypes.DEFAULT
     agent = _build_nl_agent(context)
     result = agent.run(
         text.strip(),
-        conversation=user_data.get("nl_agent_history", []),
+        conversation=user_data.get("nl_agent_history", thread.conversation),
         actor_user_id=user_id,
     )
     user_data["nl_agent_history"] = result.conversation
+    runtime_store.save_conversation(
+        actor_user_id=user_id,
+        channel="telegram",
+        conversation=result.conversation,
+    )
     if result.pending_action is not None:
-        user_data["nl_pending_action"] = result.pending_action
+        pending_record = runtime_store.save_pending_action(
+            actor_user_id=user_id,
+            channel="telegram",
+            pending=result.pending_action,
+        )
+        user_data["nl_pending_action"] = pending_record.pending
     await _reply(update, result.message)
 
 
