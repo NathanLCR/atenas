@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Traces — {{ app_name }}{% endblock %}
+{% block page_title %}Agent Traces{% endblock %}
+
+{% block main %}
+{% if records %}
+<div class="table-scroll">
+  <table>
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Status</th>
+        <th>User</th>
+        <th>Model</th>
+        <th>Tools</th>
+        <th>Pending</th>
+        <th>Message</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for record in records %}
+      <tr>
+        <td class="cell-time">{{ record.started_at[:19] }}</td>
+        <td><span class="badge badge-{{ record.status }}">{{ record.status }}</span></td>
+        <td>{{ record.actor_user_id or '?' }}</td>
+        <td class="cell-model">{{ record.model or '?' }}</td>
+        <td>{{ record.tool_call_count }}</td>
+        <td>{{ record.pending_action_type or '' }}</td>
+        <td class="cell-summary">{{ record.user_message_summary[:80] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p>No agent traces recorded yet.</p>
+{% endif %}
+{% endblock %}

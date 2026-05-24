@@ -210,6 +210,19 @@ async def llm(request: Request) -> HTMLResponse:
     )
 
 
+@router.get("/traces", response_class=HTMLResponse)
+async def traces(request: Request) -> HTMLResponse:
+    """Render a read-only agent trace page."""
+
+    settings = _get_request_settings(request)
+    records = _load_trace_records(settings)
+    return templates.TemplateResponse(
+        request,
+        "traces.html",
+        {"records": records},
+    )
+
+
 def _get_request_settings(request: Request) -> Settings:
     """Return app-scoped settings when available."""
 
@@ -236,6 +249,30 @@ def _load_llm_call_records(settings: Settings) -> list[dict[str, object]]:
         if "no such table: llm_calls" not in str(exc):
             raise
         logger.debug("llm_calls_table_missing")
+        return []
+    finally:
+        connection.close()
+    return [dict(row) for row in rows]
+
+
+def _load_trace_records(settings: Settings) -> list[dict[str, object]]:
+    """Load recent agent traces from SQLite."""
+    connection = get_connection(settings.db_path)
+    try:
+        rows = connection.execute(
+            """
+            SELECT id, actor_user_id, started_at, completed_at, model,
+                   status, user_message_summary, final_message_summary,
+                   tool_call_count, pending_action_type, latency_ms, error
+            FROM agent_traces
+            ORDER BY started_at DESC
+            LIMIT 50
+            """
+        ).fetchall()
+    except sqlite3.OperationalError as exc:
+        if "no such table: agent_traces" not in str(exc):
+            raise
+        logger.debug("agent_traces_table_missing")
         return []
     finally:
         connection.close()

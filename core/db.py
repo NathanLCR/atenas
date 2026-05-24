@@ -255,6 +255,44 @@ CREATE INDEX IF NOT EXISTS idx_notes_module ON notes(module_id);
 CREATE INDEX IF NOT EXISTS idx_files_archived ON files(archived);
 CREATE INDEX IF NOT EXISTS idx_files_module ON files(module_id);
 
+-- Phase 8: FTS5 virtual table for retrieval full-text search
+CREATE VIRTUAL TABLE IF NOT EXISTS retrieval_chunks_fts
+USING fts5(chunk_id UNINDEXED, title, text);
+
+-- Agent trace tables (operational metadata)
+CREATE TABLE IF NOT EXISTS agent_traces (
+    id TEXT PRIMARY KEY,
+    actor_user_id INTEGER,
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    model TEXT,
+    status TEXT NOT NULL,
+    user_message_summary TEXT NOT NULL,
+    final_message_summary TEXT,
+    tool_call_count INTEGER NOT NULL DEFAULT 0,
+    pending_action_type TEXT,
+    latency_ms INTEGER,
+    error TEXT
+);
+
+CREATE TABLE IF NOT EXISTS agent_trace_steps (
+    id TEXT PRIMARY KEY,
+    trace_id TEXT NOT NULL REFERENCES agent_traces(id),
+    step_index INTEGER NOT NULL,
+    tool_name TEXT NOT NULL,
+    arguments_summary TEXT NOT NULL,
+    ok INTEGER NOT NULL,
+    executed INTEGER NOT NULL,
+    pending INTEGER NOT NULL,
+    message_summary TEXT,
+    latency_ms INTEGER,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_traces_started ON agent_traces(started_at);
+CREATE INDEX IF NOT EXISTS idx_agent_traces_status ON agent_traces(status);
+CREATE INDEX IF NOT EXISTS idx_agent_trace_steps_trace ON agent_trace_steps(trace_id);
+
 -- Phase 8: Controlled retrieval chunk index
 CREATE TABLE IF NOT EXISTS retrieval_chunks (
     id TEXT PRIMARY KEY,
@@ -353,6 +391,7 @@ VALID_TABLE_NAMES = frozenset({
     "study_modules", "assignments", "work_shifts",
     "class_sessions", "study_blocks", "memory_items", "llm_calls",
     "notes", "files", "note_file_links", "retrieval_chunks",
+    "agent_traces", "agent_trace_steps",
 })
 
 

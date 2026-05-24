@@ -165,7 +165,10 @@ def _make_context() -> SimpleNamespace:
 def _make_context_with_settings() -> SimpleNamespace:
     """Create a context with bot settings for natural language handler tests."""
 
-    settings = Settings(_env_file=None)
+    settings = Settings(
+        _env_file=None,
+        telegram_allowed_user_ids=[123],
+    )
     return SimpleNamespace(
         bot=SimpleNamespace(send_message=AsyncMock()),
         user_data={},
