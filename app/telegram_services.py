@@ -5,10 +5,11 @@ from __future__ import annotations
 from app.config import Settings
 from core.academic.service import AcademicService
 from core.knowledge.service import KnowledgeService
-from core.llm.client import OllamaClient
+from core.llm.engine import OllamaEngine
 from core.llm.service import LLMService
 from core.nl.agent import AgentLoop
 from core.nl.tools import ToolRegistry
+from core.nl.traces import AgentTraceStore
 from core.notifications.service import NotificationService
 from core.retrieval.service import RetrievalService
 
@@ -47,15 +48,16 @@ def build_nl_tool_registry(settings: Settings) -> ToolRegistry:
 
 def build_nl_agent(settings: Settings) -> AgentLoop:
     registry = build_nl_tool_registry(settings)
-    client = OllamaClient(
+    engine = OllamaEngine(
         base_url=settings.ollama_base_url,
         model=settings.ollama_model,
         timeout=settings.ollama_timeout_seconds,
     )
     return AgentLoop(
         registry=registry,
-        client=client,
+        client=engine,
         llm_log_path=settings.llm_log_path,
+        trace_store=AgentTraceStore(db_path=settings.db_path),
     )
 
 

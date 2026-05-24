@@ -55,6 +55,7 @@ class RetrievalVectorStore:
                     for chunk in chunks
                 ],
             )
+            _sync_fts(conn)
             conn.commit()
         return len(chunks)
 
@@ -127,6 +128,7 @@ class RetrievalVectorStore:
                     for chunk in chunks
                 ],
             )
+            _sync_fts(conn)
             conn.commit()
         return len(chunks)
 
@@ -156,12 +158,99 @@ class RetrievalVectorStore:
                         key,
                     )
                     deleted += cursor.rowcount
+            _sync_fts(conn)
             conn.commit()
         return deleted
 
     def count(self) -> int:
         with get_connection(self.db_path) as conn:
             return int(conn.execute("SELECT COUNT(*) AS count FROM retrieval_chunks").fetchone()["count"])
+
+    def _fts_available(self) -> bool:
+        """Check if FTS5 is available and the virtual table exists."""
+        try:
+            with get_connection(self.db_path) as conn:
+                conn.execute("SELECT count(*) FROM retrieval_chunks_fts").fetchone()
+            return True
+        except sqlite3.OperationalError:
+            return False
+
+    def _fts_query(
+        self,
+        question: str,
+        *,
+        source_kind: str | None = None,
+        source_id: int | None = None,
+        module_id: str | None = None,
+        assignment_id: str | None = None,
+        limit: int = 5,
+    ) -> list[RetrievedSource] | None:
+        """Query via FTS5/BM25. Returns None if FTS is unavailable or query fails."""
+        if not query_terms(question):
+            return []
+        if not self._fts_available():
+            return None
+
+        sanitized = " OR ".join(
+            term.replace('"', "").replace("'", "")
+            for term in query_terms(question)
+            if term
+        )
+        if not sanitized.strip():
+            return None
+
+        conditions: list[str] = ["retrieval_chunks_fts MATCH ?"]
+        params: list[object] = [sanitized]
+        if source_kind:
+            conditions.append("rc.source_kind = ?")
+            params.append(source_kind)
+        if source_id is not None:
+            conditions.append("rc.source_id = ?")
+            params.append(source_id)
+        if module_id:
+            conditions.append("rc.module_id = ?")
+            params.append(module_id)
+        if assignment_id:
+            conditions.append("rc.assignment_id = ?")
+            params.append(assignment_id)
+
+        where = " AND ".join(conditions)
+        try:
+            with get_connection(self.db_path) as conn:
+                rows = conn.execute(
+                    f"""
+                    SELECT rc.source_kind, rc.source_id, rc.chunk_index,
+                           rc.title, rc.text, rc.module_id, rc.assignment_id,
+                           rc.updated_at,
+                           bm25(retrieval_chunks_fts, 0.0, 10.0, 5.0) AS bm25_score
+                    FROM retrieval_chunks_fts
+                    JOIN retrieval_chunks rc ON retrieval_chunks_fts.chunk_id = rc.id
+                    WHERE {where}
+                    ORDER BY bm25_score
+                    LIMIT ?
+                    """,
+                    params + [limit],
+                ).fetchall()
+        except sqlite3.OperationalError:
+            return None
+
+        results: list[RetrievedSource] = []
+        for row in rows:
+            results.append(
+                RetrievedSource(
+                    source_kind=row["source_kind"],
+                    source_id=row["source_id"],
+                    chunk_index=row["chunk_index"],
+                    title=row["title"],
+                    text=row["text"],
+                    module_id=row["module_id"],
+                    assignment_id=row["assignment_id"],
+                    updated_at=row["updated_at"],
+                    score=float(1.0 / (1.0 + row["bm25_score"])),
+                    snippet=_make_snippet(row["text"], question),
+                )
+            )
+        return results
 
     def query(
         self,
@@ -176,6 +265,19 @@ class RetrievalVectorStore:
         if not query_terms(question):
             return []
 
+        # Try FTS5/BM25 first
+        fts_results = self._fts_query(
+            question,
+            source_kind=source_kind,
+            source_id=source_id,
+            module_id=module_id,
+            assignment_id=assignment_id,
+            limit=limit,
+        )
+        if fts_results is not None:
+            return fts_results
+
+        # Fall back to lexical scoring
         conditions: list[str] = []
         params: list[object] = []
         if source_kind:
@@ -233,6 +335,20 @@ class RetrievalVectorStore:
 
     def _chunk_id(self, chunk: RetrievalChunk) -> str:
         return f"{chunk.source_kind}:{chunk.source_id}:{chunk.chunk_index}"
+
+
+def _sync_fts(conn: sqlite3.Connection) -> None:
+    """Sync FTS5 index from retrieval_chunks. Swallows errors silently."""
+    try:
+        conn.execute("DELETE FROM retrieval_chunks_fts")
+        conn.execute(
+            """
+            INSERT INTO retrieval_chunks_fts (chunk_id, title, text)
+            SELECT id, title, text FROM retrieval_chunks
+            """
+        )
+    except sqlite3.OperationalError:
+        pass
 
 
 def _make_snippet(text: str, question: str, max_len: int = 240) -> str:

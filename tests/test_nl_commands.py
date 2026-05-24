@@ -31,7 +31,11 @@ def _make_context(db_path: Path | None = None) -> SimpleNamespace:
     if db_path is None:
         settings = MagicMock()
     else:
-        settings = Settings(_env_file=None, data_dir=db_path.parent)
+        settings = Settings(
+            _env_file=None,
+            data_dir=db_path.parent,
+            telegram_allowed_user_ids=[123],
+        )
     return SimpleNamespace(
         bot=SimpleNamespace(send_message=AsyncMock()),
         user_data={},
