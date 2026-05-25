@@ -68,6 +68,13 @@ coverage, fatigue/write-path input, slash-command parity audit, documentation
 drift, and packaging checks. Post-v1 backup/export work remains separate from
 the v1 operational SQLite source-of-truth contract.
 
+## Superpowers roadmap
+
+Superpowers implementation status is summarized in
+`docs/superpowers/README.md`. Use that roadmap to distinguish live phase work
+from archival implementation plans before starting new hardening or refactor
+work.
+
 ## Local-model agent hardening
 
 The local-model agent runtime hardening spec lives at
