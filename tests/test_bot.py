@@ -118,6 +118,8 @@ def test_skills_text_includes_telegram_command_catalog() -> None:
 
     assert "Telegram Commands" in response
     assert "/today" in response
+    assert "/pending" in response
+    assert "/cancel_pending" in response
     assert "/summarize_note" in response
 
 

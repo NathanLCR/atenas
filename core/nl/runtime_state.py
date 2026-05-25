@@ -130,6 +130,11 @@ class AgentRuntimeStore:
             actor_user_id=actor_user_id,
             channel=channel,
         )
+        self.mark_active_pending_actions(
+            actor_user_id=actor_user_id,
+            channel=channel,
+            status="cancelled",
+        )
         pending_id = new_id()
         now = utc_now()
         with get_connection(self.db_path) as conn:
@@ -212,6 +217,34 @@ class AgentRuntimeStore:
                 (status, now, pending_id),
             )
             conn.commit()
+
+    def mark_active_pending_actions(
+        self,
+        *,
+        actor_user_id: int,
+        channel: str = "telegram",
+        status: str,
+    ) -> int:
+        """Mark all pending actions for an actor/channel with a terminal status."""
+
+        now = utc_now()
+        with get_connection(self.db_path) as conn:
+            cursor = conn.execute(
+                """
+                UPDATE pending_actions
+                SET status = ?, updated_at = ?
+                WHERE actor_user_id = ?
+                  AND status = 'pending'
+                  AND thread_id IN (
+                      SELECT id
+                      FROM agent_threads
+                      WHERE channel = ? AND status = 'active'
+                  )
+                """,
+                (status, now, actor_user_id, channel),
+            )
+            conn.commit()
+            return int(cursor.rowcount)
 
 
 def _thread_from_row(row: Any) -> AgentThreadRecord:

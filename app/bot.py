@@ -205,12 +205,21 @@ async def natural_language_handler(update: Update, context: ContextTypes.DEFAULT
             result = registry.execute_pending(pending, actor_user_id=user_id)
             if pending_record is not None:
                 runtime_store.mark_pending_action(pending_record.id, status="executed")
+                runtime_store.mark_active_pending_actions(
+                    actor_user_id=user_id,
+                    channel="telegram",
+                    status="cancelled",
+                )
             await _reply(update, result.message)
             return
         if lower in ("no", "n", "cancel"):
             user_data.pop("nl_pending_action", None)
             if pending_record is not None:
-                runtime_store.mark_pending_action(pending_record.id, status="cancelled")
+                runtime_store.mark_active_pending_actions(
+                    actor_user_id=user_id,
+                    channel="telegram",
+                    status="cancelled",
+                )
             await _reply(update, "Cancelled.")
             return
         await _reply(update, 'Please reply "yes" to confirm or "no" to cancel.')
@@ -243,6 +252,53 @@ async def natural_language_handler(update: Update, context: ContextTypes.DEFAULT
         )
         user_data["nl_pending_action"] = pending_record.pending
     await _reply(update, result.message)
+
+
+async def pending_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Show the active durable pending action for this Telegram actor."""
+
+    user_id = update.effective_user.id if update.effective_user else None
+    if user_id is None:
+        return
+    settings = _get_bot_settings(context)
+    record = AgentRuntimeStore(settings.db_path).get_active_pending_action(
+        actor_user_id=user_id,
+        channel="telegram",
+    )
+    if record is None:
+        await _reply(update, "No pending action.")
+        return
+    await _reply(
+        update,
+        f"Pending action: {record.pending.proposal.action_type}\n\n"
+        f"{record.pending.confirmation_message}",
+    )
+
+
+async def cancel_pending_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Cancel the active durable pending action for this Telegram actor."""
+
+    user_id = update.effective_user.id if update.effective_user else None
+    if user_id is None:
+        return
+    settings = _get_bot_settings(context)
+    store = AgentRuntimeStore(settings.db_path)
+    record = store.get_active_pending_action(
+        actor_user_id=user_id,
+        channel="telegram",
+    )
+    if record is None:
+        await _reply(update, "No pending action.")
+        return
+    store.mark_active_pending_actions(
+        actor_user_id=user_id,
+        channel="telegram",
+        status="cancelled",
+    )
+    user_data = getattr(context, "user_data", None)
+    if user_data is not None:
+        user_data.pop("nl_pending_action", None)
+    await _reply(update, "Cancelled pending action.")
 
 
 async def _reply(update: Update, text: str) -> None:
@@ -690,6 +746,8 @@ def build_application(settings: Settings | None = None) -> Application:
     application.add_handler(CommandHandler("availability", availability_command, filters=allowlist_filter))
     application.add_handler(CommandHandler("plan", plan_command, filters=allowlist_filter))
     application.add_handler(CommandHandler("study", study_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("pending", pending_command, filters=allowlist_filter))
+    application.add_handler(CommandHandler("cancel_pending", cancel_pending_command, filters=allowlist_filter))
     application.add_handler(CommandHandler("add_module", add_module_command, filters=allowlist_filter))
     application.add_handler(CommandHandler("add_class", add_class_command, filters=allowlist_filter))
     application.add_handler(CommandHandler("add_shift", add_shift_command, filters=allowlist_filter))
@@ -1202,7 +1260,16 @@ async def archive_note_command(update: Update, context: ContextTypes.DEFAULT_TYP
         if user_data is None:
             user_data = {}
             context.user_data = user_data
-        user_data["nl_pending_action"] = run.pending_action
+        if user_id is not None:
+            settings = _get_bot_settings(context)
+            pending_record = AgentRuntimeStore(settings.db_path).save_pending_action(
+                actor_user_id=user_id,
+                channel="telegram",
+                pending=run.pending_action,
+            )
+            user_data["nl_pending_action"] = pending_record.pending
+        else:
+            user_data["nl_pending_action"] = run.pending_action
     await _reply(update, run.result.message)
 
 

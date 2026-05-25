@@ -56,6 +56,8 @@ Verified on 2026-05-25:
   `tests/academic/test_planner_acceptance.py`.
 - Work-shift `fatigue_level` is accepted through the shared service,
   `/add_shift`, and the `add_work_shift` agent tool.
+- Pending actions can be reviewed with `/pending` and cancelled with
+  `/cancel_pending`; plain `yes` and `no` confirmations remain supported.
 - Slash-command parity is audited in `docs/COMMAND_TOOL_PARITY.md` and guarded
   by `tests/test_command_tool_parity.py`.
 

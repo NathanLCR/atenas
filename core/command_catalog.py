@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 COMMAND_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Core", ("/ping", "/status", "/skills")),
+    ("Core", ("/ping", "/status", "/skills", "/pending", "/cancel_pending")),
     ("Schedule", ("/today", "/week", "/deadlines", "/availability", "/plan", "/study")),
     (
         "Data",
@@ -50,6 +50,12 @@ COMMAND_TOOL_PARITY: dict[str, dict[str, str]] = {
     "/status": {"agent_tool": "get_status"},
     "/skills": {
         "command_only_reason": "Telegram command catalog and help surface; not a stateful agent task.",
+    },
+    "/pending": {
+        "command_only_reason": "Deterministic pending-action review shortcut backed by AgentRuntimeStore.",
+    },
+    "/cancel_pending": {
+        "command_only_reason": "Deterministic pending-action cancellation shortcut backed by AgentRuntimeStore.",
     },
     "/today": {"agent_tool": "get_today_overview"},
     "/week": {"agent_tool": "get_week_overview"},
