@@ -120,7 +120,8 @@ Web is **opt-in and disabled by default**. When enabled:
 The canonical path is implemented in `core/nl/agent.py` and
 `core/nl/tools.py`. Plain Telegram messages build `AgentLoop` plus
 `ToolRegistry`; the loop is bounded, records traces, logs LLM calls, and stores
-pending confirm-first actions in Telegram `user_data`.
+pending confirm-first actions in SQLite through `AgentRuntimeStore`, with
+Telegram `user_data` used only as a speed cache during the process lifetime.
 
 Shipped tool-loop behavior:
 

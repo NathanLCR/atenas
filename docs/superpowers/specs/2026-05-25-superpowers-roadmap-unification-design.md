@@ -62,7 +62,9 @@ The roadmap will include:
      remain ignored runtime data.
 
 Update `docs/README.md` to point implementation readers to the Superpowers
-roadmap after the canonical docs list.
+roadmap after the canonical docs list. If the roadmap exposes stale canonical
+implementation-state wording, update that wording to match the verified code
+without changing the product contract.
 
 Extend `tests/test_docs_status.py` with guardrails that:
 
@@ -79,7 +81,8 @@ Extend `tests/test_docs_status.py` with guardrails that:
 - Do not implement `/pending`, model profiles, prompt assembly, trace replay, or
   skill memory in this slice.
 - Do not change the canonical agent loop, product, security, or requirements
-  contracts except for pointers to the new roadmap.
+  contracts except for pointers to the new roadmap and narrow implementation
+  snapshot corrections that prevent contradiction with verified code.
 
 ## Testing
 
