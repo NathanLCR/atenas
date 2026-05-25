@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
@@ -28,6 +30,13 @@ async def home(request: Request) -> HTMLResponse:
     """Render the dashboard home page."""
 
     settings = _get_request_settings(request)
+    academic_service = _get_academic_service(settings)
+    today_overview = academic_service.get_today_overview()
+    study_plan = academic_service.get_study_plan()
+    week_overview = academic_service.get_week_overview()
+    trace_records = _load_trace_records(settings)
+    llm_records = _load_llm_call_records(settings)
+    knowledge_counts = _load_knowledge_counts(settings)
     return templates.TemplateResponse(
         request,
         "home.html",
@@ -35,6 +44,20 @@ async def home(request: Request) -> HTMLResponse:
             "app_name": settings.APP_NAME,
             "version": settings.APP_VERSION,
             "utc_now": utc_now_iso(),
+            "today": today_overview,
+            "next_study_block": _select_next_study_block(study_plan, settings.timezone),
+            "deadlines": list(today_overview.deadlines[:4]),
+            "health": _build_health_summary(
+                trace_records=trace_records,
+                llm_records=llm_records,
+                knowledge_counts=knowledge_counts,
+            ),
+            "capacity": _build_capacity_summary(week_overview),
+            "format_minutes": _format_minutes,
+            "format_time": _format_time,
+            "format_date": _format_date,
+            "format_status": _format_status,
+            "minutes_until": _minutes_until,
         },
     )
 
@@ -67,6 +90,8 @@ async def week(request: Request) -> HTMLResponse:
             "overview": overview,
             "format_minutes": _format_minutes,
             "format_time": _format_time,
+            "format_date": _format_date,
+            "format_status": _format_status,
         },
     )
 
@@ -99,6 +124,8 @@ async def plan(request: Request) -> HTMLResponse:
             "plan": study_plan,
             "format_minutes": _format_minutes,
             "format_time": _format_time,
+            "format_date": _format_date,
+            "format_status": _format_status,
         },
     )
 
@@ -219,8 +246,133 @@ async def traces(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         request,
         "traces.html",
-        {"records": records},
+        {
+            "records": records,
+            "trace_summary_lines": _build_trace_summary(records),
+        },
     )
+
+
+def _select_next_study_block(plan: object, timezone_name: str) -> object | None:
+    """Return the next future plan block, falling back to the first block."""
+
+    blocks = sorted(
+        list(getattr(plan, "blocks", []) or []),
+        key=lambda block: (getattr(block, "start_at", datetime.max), getattr(block, "assignment_id", "")),
+    )
+    if not blocks:
+        return None
+
+    now = datetime.now(ZoneInfo(timezone_name))
+    future_blocks = [block for block in blocks if getattr(block, "end_at", now) > now]
+    return future_blocks[0] if future_blocks else blocks[0]
+
+
+def _load_knowledge_counts(settings: Settings) -> dict[str, int]:
+    """Return local knowledge counts without failing the overview page."""
+
+    try:
+        service = _get_knowledge_service(settings)
+        return {
+            "notes": len(service.list_notes(limit=1000)),
+            "files": len(service.list_files(limit=1000)),
+        }
+    except sqlite3.OperationalError as exc:
+        logger.debug("knowledge_counts_unavailable", exc_info=exc)
+        return {"notes": 0, "files": 0}
+
+
+def _build_health_summary(
+    *,
+    trace_records: list[dict[str, object]],
+    llm_records: list[dict[str, object]],
+    knowledge_counts: dict[str, int],
+) -> dict[str, object]:
+    """Build read-only local health labels from actual local records."""
+
+    source_count = knowledge_counts["notes"] + knowledge_counts["files"]
+    latest_trace = trace_records[0] if trace_records else {}
+    latest_llm = llm_records[0] if llm_records else {}
+    trace_status = str(latest_trace.get("status") or "idle")
+    llm_success = latest_llm.get("success")
+    return {
+        "retrieval_label": f"{source_count} local sources",
+        "retrieval_percent": 100 if source_count else 0,
+        "trace_status": trace_status,
+        "trace_summary": str(latest_trace.get("user_message_summary") or "No agent traces recorded"),
+        "trace_tool_count": int(latest_trace.get("tool_call_count") or 0),
+        "llm_label": "last call ok" if llm_success else "no successful calls logged",
+        "llm_model": str(latest_llm.get("model") or "local model not recorded"),
+        "status_class": _status_class(trace_status),
+    }
+
+
+def _build_capacity_summary(overview: object) -> dict[str, object]:
+    """Build weekly capacity rows from real week overview summaries."""
+
+    day_summaries = list(getattr(overview, "day_summaries", []) or [])
+    class_minutes = sum(int(getattr(day, "class_minutes", 0) or 0) for day in day_summaries)
+    work_minutes = sum(int(getattr(day, "work_minutes", 0) or 0) for day in day_summaries)
+    study_minutes = int(getattr(getattr(overview, "availability", None), "total_study_minutes", 0) or 0)
+    committed = class_minutes + work_minutes + study_minutes
+    denominator = max(committed, 1)
+    rows = [
+        _capacity_row("Work", work_minutes, denominator, "work"),
+        _capacity_row("Classes", class_minutes, denominator, "class"),
+        _capacity_row("Study", study_minutes, denominator, "study"),
+    ]
+    return {
+        "rows": rows,
+        "committed_minutes": committed,
+        "range_label": f"{_format_date(overview.start_date)} - {_format_date(overview.end_date)}",
+    }
+
+
+def _capacity_row(label: str, minutes: int, denominator: int, kind: str) -> dict[str, object]:
+    """Return one capacity bar row."""
+
+    return {
+        "label": label,
+        "minutes": minutes,
+        "percent": min(100, round((minutes / denominator) * 100)) if denominator else 0,
+        "kind": kind,
+    }
+
+
+def _build_trace_summary(records: list[dict[str, object]]) -> list[dict[str, str]]:
+    """Render trace rows as a stdout-like read-only summary."""
+
+    if not records:
+        return [{"level": "INFO", "message": "No agent traces recorded."}]
+
+    lines: list[dict[str, str]] = []
+    for record in records[:8]:
+        status = str(record.get("status") or "unknown")
+        level = "INFO" if status == "success" else "ERROR" if status == "error" else "WARN"
+        message = str(record.get("user_message_summary") or "trace")
+        tools = int(record.get("tool_call_count") or 0)
+        latency = record.get("latency_ms")
+        latency_label = f" latency={latency}ms" if latency is not None else ""
+        lines.append(
+            {
+                "level": level,
+                "message": f"{message} status={status} tools={tools}{latency_label}",
+            }
+        )
+    return lines
+
+
+def _status_class(status: object) -> str:
+    """Map local status values to semantic CSS suffixes."""
+
+    normalized = str(status or "").lower()
+    if normalized in {"success", "ok", "done", "healthy"}:
+        return "success"
+    if normalized in {"pending", "in_progress", "warning", "warn"}:
+        return "warning"
+    if normalized in {"error", "fail", "failed", "danger"}:
+        return "danger"
+    return "soft"
 
 
 def _get_request_settings(request: Request) -> Settings:
@@ -320,3 +472,25 @@ def _format_time(value: object) -> str:
     """Format a datetime value as local HH:MM."""
 
     return value.strftime("%H:%M")
+
+
+def _format_date(value: object) -> str:
+    """Format a date-like value for dense dashboard labels."""
+
+    return value.strftime("%d %b")
+
+
+def _format_status(value: object) -> str:
+    """Format machine status or intensity values as short labels."""
+
+    return str(value or "").replace("_", " ").title()
+
+
+def _minutes_until(value: object, timezone_name: str = "Europe/Dublin") -> int | None:
+    """Return whole minutes until a datetime, or None for past values."""
+
+    if not isinstance(value, datetime):
+        return None
+    delta = value - datetime.now(ZoneInfo(timezone_name))
+    minutes = int(delta.total_seconds() // 60)
+    return minutes if minutes > 0 else None

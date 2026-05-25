@@ -36,6 +36,9 @@ def test_dashboard_week_route_returns_200(settings: Settings) -> None:
     assert response.status_code == 200
     assert "Weekly Schedule" in response.text
     assert "Demo Lecture" in response.text
+    assert "schedule-timeline" in response.text
+    assert "timeline-block--blocked" in response.text
+    assert "timeline-block--study" in response.text
 
 
 def test_dashboard_deadlines_route_returns_200(settings: Settings) -> None:
@@ -69,6 +72,10 @@ def test_dashboard_plan_route_returns_200(settings: Settings) -> None:
     assert "18 May" in response.text
     assert "24 May" in response.text
     assert "NLP CA1" in response.text
+    assert "Intensity" in response.text
+    assert "Reasoning" in response.text
+    assert "Medium" in response.text
+    assert "Scheduled" in response.text
 
 
 def test_dashboard_plan_empty_state(settings: Settings) -> None:

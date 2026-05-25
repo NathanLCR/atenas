@@ -1,39 +1,68 @@
 {% extends "base.html" %}
 
-{% block title %}Traces — {{ app_name }}{% endblock %}
+{% block title %}Traces - Atenas{% endblock %}
 {% block page_title %}Agent Traces{% endblock %}
 
 {% block main %}
-{% if records %}
-<div class="table-scroll">
-  <table>
-    <thead>
-      <tr>
-        <th>Time</th>
-        <th>Status</th>
-        <th>User</th>
-        <th>Model</th>
-        <th>Tools</th>
-        <th>Pending</th>
-        <th>Message</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for record in records %}
-      <tr>
-        <td class="cell-time">{{ record.started_at[:19] }}</td>
-        <td><span class="badge badge-{{ record.status }}">{{ record.status }}</span></td>
-        <td>{{ record.actor_user_id or '?' }}</td>
-        <td class="cell-model">{{ record.model or '?' }}</td>
-        <td>{{ record.tool_call_count }}</td>
-        <td>{{ record.pending_action_type or '' }}</td>
-        <td class="cell-summary">{{ record.user_message_summary[:80] }}</td>
-      </tr>
+<div class="trace-layout">
+  <section class="panel trace-table-panel">
+    <div class="panel-header">
+      <h2>Execution Traces</h2>
+      <span class="mono-label">{{ records|length }} rows</span>
+    </div>
+    {% if records %}
+    <div class="table-scroll">
+      <table class="ops-table">
+        <thead>
+          <tr>
+            <th>Timestamp</th>
+            <th>Status</th>
+            <th>User</th>
+            <th>Model</th>
+            <th>Tools</th>
+            <th>Pending</th>
+            <th>Message</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for record in records %}
+          <tr>
+            <td class="mono-cell">{{ record.started_at[:19] }}</td>
+            <td>
+              <span class="chip chip-{{ 'success' if record.status == 'success' else 'danger' if record.status == 'error' else 'warning' }}">
+                {{ record.status }}
+              </span>
+            </td>
+            <td>{{ record.actor_user_id or '?' }}</td>
+            <td class="mono-cell">{{ record.model or '?' }}</td>
+            <td>{{ record.tool_call_count }}</td>
+            <td>{{ record.pending_action_type or '' }}</td>
+            <td>{{ record.user_message_summary[:100] }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+      <h3>No agent traces recorded yet.</h3>
+    </div>
+    {% endif %}
+  </section>
+
+  <aside class="stdout-panel">
+    <div class="stdout-header">
+      <span>System StdOut</span>
+      <span class="stdout-dot"></span>
+    </div>
+    <div class="stdout-body">
+      {% for line in trace_summary_lines %}
+      <div class="stdout-line stdout-line--{{ line.level|lower }}">
+        <span>[{{ line.level }}]</span>
+        <code>{{ line.message }}</code>
+      </div>
       {% endfor %}
-    </tbody>
-  </table>
+    </div>
+  </aside>
 </div>
-{% else %}
-<p>No agent traces recorded yet.</p>
-{% endif %}
 {% endblock %}

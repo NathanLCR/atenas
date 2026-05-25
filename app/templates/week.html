@@ -1,51 +1,54 @@
 {% extends "base.html" %}
 
-{% block page_title %}Weekly Schedule{% endblock %}
+{% block page_title %}Week{% endblock %}
 
 {% block main %}
-<div class="summary-grid">
-  <div class="summary-card">
-    <div class="label">Classes</div>
-    <div class="value">{{ overview.class_count }}</div>
+<section class="panel">
+  <div class="panel-header panel-header--large">
+    <div>
+      <h2>Weekly Schedule</h2>
+      <p class="muted">{{ format_date(overview.start_date) }} - {{ format_date(overview.end_date) }}</p>
+    </div>
+    <div class="summary-inline">
+      <span><strong>{{ overview.class_count }}</strong> classes</span>
+      <span><strong>{{ overview.work_shift_count }}</strong> shifts</span>
+      <span><strong>{{ format_minutes(overview.availability.total_study_minutes) }}</strong> study</span>
+    </div>
   </div>
-  <div class="summary-card">
-    <div class="label">Work shifts</div>
-    <div class="value">{{ overview.work_shift_count }}</div>
-  </div>
-  <div class="summary-card">
-    <div class="label">Deadlines</div>
-    <div class="value">{{ overview.open_deadline_count }}</div>
-  </div>
-  <div class="summary-card">
-    <div class="label">Study time</div>
-    <div class="value">{{ format_minutes(overview.availability.total_study_minutes) }}</div>
-  </div>
-</div>
 
-<div class="section">
-  {% for day in overview.availability.days %}
-  <div class="day-card">
-    <h3>{{ day.date.strftime("%a %d %b") }}</h3>
-    {% if day.blocked %}
-    <p class="muted" style="margin-bottom:4px;">Blocked time</p>
-    <ul>
-      {% for block in day.blocked %}
-      <li>{{ format_time(block.start_at) }}–{{ format_time(block.end_at) }} {{ block.title }}</li>
-      {% endfor %}
-    </ul>
-    {% endif %}
-    {% if day.study_windows %}
-    <p class="muted" style="margin-bottom:4px;margin-top:8px;">Study windows</p>
-    <ul>
-      {% for window in day.study_windows %}
-      <li>{{ format_time(window.start_at) }}–{{ format_time(window.end_at) }} ({{ format_minutes(window.minutes) }})</li>
-      {% endfor %}
-    </ul>
-    {% endif %}
-    {% if not day.blocked and not day.study_windows %}
-    <p class="muted">No scheduled items.</p>
-    {% endif %}
+  <div class="schedule-timeline">
+    {% for day in overview.availability.days %}
+    <section class="timeline-day">
+      <div class="timeline-day-header">
+        <strong>{{ day.date.strftime("%a") }}</strong>
+        <span class="mono-label">{{ day.date.strftime("%d %b") }}</span>
+      </div>
+      <div class="timeline-day-body">
+        {% for block in day.blocked %}
+        <div class="timeline-block timeline-block--blocked timeline-block--{{ block.kind }}">
+          <div class="timeline-block-title">{{ block.title }}</div>
+          <div class="mono-label">{{ format_time(block.start_at) }} - {{ format_time(block.end_at) }}</div>
+          <span class="chip chip-soft">{{ format_status(block.kind) }}</span>
+        </div>
+        {% endfor %}
+        {% for window in day.study_windows %}
+        <div class="timeline-block timeline-block--study">
+          <div class="timeline-block-title">Free Study</div>
+          <div class="mono-label">{{ format_time(window.start_at) }} - {{ format_time(window.end_at) }}</div>
+          <span class="chip chip-success">{{ format_status(window.max_intensity) }}</span>
+        </div>
+        {% endfor %}
+        {% if not day.blocked and not day.study_windows %}
+        <p class="muted">No scheduled items.</p>
+        {% endif %}
+      </div>
+      <div class="timeline-day-footer">
+        <span class="mono-label">{{ format_minutes(day.total_study_minutes) }} open</span>
+      </div>
+    </section>
+    {% endfor %}
   </div>
-  {% endfor %}
-</div>
+</section>
+
+<p class="timeline-note mono-label">Free study windows dynamically avoid hard blocks and fatigue caps.</p>
 {% endblock %}

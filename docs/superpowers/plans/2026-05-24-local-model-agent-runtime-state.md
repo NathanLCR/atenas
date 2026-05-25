@@ -1,5 +1,11 @@
 # Local Model Agent Runtime State Implementation Plan
 
+## Historical Plan Status
+
+This is an archival implementation plan. Its unchecked boxes preserve the
+original task breakdown and are not the current project status; use
+`docs/README.md` and the current gap spec for live work tracking.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Add durable runtime state for Atenas local-model agent turns, starting with SQLite-backed pending actions that survive process restarts.

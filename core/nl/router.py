@@ -18,6 +18,7 @@ from core.academic.validators import (
     parse_datetime_strict,
     parse_weekday,
     validate_energy_cost,
+    validate_fatigue_level,
     validate_hours,
     validate_priority,
     validate_status,
@@ -430,6 +431,12 @@ class NLRouter:
             if energy_cost is None:
                 raise NLProposalError("Energy cost must be between 1 and 5.")
             payload["energy_cost"] = energy_cost
+        fatigue = self._optional_slot(slots, "fatigue_level", "fatigue")
+        if fatigue:
+            fatigue_level = validate_fatigue_level(fatigue)
+            if fatigue_level is None:
+                raise NLProposalError("fatigue_level must be one of: low, medium, high.")
+            payload["fatigue_level"] = fatigue_level.value
         notes = self._optional_slot(slots, "notes")
         if notes:
             payload["notes"] = notes
@@ -758,6 +765,7 @@ class NLRouter:
             location=payload.get("location"),
             role=payload.get("role"),
             energy_cost=payload.get("energy_cost"),
+            fatigue_level=payload.get("fatigue_level", "medium"),
             notes=payload.get("notes"),
         )
         return self._action_result(ACTION_ADD_WORK_SHIFT, result)
@@ -1063,7 +1071,10 @@ def _format_shifts(shifts: list) -> str:
         if date_label != current_date:
             current_date = date_label
             lines.append(date_label)
-        lines.append(f"  {s.start_at.strftime('%H:%M')}\u2013{s.end_at.strftime('%H:%M')} {s.title}")
+        lines.append(
+            f"  {s.start_at.strftime('%H:%M')}\u2013{s.end_at.strftime('%H:%M')} "
+            f"{s.title} (fatigue: {s.fatigue_level.value})"
+        )
         lines.append("")
     return "\n".join(lines).rstrip()
 

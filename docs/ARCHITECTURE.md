@@ -275,13 +275,14 @@ Implemented:
    fallback.
 7. `NLRouter` and `NLClassifier` are quarantined as legacy compatibility
    surfaces; new NL product work belongs in `AgentLoop` and `ToolRegistry`.
+8. FR-06 planning acceptance coverage exists for hard-block collision,
+   availability bounds, fatigue caps, deadline coverage, determinism, and
+   heavy-week capacity reduction.
+9. Work-shift `fatigue_level` is accepted through the shared service,
+   Telegram `/add_shift`, and the `add_work_shift` agent tool.
+10. Slash-command and agent-tool parity is audited in
+    `docs/COMMAND_TOOL_PARITY.md`.
 
 Remaining v1 architecture work:
 
-1. Finish slash-command parity auditing so equivalent command and agent paths
-   share service, validation, policy, and audit behavior.
-2. Complete the FR-06 planning acceptance test matrix and adjust planner
-   behavior where tests expose gaps.
-3. Expose fatigue-level input consistently across Telegram commands, agent
-   tools, imports, and planning.
-4. Add release/deployment checks for local bind and Compose publishing.
+1. Add release/deployment checks for local bind and Compose publishing.

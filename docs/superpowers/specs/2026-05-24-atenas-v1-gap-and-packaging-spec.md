@@ -10,14 +10,14 @@ failure reported when running:
 pip3 install -e .
 ```
 
-As of 2026-05-24, the editable-install package-discovery fix is implemented and
-the dry run succeeds when pip can fetch build requirements. The remaining open
-items are feature/acceptance alignment, not the original setuptools discovery
-error.
+As of 2026-05-25, the editable-install package-discovery fix is implemented,
+FR-06 planning acceptance coverage is in place, work-shift fatigue input is
+available through Telegram and agent write paths, slash-command parity has been
+audited, and historical plan documents are marked as archival records.
 
 ## Current Verified State
 
-- Full test suite passed on 2026-05-24 with `562 passed`.
+- Full test suite passed on 2026-05-25 with `601 passed`.
 - Telegram slash commands cover status, schedule, planning, academic records,
   notes/files, retrieval, LLM study commands, reminders, and confirmations.
 - Plain Telegram messages use `AgentLoop` and `ToolRegistry`.
@@ -29,14 +29,20 @@ error.
 - CLI and TUI source code exist, and package discovery is configured for the
   `atenas` console command. The verified command was
   `pip3 install -e . --no-deps --dry-run`.
+- FR-06 acceptance coverage lives in
+  `tests/academic/test_planner_acceptance.py`.
+- Slash-command parity is recorded in `docs/COMMAND_TOOL_PARITY.md` and guarded
+  by `tests/test_command_tool_parity.py`.
+- Historical plan docs include explicit archival status notices guarded by
+  `tests/test_docs_status.py`.
 
 ## Problem 1: Slash Command And Agent-Tool Parity
 
 The product spec says the LLM agent should be able to answer and act through
 controlled tools for scheduling, planning, notes, retrieval, and data updates.
-The agent-facing `ToolRegistry` now has the expected v1 tool catalog. The
-remaining gap is parity: equivalent slash-command and agent-tool paths must keep
-using shared service, validation, policy, and audit behavior.
+The agent-facing `ToolRegistry` now has the expected v1 tool catalog. Parity is
+audited in `docs/COMMAND_TOOL_PARITY.md`: each supported slash command has an
+equivalent v1 agent tool or an explicit command-only rationale.
 
 ### Implemented Agent Tool Coverage
 
@@ -85,7 +91,7 @@ Any agent tool that changes state must continue to resolve natural-language
 references to stable IDs, validate arguments, pass the policy engine, and audit
 the result.
 
-### Remaining Slash Command Parity Work
+### Slash Command Parity Status
 
 Slash commands remain deterministic shortcuts. Where a slash command and an
 agent tool share behavior, they must call the same core service path or a thin
@@ -95,16 +101,19 @@ logic, validation, policy, and audit must not be duplicated.
 Acceptance criteria:
 
 - Each supported slash command has either an equivalent agent tool or an
-  explicit note explaining why it stays command-only for v1.
+  explicit note explaining why it stays command-only for v1. **Done
+  2026-05-25 in `docs/COMMAND_TOOL_PARITY.md`.**
 - Agent tools and slash commands produce equivalent state changes for the same
-  input.
+  input. **Covered for shared write paths through core service calls and
+  parity tests.**
 - Confirm-first behavior is consistent between `/archive_note`, duplicate
-  module deletion, web search, and future destructive tools.
+  module deletion, web search, and future destructive tools. **Covered by
+  existing pending-action tests.**
 
 ## Problem 2: Planning Acceptance Gap
 
-The planner already computes deterministic windows and assigns intensity, but
-the falsifiable acceptance criteria in FR-06 need complete automated coverage.
+The planner computes deterministic windows, assigns intensity, and has automated
+coverage for the falsifiable FR-06 acceptance criteria.
 
 Required tests:
 
@@ -120,6 +129,11 @@ Required tests:
 
 Implementation may satisfy this by reducing availability, capping intensity, or
 both, but the behavior must be deterministic and explained in planner output.
+
+Status on 2026-05-25: **done** in
+`tests/academic/test_planner_acceptance.py`. Heavy weeks reserve recovery
+capacity in deterministic availability windows before planning allocates study
+blocks.
 
 ## Problem 3: Data Model Source-Of-Truth Gap
 
@@ -165,19 +179,17 @@ Status on 2026-05-24: canonical docs were refreshed for the current agent loop,
 tool coverage, storage contract, security state, and packaging status. Historical
 plan documents remain as archived implementation records.
 
-Remaining updates:
-
-- Convert completed plan documents to historical records or add completion
-  notes so unchecked boxes are not mistaken for current truth.
-- Keep this spec as the single current v1 gap tracker.
+Status on 2026-05-25: **done**. Historical implementation plans now include a
+`Historical Plan Status` notice, and `tests/test_docs_status.py` guards against
+future archival plans appearing as live checklists.
 
 Acceptance criteria:
 
 - A new contributor can read `docs/README.md` and know which documents are
-  canonical today.
+  canonical today. **Done 2026-05-25.**
 - No canonical doc says "not yet built" for behavior that tests prove is built.
 - Remaining work is tracked in one current spec or plan, not scattered across
-  stale checklist files.
+  stale checklist files. **Done 2026-05-25.**
 
 ## Problem 5: Editable Install Failure
 

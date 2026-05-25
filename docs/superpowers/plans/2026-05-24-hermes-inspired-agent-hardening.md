@@ -1,5 +1,11 @@
 # Hermes-Inspired Agent Hardening Implementation Plan
 
+## Historical Plan Status
+
+This is an archival implementation plan. Its unchecked boxes preserve the
+original task breakdown and are not the current project status; use
+`docs/README.md` and the current gap spec for live work tracking.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Bring the safe, useful Hermes Agent patterns into Atenas: toolsets, approved skill memory, backup/restore, local model profile config, searchable sessions, and a future channel boundary.

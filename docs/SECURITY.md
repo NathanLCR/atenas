@@ -249,7 +249,7 @@ If a forbidden or invalid action is attempted:
 
 ## Current Enforcement State
 
-Verified on 2026-05-24:
+Verified on 2026-05-25:
 
 - The FastAPI app installs a local-only middleware guard by default; Docker
   Compose publishes `127.0.0.1:8000:8000`.
@@ -260,13 +260,13 @@ Verified on 2026-05-24:
   pending confirmation for confirm-first tools, and audit logging.
 - Web search is disabled by default and, when enabled, is confirm-first egress.
 - Retrieval and agent prompts delimit untrusted user/source/web content.
+- Slash-command and agent-tool parity is audited in
+  `docs/COMMAND_TOOL_PARITY.md`, including command-only support surfaces.
 
 Remaining security follow-up:
 
 - Keep REST endpoints read-only unless a future authenticated local-write spec
   exists. The current `/status` and `/skills` endpoints use a local read actor
   only.
-- Finish slash-command parity auditing so command writes and equivalent agent
-  tools share the same validation, policy, and audit expectations.
 - Add deployment checks around bind host and Compose publishing before any
   release packaging step.

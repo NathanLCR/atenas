@@ -92,6 +92,19 @@ async def test_add_shift_command_creates_shift() -> None:
 
 
 @pytest.mark.asyncio
+async def test_add_shift_command_passes_fatigue_level() -> None:
+    update = _make_update(
+        123,
+        '/add_shift start="2026-05-18 16:00" end="2026-05-18 23:00" fatigue="high"',
+    )
+    service = _fake_service_with_shift()
+    with patch("app.bot.AcademicService", return_value=service):
+        await _dispatch_if_allowed(update, add_shift_command)
+
+    assert service.last_shift_kwargs["fatigue_level"] == "high"
+
+
+@pytest.mark.asyncio
 async def test_add_shift_command_missing_args() -> None:
     update = _make_update(123, "/add_shift")
     await _dispatch_if_allowed(update, add_shift_command)
@@ -232,6 +245,7 @@ class _FakeDataService:
         self._assignment_result = kwargs.get("assignment_result")
         self._status_result = kwargs.get("status_result")
         self._hours_result = kwargs.get("hours_result")
+        self.last_shift_kwargs: dict[str, object] = {}
 
     def add_module(self, **kwargs) -> object:
         return self._module_result or _cmd_result(False, "Module name is required.")
@@ -240,6 +254,7 @@ class _FakeDataService:
         return self._class_result or _cmd_result(False, "Invalid weekday.")
 
     def add_work_shift(self, **kwargs) -> object:
+        self.last_shift_kwargs = kwargs
         return self._shift_result or _cmd_result(False, "Invalid datetime.")
 
     def add_assignment(self, **kwargs) -> object:

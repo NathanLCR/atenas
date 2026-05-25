@@ -3,65 +3,96 @@
 {% block page_title %}Retrieval{% endblock %}
 
 {% block main %}
-<form class="search-form retrieval-form" method="get" action="/dashboard/retrieval">
-  <input type="text" name="q" value="{{ query }}" placeholder="Ask notes/files..." autofocus />
-  <select name="module" aria-label="Module">
-    <option value="">All modules</option>
-    {% for module in modules %}
-    <option value="{{ module.id }}" {% if module.id == selected_module_id %}selected{% endif %}>
-      {{ module.code ~ " - " if module.code else "" }}{{ module.name }}
-    </option>
-    {% endfor %}
-  </select>
-  <select name="assignment" aria-label="Assignment">
-    <option value="">All assignments</option>
-    {% for assignment in assignments %}
-    <option value="{{ assignment.id }}" {% if assignment.id == selected_assignment_id %}selected{% endif %}>
-      {{ assignment.title }}
-    </option>
-    {% endfor %}
-  </select>
-  <button type="submit">Ask</button>
-</form>
+<section class="panel">
+  <div class="panel-header panel-header--large">
+    <div>
+      <h2>Retrieval Diagnostics</h2>
+      <p class="muted">Semantic search, local source alignment, and answer generation state.</p>
+    </div>
+    {% if query %}
+    <span class="chip chip-soft">sources={{ answer.sources|length if answer else 0 }}</span>
+    {% endif %}
+  </div>
+
+  <form class="search-form retrieval-form" method="get" action="/dashboard/retrieval">
+    <input type="text" name="q" value="{{ query }}" placeholder="Ask notes/files..." autofocus>
+    <select name="module" aria-label="Module">
+      <option value="">All modules</option>
+      {% for module in modules %}
+      <option value="{{ module.id }}" {% if module.id == selected_module_id %}selected{% endif %}>
+        {{ module.code ~ " - " if module.code else "" }}{{ module.name }}
+      </option>
+      {% endfor %}
+    </select>
+    <select name="assignment" aria-label="Assignment">
+      <option value="">All assignments</option>
+      {% for assignment in assignments %}
+      <option value="{{ assignment.id }}" {% if assignment.id == selected_assignment_id %}selected{% endif %}>
+        {{ assignment.title }}
+      </option>
+      {% endfor %}
+    </select>
+    <button type="submit">Ask</button>
+  </form>
+</section>
 
 {% if query %}
-<h2>Answer for "{{ query }}"</h2>
+<section class="diagnostic-grid">
+  <div class="metric-card metric-card--primary">
+    <span class="mono-label">Query</span>
+    <strong>{{ query }}</strong>
+  </div>
+  <div class="metric-card metric-card--success">
+    <span class="mono-label">Sources</span>
+    <strong>{{ answer.sources|length if answer else 0 }}</strong>
+  </div>
+  <div class="metric-card">
+    <span class="mono-label">Model</span>
+    <strong>{{ answer.model if answer and answer.model else "local unavailable" if answer and not answer.success else "not run" }}</strong>
+  </div>
+</section>
 
 {% if answer and not answer.success %}
-<div class="empty-state retrieval-error">
-  <h3>{{ "Local answer unavailable" if answer.sources else "Retrieval unavailable" }}</h3>
+<section class="panel retrieval-answer retrieval-error">
+  <div class="panel-header">
+    <h2>{{ "Local answer unavailable" if answer.sources else "Retrieval unavailable" }}</h2>
+    <span class="chip chip-danger">Unavailable</span>
+  </div>
   <p class="muted">{{ answer.error }}</p>
   {% if answer.sources %}
   <p class="muted">Sources were found. Start Ollama to generate the answer.</p>
   <div class="command-block">ollama serve</div>
   {% endif %}
-</div>
+</section>
 {% elif answer %}
-<div class="card retrieval-answer">
-  <div class="card-body">
-    <p>{{ answer.answer }}</p>
-    {% if answer.model %}
-    <p class="muted">Model: {{ answer.model }}</p>
-    {% endif %}
+<section class="panel retrieval-answer">
+  <div class="panel-header">
+    <h2>Answer Panel</h2>
+    {% if answer.model %}<span class="chip chip-soft">{{ answer.model }}</span>{% endif %}
   </div>
-</div>
+  <p>{{ answer.answer }}</p>
+</section>
 {% endif %}
 
-{% if answer.sources %}
-<h2>Sources</h2>
-<div class="results">
-  {% for source in answer.sources %}
-  <div class="card result-card">
-    <div class="card-header">
-      <span class="badge badge-{{ 'note' if source.source_kind == 'note' else 'file' }}">{{ source.chunk_label }}</span>
-      <h3>{{ source.title }}</h3>
-    </div>
-    <div class="card-body">
-      <p class="snippet">{{ source.snippet }}</p>
-    </div>
+{% if answer and answer.sources %}
+<section class="panel">
+  <div class="panel-header">
+    <h2>Source Rows</h2>
+    <span class="mono-label">{{ answer.sources|length }} local matches</span>
   </div>
-  {% endfor %}
-</div>
+  <div class="source-list">
+    {% for source in answer.sources %}
+    <article class="source-row">
+      <div class="source-row-header">
+        <span class="chip chip-{{ 'success' if source.source_kind == 'note' else 'warning' }}">{{ source.chunk_label }}</span>
+        <strong>{{ source.title }}</strong>
+        <span class="mono-label">{{ source.source_kind }}</span>
+      </div>
+      <p class="snippet">{{ source.snippet }}</p>
+    </article>
+    {% endfor %}
+  </div>
+</section>
 {% endif %}
 {% endif %}
 {% endblock %}
