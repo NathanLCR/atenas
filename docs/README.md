@@ -15,6 +15,9 @@ docs/
 ├── REQUIREMENTS.md   Functional and non-functional requirements
 ├── DATA_MODEL.md     SQLite schema and data entities
 ├── SCHEMAS.md        LLM/action schemas
+├── CONTEXT_MANAGEMENT.md
+│                     Context, state, and memory layers across timescales
+├── DECISIONS.md      Dated architecture decision records
 └── COMMAND_TOOL_PARITY.md
                       Slash-command to agent-tool parity audit
 ```
