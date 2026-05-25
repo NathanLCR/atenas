@@ -110,7 +110,7 @@ Verified on 2026-05-25:
 
 - Telegram slash commands cover core status, schedule/planning, academic data,
   notes/files, retrieval, LLM note helpers, reminders, and confirmation
-  replies.
+  replies, including `/pending` and `/cancel_pending` shortcuts.
 - Plain Telegram messages use the canonical bounded `AgentLoop` and
   `ToolRegistry`, not the legacy fixed-intent router.
 - `ToolRegistry` currently exposes v1 read, compute, act, system, and opt-in
@@ -146,7 +146,8 @@ Telegram supports:
 
 - Plain messages routed to the LLM tool agent.
 - Slash commands as fast deterministic shortcuts.
-- Confirmation replies (`yes` / `no`) for pending write proposals.
+- Confirmation replies (`yes` / `no`) and deterministic `/pending` /
+  `/cancel_pending` shortcuts for pending write proposals.
 
 **Secondary:** local FastAPI API and read-only web dashboard.
 

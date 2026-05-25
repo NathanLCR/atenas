@@ -29,7 +29,7 @@ Archival plans:
 |---|---|---|---|
 | v1 gap and packaging closure | Done | `docs/superpowers/specs/2026-05-24-atenas-v1-gap-and-packaging-spec.md` | Package discovery, planning acceptance, parity audit, doc drift cleanup, and v1 tool coverage are implemented and tested. |
 | Durable pending-action storage base | Done | `docs/superpowers/specs/2026-05-24-local-model-agent-runtime-state-spec.md` | `core/nl/runtime_state.py` persists threads and pending actions; Telegram `yes` and `no` can resolve durable pending actions. |
-| Pending-action UX | Partial | `docs/superpowers/specs/2026-05-24-local-model-agent-runtime-state-spec.md` | Durable confirmation exists, but deterministic `/pending` and `/cancel_pending` commands are not registered yet. |
+| Pending-action UX | Done | `docs/superpowers/specs/2026-05-24-local-model-agent-runtime-state-spec.md` | Durable confirmation exists, and deterministic `/pending` plus `/cancel_pending` commands are registered. |
 | Toolsets | Done | `docs/superpowers/specs/2026-05-24-hermes-inspired-agent-hardening-spec.md` | `core/nl/toolsets.py` groups safe, egress, destructive, readonly, and dev-local tools; the agent loop filters visible tools by selected toolsets. |
 | Backup and restore | Done | `docs/superpowers/specs/2026-05-24-hermes-inspired-agent-hardening-spec.md` | `core/backup.py` and `atenas backup`/`atenas restore` exist with tests. |
 | Local model profile config | Next | Runtime state and Hermes specs | Add explicit context length, timeout, prompt limits, and doctor output. |
@@ -67,6 +67,5 @@ Large files should be split as they are touched by the next phases:
 
 ## Next Recommended Slice
 
-Implement pending-action UX: add `/pending` and `/cancel_pending` Telegram
-commands backed by `AgentRuntimeStore`, then update tests and docs. This closes
-the partial runtime-state phase before model profile and prompt-budget work.
+Implement local model profile config: add explicit context length, timeout,
+prompt limits, and doctor output before prompt-budget and trace replay work.

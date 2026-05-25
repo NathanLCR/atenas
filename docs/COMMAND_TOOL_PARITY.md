@@ -13,6 +13,8 @@ behavior.
 | `/ping` | Command-only | Local adapter health shortcut; `get_status` covers agent status. |
 | `/status` | `get_status` | Equivalent read path. |
 | `/skills` | Command-only | Telegram command catalog/help surface. |
+| `/pending` | Command-only | Deterministic pending-action review shortcut backed by `AgentRuntimeStore`. |
+| `/cancel_pending` | Command-only | Deterministic pending-action cancellation shortcut backed by `AgentRuntimeStore`. |
 | `/today` | `get_today_overview` | Equivalent read path. |
 | `/week` | `get_week_overview` | Equivalent read path. |
 | `/deadlines` | `get_deadlines` | Equivalent read path. |
