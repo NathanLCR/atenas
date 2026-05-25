@@ -41,6 +41,7 @@ from core.academic.validators import (
     parse_datetime_input,
     parse_datetime_strict,
     validate_energy_cost,
+    validate_fatigue_level,
     validate_hours,
     validate_notes,
     validate_priority,
@@ -55,6 +56,7 @@ from core.time import (
     parse_hhmm,
     week_bounds,
 )
+from core.schemas import FatigueLevel
 
 
 class AcademicService:
@@ -261,6 +263,7 @@ class AcademicService:
         location: str | None = None,
         role: str | None = None,
         energy_cost: int | None = None,
+        fatigue_level: str | FatigueLevel = FatigueLevel.MEDIUM,
         notes: str | None = None,
     ) -> WorkShift:
         """Create a dated work shift."""
@@ -281,6 +284,7 @@ class AcademicService:
                 location=location,
                 role=role,
                 energy_cost=energy_cost,
+                fatigue_level=fatigue_level,
                 notes=notes,
             )
         )
@@ -643,6 +647,7 @@ class AcademicService:
         location: str | None = None,
         role: str | None = None,
         energy_cost: int | None = None,
+        fatigue_level: str | FatigueLevel = FatigueLevel.MEDIUM,
         notes: str | None = None,
     ) -> CommandResult:
         """Create a dated work shift with validation."""
@@ -675,6 +680,13 @@ class AcademicService:
         else:
             validated_energy = None
 
+        validated_fatigue = validate_fatigue_level(fatigue_level)
+        if validated_fatigue is None:
+            return CommandResult(
+                success=False,
+                message="fatigue_level must be one of: low, medium, high.",
+            )
+
         validated_location = validate_text_field(location, max_length=200)
         validated_role = validate_text_field(role, max_length=100)
         validated_notes = validate_notes(notes)
@@ -695,13 +707,14 @@ class AcademicService:
             location=validated_location,
             role=validated_role,
             energy_cost=validated_energy,
+            fatigue_level=validated_fatigue,
             notes=validated_notes,
         )
         date_label = parsed_start.strftime("%a %d %b")
         time_label = f"{parsed_start.strftime('%H:%M')}\u2013{parsed_end.strftime('%H:%M')}"
         return CommandResult(
             success=True,
-            message=f"Work shift added\n\n{date_label}\n{time_label}",
+            message=f"Work shift added\n\n{date_label}\n{time_label}\nFatigue: {shift.fatigue_level.value}",
             record_id=shift.id,
         )
 

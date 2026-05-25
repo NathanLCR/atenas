@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from core.academic.models import (
@@ -19,6 +19,8 @@ from core.time import combine_local, ensure_local_datetime, iter_dates, parse_hh
 DEFAULT_DAY_START = time(8, 0)
 DEFAULT_DAY_END = time(22, 0)
 DEFAULT_MINIMUM_STUDY_WINDOW_MINUTES = 45
+HEAVY_WEEK_SHIFT_THRESHOLD = 4
+HEAVY_WEEK_CAPACITY_MULTIPLIER = 0.7
 
 
 def calculate_availability(
@@ -35,6 +37,7 @@ def calculate_availability(
     """Return study availability for an inclusive local date range."""
 
     now_local = ensure_local_datetime(now, timezone) if now is not None else None
+    heavy_shift_week = len(work_shifts) >= HEAVY_WEEK_SHIFT_THRESHOLD
     days = [
         _calculate_day(
             day=day,
@@ -45,6 +48,7 @@ def calculate_availability(
             day_start=day_start,
             day_end=day_end,
             minimum_study_window_minutes=minimum_study_window_minutes,
+            heavy_shift_week=heavy_shift_week,
         )
         for day in iter_dates(start_date, end_date)
     ]
@@ -65,6 +69,7 @@ def _calculate_day(
     day_start: time,
     day_end: time,
     minimum_study_window_minutes: int,
+    heavy_shift_week: bool,
 ) -> DayAvailability:
     boundary_start = combine_local(day, day_start, timezone)
     boundary_end = combine_local(day, day_end, timezone)
@@ -84,6 +89,11 @@ def _calculate_day(
         minimum_study_window_minutes,
         work_shifts=work_shifts,
     )
+    if heavy_shift_week:
+        study_windows = _apply_heavy_week_reserve(
+            study_windows,
+            minimum_study_window_minutes,
+        )
     return DayAvailability(
         date=day,
         blocked=blocked,
@@ -94,7 +104,6 @@ def _calculate_day(
 
 def _max_intensity_for_window(start_at: datetime, work_shifts: list[WorkShift]) -> str:
     """Return max intensity cap for a study window based on prior work fatigue."""
-    from datetime import timedelta
     previous_late_high = any(
         getattr(shift, "fatigue_level", None) == FatigueLevel.HIGH
         and shift.end_at.date() == start_at.date() - timedelta(days=1)
@@ -243,3 +252,30 @@ def _append_window(
             minutes=minutes,
             max_intensity=_max_intensity_for_window(start_at, work_shifts or []),
         ))
+
+
+def _apply_heavy_week_reserve(
+    windows: list[StudyWindow],
+    minimum_study_window_minutes: int,
+) -> list[StudyWindow]:
+    """Keep a deterministic recovery reserve when the week has four or more shifts."""
+    total_minutes = sum(window.minutes for window in windows)
+    target_minutes = int(total_minutes * HEAVY_WEEK_CAPACITY_MULTIPLIER)
+    remaining = target_minutes
+    reserved: list[StudyWindow] = []
+    for window in windows:
+        if remaining < minimum_study_window_minutes:
+            break
+        minutes = min(window.minutes, remaining)
+        if minutes < minimum_study_window_minutes:
+            break
+        reserved.append(
+            window.model_copy(
+                update={
+                    "end_at": window.start_at + timedelta(minutes=minutes),
+                    "minutes": minutes,
+                }
+            )
+        )
+        remaining -= minutes
+    return reserved

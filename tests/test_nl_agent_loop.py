@@ -14,6 +14,7 @@ from core.nl.agent import AgentLoop
 from core.nl.tool_contracts import ToolCategory
 from core.nl.toolsets import ToolsetName
 from core.nl.tools import ToolRegistry
+from core.schemas import FatigueLevel
 
 
 class FakeToolClient:
@@ -389,6 +390,25 @@ def test_catalog_tool_names_with_web(tmp_db: Path) -> None:
     registry = ToolRegistry(tmp_db, web_enabled=True)
     names = {t.name for t in registry.list_tools()}
     assert names == EXPECTED_TOOL_NAMES | {"web_search"}
+
+
+def test_add_work_shift_tool_accepts_fatigue_level(tmp_db: Path) -> None:
+    registry = ToolRegistry(tmp_db)
+
+    run = registry.run_tool(
+        "add_work_shift",
+        {
+            "title": "Work",
+            "start_at": "2026-05-18 16:00",
+            "end_at": "2026-05-18 23:00",
+            "fatigue_level": "high",
+        },
+        actor_user_id=123,
+    )
+
+    assert run.result.ok is True
+    shifts = AcademicService(tmp_db).list_all_work_shifts()
+    assert shifts[0].fatigue_level == FatigueLevel.HIGH
 
 
 def test_all_act_tools_declare_explicit_tier(tmp_db: Path) -> None:

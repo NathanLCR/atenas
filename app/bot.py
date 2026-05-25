@@ -328,6 +328,7 @@ async def add_shift_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
 
     energy = args.get("energy")
+    fatigue_level = args.get("fatigue_level") or args.get("fatigue")
     result = service.add_work_shift(
         title=args.get("title", "Work"),
         start_at=start,
@@ -335,6 +336,7 @@ async def add_shift_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         location=args.get("location"),
         role=args.get("role"),
         energy_cost=int(energy) if energy else None,
+        fatigue_level=fatigue_level or "medium",
         notes=args.get("notes"),
     )
     await _reply(update, result.message)
@@ -477,7 +479,10 @@ async def shifts_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         if date_label != current_date:
             current_date = date_label
             lines.append(date_label)
-        lines.append(f"  {s.start_at.strftime('%H:%M')}\u2013{s.end_at.strftime('%H:%M')} {s.title}")
+        lines.append(
+            f"  {s.start_at.strftime('%H:%M')}\u2013{s.end_at.strftime('%H:%M')} "
+            f"{s.title} (fatigue: {s.fatigue_level.value})"
+        )
         lines.append("")
     await _reply(update, "\n".join(lines).rstrip())
 

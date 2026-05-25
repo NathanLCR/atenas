@@ -903,6 +903,7 @@ class ToolRegistry:
         lines.extend(
             f"- #{s.id[:8]} {s.title} on {s.start_at.strftime('%a %d %b %H:%M')}-{s.end_at.strftime('%H:%M')}"
             + (f" (energy: {s.energy_cost}/5)" if s.energy_cost is not None else "")
+            + f" (fatigue: {s.fatigue_level.value})"
             + (f" at {s.location}" if s.location else "")
             + (f" as {s.role}" if s.role else "")
             for s in limited_shifts
@@ -1000,7 +1001,7 @@ class ToolRegistry:
         )
         if not result.success:
             return tool_error(result.message)
-        return action_tool_run(result)
+        return action_tool_run(command_action_result("add_assignment", result))
 
     def _tool_add_note(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
         """Auto-tier local write: create a new note with title, body, and optional module/tags."""
@@ -1023,7 +1024,7 @@ class ToolRegistry:
         )
         if not result.success:
             return tool_error(result.message)
-        return action_tool_run(result)
+        return action_tool_run(command_action_result("add_note", result))
 
     def _tool_add_class_session(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
         """Auto-tier local write: add a recurring class session."""
@@ -1047,7 +1048,7 @@ class ToolRegistry:
         )
         if not result.success:
             return tool_error(result.message)
-        return action_tool_run(result)
+        return action_tool_run(command_action_result("add_class_session", result))
 
     def _tool_add_work_shift(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
         """Auto-tier local write: add a work shift."""
@@ -1059,11 +1060,12 @@ class ToolRegistry:
             end_at=parsed.end_at,
             location=parsed.location,
             role=parsed.role,
-            energy_cost=parsed.energy_cost
+            energy_cost=parsed.energy_cost,
+            fatigue_level=parsed.fatigue_level,
         )
         if not result.success:
             return tool_error(result.message)
-        return action_tool_run(result)
+        return action_tool_run(command_action_result("add_work_shift", result))
 
     def _resolve_module_id(self, value: str) -> str | None:
         """Resolve a module reference to a module ID, returning error message if not found."""

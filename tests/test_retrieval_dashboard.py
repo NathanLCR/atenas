@@ -31,8 +31,10 @@ def test_retrieval_route_displays_answer_and_sources(settings: Settings) -> None
             response = client.get("/dashboard/retrieval?q=attention")
 
     assert response.status_code == 200
+    assert "Retrieval Diagnostics" in response.text
     assert "Grounded answer" in response.text
     assert "N1.1" in response.text
+    assert "source-row" in response.text
 
 
 def test_retrieval_route_passes_scope_filters(settings: Settings) -> None:
@@ -61,6 +63,7 @@ def test_retrieval_route_displays_sources_when_llm_unavailable(settings: Setting
             response = client.get("/dashboard/retrieval?q=attention")
 
     assert response.status_code == 200
+    assert "Retrieval Diagnostics" in response.text
     assert "Local answer unavailable" in response.text
     assert "ollama serve" in response.text
     assert "N1.1" in response.text

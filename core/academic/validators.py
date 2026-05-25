@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, time
 from zoneinfo import ZoneInfo
 
+from core.schemas import FatigueLevel
+
 WEEKDAY_MAP: dict[str, int] = {
     "mon": 0, "monday": 0,
     "tue": 1, "tuesday": 1, "tues": 1,
@@ -176,6 +178,16 @@ def validate_energy_cost(value: str | int) -> int | None:
     try:
         e = int(value)
         return e if 1 <= e <= 5 else None
+    except (ValueError, TypeError):
+        return None
+
+
+def validate_fatigue_level(value: str | FatigueLevel) -> FatigueLevel | None:
+    """Normalize a work-shift fatigue level. Returns None if invalid."""
+    if isinstance(value, FatigueLevel):
+        return value
+    try:
+        return FatigueLevel(str(value).strip().lower())
     except (ValueError, TypeError):
         return None
 

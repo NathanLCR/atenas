@@ -137,7 +137,7 @@ class AcademicRepository:
                     end_at, location, role, energy_cost, commute_minutes,
                     fatigue_level, notes, source, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 'medium', ?, 'phase3', ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, 'phase3', ?, ?)
                 """,
                 (
                     stored_shift.id,
@@ -151,6 +151,7 @@ class AcademicRepository:
                     stored_shift.location,
                     stored_shift.role,
                     stored_shift.energy_cost,
+                    stored_shift.fatigue_level.value,
                     stored_shift.notes,
                     stored_shift.created_at,
                     stored_shift.updated_at,
@@ -561,6 +562,7 @@ class AcademicRepository:
             location=row["location"] or row["workplace"],
             role=row["role"],
             energy_cost=row["energy_cost"],
+            fatigue_level=row["fatigue_level"] or "medium",
             notes=row["notes"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],

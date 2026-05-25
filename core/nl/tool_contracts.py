@@ -15,6 +15,7 @@ from core.schemas import (
     ActionProposal,
     ActionResult,
     ActionTier,
+    FatigueLevel,
     StrictModel,
 )
 
@@ -208,7 +209,11 @@ class AddWorkShiftArgs(StrictModel):
     end_at: str = Field(min_length=1, description="YYYY-MM-DD HH:MM")
     location: str | None = Field(default=None, max_length=200)
     role: str | None = Field(default=None, max_length=200)
-    energy_cost: int | None = Field(default=None, ge=0, le=5, description="Fatigue 0-5")
+    energy_cost: int | None = Field(default=None, ge=1, le=5, description="Energy cost 1-5")
+    fatigue_level: FatigueLevel = Field(
+        default=FatigueLevel.MEDIUM,
+        description="Work-shift fatigue level: low, medium, or high",
+    )
 
 
 class StructuredToolResult(StrictModel):

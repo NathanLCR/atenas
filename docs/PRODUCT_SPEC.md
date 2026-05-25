@@ -106,7 +106,7 @@ content is untrusted data, never instructions.
 
 ## Current Implementation Snapshot
 
-Verified on 2026-05-24:
+Verified on 2026-05-25:
 
 - Telegram slash commands cover core status, schedule/planning, academic data,
   notes/files, retrieval, LLM note helpers, reminders, and confirmation
@@ -122,15 +122,19 @@ Verified on 2026-05-24:
   indexing, and local Ollama for generated answers when available.
 - Editable install package discovery is configured so only `app*`, `core*`, and
   `skills*` are importable packages.
+- FR-06 planning acceptance behavior is covered by automated seeded-fixture
+  tests for hard-block collision, availability bounds, fatigue caps, deadline
+  coverage, determinism, and heavy-week capacity honesty.
+- Work-shift `fatigue_level` is accepted and persisted through the shared
+  service, `/add_shift`, and the `add_work_shift` agent tool.
+- Slash-command and agent-tool parity is audited in
+  `docs/COMMAND_TOOL_PARITY.md` and guarded by tests.
 
-Remaining v1 gaps:
+Remaining v1 follow-up:
 
-- Planning has deterministic availability and slot allocation, but the full
-  falsifiable FR-06 acceptance suite is not yet complete.
-- Work shifts store `fatigue_level`, but common Telegram/agent write paths
-  still expose `energy_cost` rather than a complete fatigue-level input.
-- Slash-command and agent-tool parity still needs a final audit so shared
-  validation, policy, and audit behavior are consistent everywhere.
+- Keep release/deployment checks local-only before any packaged release.
+- Backup/export remains a post-v1 local-support goal unless a separate
+  implementation spec promotes it.
 
 ---
 

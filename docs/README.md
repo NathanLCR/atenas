@@ -14,7 +14,9 @@ docs/
 ├── SECURITY.md       Local-only posture, action tiers, prompt-injection & web defense
 ├── REQUIREMENTS.md   Functional and non-functional requirements
 ├── DATA_MODEL.md     SQLite schema and data entities
-└── SCHEMAS.md        LLM/action schemas
+├── SCHEMAS.md        LLM/action schemas
+└── COMMAND_TOOL_PARITY.md
+                      Slash-command to agent-tool parity audit
 ```
 
 ## Current direction
@@ -36,7 +38,7 @@ confirmation and audit contract exists for terminal-originated writes.
 
 ## Current implementation snapshot
 
-Verified on 2026-05-24:
+Verified on 2026-05-25:
 
 - Plain Telegram messages use `AgentLoop` plus `ToolRegistry`.
 - Slash commands remain deterministic shortcuts.
@@ -50,14 +52,21 @@ Verified on 2026-05-24:
   `retrieval_chunks` plus FTS5, with lexical fallback.
 - Editable package discovery is configured in `pyproject.toml`; runtime data
   directories are excluded from the package set.
+- FR-06 planning acceptance coverage exists in
+  `tests/academic/test_planner_acceptance.py`.
+- Work-shift `fatigue_level` is accepted through the shared service,
+  `/add_shift`, and the `add_work_shift` agent tool.
+- Slash-command parity is audited in `docs/COMMAND_TOOL_PARITY.md` and guarded
+  by `tests/test_command_tool_parity.py`.
 
 ## Current gap spec
 
 The current implementation gap and packaging spec lives at
 `docs/superpowers/specs/2026-05-24-atenas-v1-gap-and-packaging-spec.md`.
-It now tracks the remaining v1 gaps after the latest verification: planning
-acceptance coverage, fatigue/write-path gaps, slash-command parity audit,
-storage/export follow-up, and operational packaging checks.
+It now records that the latest verification closed planning acceptance
+coverage, fatigue/write-path input, slash-command parity audit, documentation
+drift, and packaging checks. Post-v1 backup/export work remains separate from
+the v1 operational SQLite source-of-truth contract.
 
 ## Local-model agent hardening
 

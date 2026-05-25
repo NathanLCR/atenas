@@ -11,6 +11,7 @@ import pytest
 from app.config import Settings
 from core.academic.service import AcademicService
 from core.db import init_db
+from core.schemas import FatigueLevel
 
 TZ = ZoneInfo("Europe/Dublin")
 
@@ -145,6 +146,29 @@ class TestAddWorkShift:
             energy_cost=6,
         )
         assert not result.success
+
+    def test_fatigue_level_is_stored(self, service: AcademicService) -> None:
+        result = service.add_work_shift(
+            title="Work",
+            start_at="2026-05-18 16:00",
+            end_at="2026-05-18 23:00",
+            fatigue_level="high",
+        )
+
+        assert result.success
+        shifts = service.list_all_work_shifts()
+        assert shifts[0].fatigue_level == FatigueLevel.HIGH
+
+    def test_invalid_fatigue_level_is_rejected(self, service: AcademicService) -> None:
+        result = service.add_work_shift(
+            title="Work",
+            start_at="2026-05-18 16:00",
+            end_at="2026-05-18 23:00",
+            fatigue_level="extreme",
+        )
+
+        assert not result.success
+        assert "fatigue_level" in result.message
 
     def test_duplicate_shift_skipped(self, service: AcademicService) -> None:
         service.add_work_shift(
