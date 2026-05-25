@@ -78,7 +78,13 @@ available.
 
 ## SQLite Schema v1
 
-Directly from PDF spec with corrections noted.
+Mirrors `core/db.py` `SCHEMA_SQL`, which is the single canonical schema owner.
+`core/db.py` also applies backward-compatible column migrations (`due_at`,
+`priority_rank`, `weight`, `completed_hours`, `notes`, work-shift `start_at`/
+`end_at`/`location`/`energy_cost`, class-session `weekday`/`active`/`notes`,
+and `memory_items.sensitive`) for databases created by earlier phases; those
+columns are folded into the `CREATE TABLE` statements below. Keep this block in
+sync when `SCHEMA_SQL` changes.
 
 ```sql
 PRAGMA journal_mode = WAL;
@@ -146,15 +152,30 @@ CREATE TABLE IF NOT EXISTS tasks (
     updated_at         TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS study_modules (
+    id          TEXT PRIMARY KEY,
+    code        TEXT,
+    name        TEXT NOT NULL,
+    lecturer    TEXT,
+    notes       TEXT,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS assignments (
     id              TEXT PRIMARY KEY,
     title           TEXT NOT NULL,
     module_id       TEXT,
     description     TEXT,
     due_date        TEXT,
-    estimated_hours REAL,
-    status          TEXT NOT NULL DEFAULT 'not_started',
+    due_at          TEXT,
+    status          TEXT NOT NULL DEFAULT 'todo',
     priority        TEXT NOT NULL DEFAULT 'medium',
+    priority_rank   INTEGER NOT NULL DEFAULT 3,
+    weight          REAL,
+    estimated_hours REAL,
+    completed_hours REAL NOT NULL DEFAULT 0,
+    notes           TEXT,
     brief_path      TEXT,
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL
@@ -163,11 +184,16 @@ CREATE TABLE IF NOT EXISTS assignments (
 -- CORRECTION: added date column; fatigue_level is TEXT CHECK constraint
 CREATE TABLE IF NOT EXISTS work_shifts (
     id               TEXT PRIMARY KEY,
+    title            TEXT,
     date             TEXT NOT NULL,
     workplace        TEXT,
     start_time       TEXT NOT NULL,
     end_time         TEXT NOT NULL,
+    start_at         TEXT,
+    end_at           TEXT,
+    location         TEXT,
     role             TEXT,
+    energy_cost      INTEGER,
     commute_minutes  INTEGER NOT NULL DEFAULT 0,
     fatigue_level    TEXT NOT NULL DEFAULT 'medium'
                          CHECK(fatigue_level IN ('low', 'medium', 'high')),
@@ -179,12 +205,15 @@ CREATE TABLE IF NOT EXISTS work_shifts (
 
 CREATE TABLE IF NOT EXISTS class_sessions (
     id          TEXT PRIMARY KEY,
-    module_id   TEXT NOT NULL,
+    module_id   TEXT,
     title       TEXT NOT NULL,
+    weekday     INTEGER,
     start_time  TEXT NOT NULL,
     end_time    TEXT NOT NULL,
     location    TEXT,
-    recurrence  TEXT,
+    recurrence  TEXT NOT NULL DEFAULT 'weekly',
+    active      INTEGER NOT NULL DEFAULT 1,
+    notes       TEXT,
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
@@ -215,6 +244,7 @@ CREATE TABLE IF NOT EXISTS memory_items (
     importance  TEXT NOT NULL DEFAULT 'medium',
     source      TEXT NOT NULL DEFAULT 'telegram',
     inferred    INTEGER NOT NULL DEFAULT 1,
+    sensitive   INTEGER NOT NULL DEFAULT 0,
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
@@ -241,6 +271,7 @@ Add indexes for common queries:
 CREATE INDEX IF NOT EXISTS idx_chunks_document ON chunks(document_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
 CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
+CREATE INDEX IF NOT EXISTS idx_study_modules_code ON study_modules(code);
 CREATE INDEX IF NOT EXISTS idx_assignments_status ON assignments(status);
 CREATE INDEX IF NOT EXISTS idx_assignments_due_date ON assignments(due_date);
 CREATE INDEX IF NOT EXISTS idx_work_shifts_date ON work_shifts(date);
@@ -249,6 +280,57 @@ CREATE INDEX IF NOT EXISTS idx_memory_items_domain ON memory_items(domain);
 CREATE INDEX IF NOT EXISTS idx_memory_items_topic ON memory_items(topic);
 CREATE INDEX IF NOT EXISTS idx_llm_calls_task_type ON llm_calls(task_type);
 CREATE INDEX IF NOT EXISTS idx_llm_calls_provider ON llm_calls(provider);
+
+-- Knowledge layer tables
+CREATE TABLE IF NOT EXISTS notes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    module_id TEXT NULL,
+    assignment_id TEXT NULL,
+    source_type TEXT NOT NULL DEFAULT 'manual',
+    tags TEXT NULL,
+    archived INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (module_id) REFERENCES study_modules(id),
+    FOREIGN KEY (assignment_id) REFERENCES assignments(id)
+);
+
+CREATE TABLE IF NOT EXISTS files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    path TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    title TEXT NULL,
+    description TEXT NULL,
+    module_id TEXT NULL,
+    assignment_id TEXT NULL,
+    file_type TEXT NULL,
+    mime_type TEXT NULL,
+    size_bytes INTEGER NULL,
+    sha256 TEXT NULL,
+    tags TEXT NULL,
+    archived INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (module_id) REFERENCES study_modules(id),
+    FOREIGN KEY (assignment_id) REFERENCES assignments(id)
+);
+
+CREATE TABLE IF NOT EXISTS note_file_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    note_id INTEGER NOT NULL,
+    file_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(note_id, file_id),
+    FOREIGN KEY (note_id) REFERENCES notes(id),
+    FOREIGN KEY (file_id) REFERENCES files(id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_notes_archived ON notes(archived);
+CREATE INDEX IF NOT EXISTS idx_notes_module ON notes(module_id);
+CREATE INDEX IF NOT EXISTS idx_files_archived ON files(archived);
+CREATE INDEX IF NOT EXISTS idx_files_module ON files(module_id);
 
 -- FTS5 virtual table for retrieval full-text search
 CREATE VIRTUAL TABLE IF NOT EXISTS retrieval_chunks_fts
@@ -287,6 +369,65 @@ CREATE TABLE IF NOT EXISTS agent_trace_steps (
 CREATE INDEX IF NOT EXISTS idx_agent_traces_started ON agent_traces(started_at);
 CREATE INDEX IF NOT EXISTS idx_agent_traces_status ON agent_traces(status);
 CREATE INDEX IF NOT EXISTS idx_agent_trace_steps_trace ON agent_trace_steps(trace_id);
+
+-- Agent runtime state
+CREATE TABLE IF NOT EXISTS agent_threads (
+    id TEXT PRIMARY KEY,
+    actor_user_id INTEGER NOT NULL,
+    channel TEXT NOT NULL DEFAULT 'telegram',
+    status TEXT NOT NULL DEFAULT 'active',
+    conversation_json TEXT NOT NULL DEFAULT '[]',
+    selected_tools_json TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS pending_actions (
+    id TEXT PRIMARY KEY,
+    thread_id TEXT NOT NULL REFERENCES agent_threads(id),
+    actor_user_id INTEGER NOT NULL,
+    tool_name TEXT NOT NULL,
+    action_type TEXT NOT NULL,
+    proposal_json TEXT NOT NULL,
+    confirmation_message TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    expires_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_agent_threads_actor
+ON agent_threads(actor_user_id, channel, status);
+
+CREATE INDEX IF NOT EXISTS idx_pending_actions_actor_status
+ON pending_actions(actor_user_id, status, created_at);
+
+-- Controlled retrieval chunk index
+CREATE TABLE IF NOT EXISTS retrieval_chunks (
+    id TEXT PRIMARY KEY,
+    source_kind TEXT NOT NULL CHECK(source_kind IN ('note', 'file')),
+    source_id INTEGER NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    text TEXT NOT NULL,
+    module_id TEXT NULL,
+    assignment_id TEXT NULL,
+    updated_at TEXT NOT NULL,
+    indexed_at TEXT NOT NULL,
+    UNIQUE(source_kind, source_id, chunk_index)
+);
+
+CREATE INDEX IF NOT EXISTS idx_retrieval_chunks_source
+ON retrieval_chunks(source_kind, source_id);
+CREATE INDEX IF NOT EXISTS idx_retrieval_chunks_module
+ON retrieval_chunks(module_id);
+CREATE INDEX IF NOT EXISTS idx_retrieval_chunks_assignment
+ON retrieval_chunks(assignment_id);
+
+-- Migration indexes applied by core/db.py for the folded-in columns
+CREATE INDEX IF NOT EXISTS idx_assignments_due_at ON assignments(due_at);
+CREATE INDEX IF NOT EXISTS idx_work_shifts_start_at ON work_shifts(start_at);
+CREATE INDEX IF NOT EXISTS idx_class_sessions_weekday ON class_sessions(weekday);
 ```
 
 ---
