@@ -183,11 +183,13 @@ class AgentLoop:
                 )
                 return _turn_result(history, user_message, message)
 
+            tool_started = time.perf_counter()
             run = self.registry.run_tool(
                 decision.tool_name,
                 decision.arguments,
                 actor_user_id=actor_user_id,
             )
+            tool_latency_ms = int((time.perf_counter() - tool_started) * 1000)
             tool_call_count += 1
             observations.append(
                 {
@@ -205,7 +207,7 @@ class AgentLoop:
                 executed=run.result.executed,
                 pending=run.result.pending,
                 message=run.result.message,
-                latency_ms=latency_ms,
+                latency_ms=tool_latency_ms,
             )
 
             if not run.result.ok:
