@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import dataclasses
 import logging
+from datetime import date
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ValidationError
 
@@ -75,6 +77,12 @@ logger = logging.getLogger(__name__)
 ACTOR_PAYLOAD_KEY = "actor_user_id"
 
 
+def _tz_today(timezone: str) -> date:
+    """Return today's date in the given timezone."""
+    from datetime import datetime
+    return datetime.now(ZoneInfo(timezone)).date()
+
+
 class ToolRegistry:
     def __init__(
         self,
@@ -136,7 +144,17 @@ class ToolRegistry:
             )
             return tool_error(f"Invalid arguments for {name}: {exc.errors()[0]['msg']}")
 
-        run = tool.handler(args, actor_user_id)
+        try:
+            run = tool.handler(args, actor_user_id)
+        except Exception as exc:
+            logger.exception(
+                "tool_handler_exception",
+                extra={
+                    "event_type": "tool_handler_exception",
+                    "tool_name": name,
+                },
+            )
+            return tool_error(f"Tool failed: {name}")
         logger.info(
             "tool_executed",
             extra={
@@ -746,6 +764,11 @@ class ToolRegistry:
         result = self.action_executor.execute(proposal)
         return action_tool_run(result)
 
+    @staticmethod
+    def _fmt_dur(minutes: int) -> str:
+        h, m = divmod(minutes, 60)
+        return f"{h}h{m:02d}"
+
     def _tool_get_status(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
         """Get system status overview."""
         # Basic system status - in a real implementation this would check various services
@@ -808,7 +831,7 @@ class ToolRegistry:
             lines.extend(["Deadlines", "- No open deadlines"])
         
         lines.append("")
-        lines.append(f"Total study time: {overview.availability.total_study_minutes // 2}h{overview.availability.total_study_minutes % 2:02d}")
+        lines.append(f"Total study time: {self._fmt_dur(overview.availability.total_study_minutes)}")
         
         return done("\n".join(lines), data={
             "date": overview.date.isoformat(),
@@ -826,16 +849,16 @@ class ToolRegistry:
             f"- Classes: {overview.class_count}",
             f"- Work shifts: {overview.work_shift_count}",
             f"- Open deadlines: {overview.open_deadline_count}",
-            f"- Study time: {overview.availability.total_study_minutes // 2}h{overview.availability.total_study_minutes % 2:02d}"
+            f"- Study time: {self._fmt_dur(overview.availability.total_study_minutes)}"
         ])
         lines.append("")
         lines.append("Day-by-day breakdown:")
         for day_summary in overview.day_summaries:
             lines.append(
                 f"{day_summary.date.strftime('%a')}: "
-                f"classes {day_summary.class_minutes//2}h{day_summary.class_minutes%2:02d}, "
-                f"work {day_summary.work_minutes//2}h{day_summary.work_minutes%2:02d}, "
-                f"study {day_summary.study_minutes//2}h{day_summary.study_minutes%2:02d}"
+                f"classes {self._fmt_dur(day_summary.class_minutes)}, "
+                f"work {self._fmt_dur(day_summary.work_minutes)}, "
+                f"study {self._fmt_dur(day_summary.study_minutes)}"
             )
         return done("\n".join(lines), data=overview.model_dump())
 
@@ -856,12 +879,22 @@ class ToolRegistry:
     def _tool_get_availability(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
         """Show available study time windows for a date range."""
         parsed = typed(args, AvailabilityArgs)
-        start_date = date.fromisoformat(parsed.start_date) if parsed.start_date else None
-        end_date = date.fromisoformat(parsed.end_date) if parsed.end_date else None
-        availability = self._academic().get_availability(
-            start_date or date.today(),
-            end_date or date.today()
-        )
+        today = _tz_today(self.timezone)
+        if parsed.start_date:
+            try:
+                start_date = date.fromisoformat(parsed.start_date)
+            except ValueError:
+                return tool_error(f"Invalid date: {parsed.start_date}")
+        else:
+            start_date = today
+        if parsed.end_date:
+            try:
+                end_date = date.fromisoformat(parsed.end_date)
+            except ValueError:
+                return tool_error(f"Invalid date: {parsed.end_date}")
+        else:
+            end_date = today
+        availability = self._academic().get_availability(start_date, end_date)
         if not availability.days:
             return done("No availability data for the specified date range.", data={"days": []})
         # Show first day's detail for simplicity in tool output
@@ -874,7 +907,7 @@ class ToolRegistry:
             ])
         else:
             lines.append("- No study windows available")
-        lines.append(f"Total: {day.total_study_minutes // 2}h{day.total_study_minutes % 2:02d}")
+        lines.append(f"Total: {self._fmt_dur(day.total_study_minutes)}")
         return done("\n".join(lines), data={"availability": availability.model_dump()})
 
     def _tool_list_class_sessions(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
@@ -914,39 +947,47 @@ class ToolRegistry:
 
     def _tool_get_local_llm_status(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
         """Check whether the local LLM provider is reachable."""
-        try:
-            engine = self._engine()
-            # Try a simple generation to test connectivity
-            response = engine.generate("test", max_tokens=1)
-            return done(
-                f"Local LLM ({engine.model}) is reachable and responsive",
-                data={
-                    "status": "reachable",
-                    "model": engine.model,
-                    "base_url": engine.base_url
-                }
-            )
-        except Exception as e:
-            return tool_error(f"Local LLM unreachable: {str(e)}")
+        engine = self._engine()
+        health = engine.health()
+        if not health.available:
+            return tool_error(f"Local LLM unreachable: {health.error or 'unknown error'}")
+        model_present = self.ollama_model in health.models
+        return done(
+            f"Local LLM ({health.model}) is reachable. "
+            f"Configured model {'present' if model_present else 'not found'} in model list.",
+            data={
+                "status": "reachable",
+                "model": health.model,
+                "models": health.models,
+                "configured_model_present": model_present,
+            },
+        )
 
     def _tool_generate_study_plan(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
         """Generate a deterministic study plan for the coming days."""
         parsed = typed(args, GenerateStudyPlanArgs)
+        if parsed.reference_date:
+            try:
+                reference_date = date.fromisoformat(parsed.reference_date)
+            except ValueError:
+                return tool_error(f"Invalid date: {parsed.reference_date}")
+        else:
+            reference_date = None
         plan = self._academic().get_study_plan(
-            reference_date=date.fromisoformat(parsed.reference_date) if parsed.reference_date else None,
-            horizon_days=parsed.horizon_days
+            reference_date=reference_date,
+            horizon_days=parsed.horizon_days,
         )
         if not plan.blocks:
             return done(
                 "No study blocks generated. Check assignments, estimates, and availability.",
-                data={"plan": plan.model_dump(), "blocks": []}
+                data={"blocks": []},
             )
         lines = [f"Study plan - {plan.start_date.strftime('%d %b')} to {plan.end_date.strftime('%d %b')}", ""]
         lines.extend([
-            f"- Available: {plan.summary.total_available_minutes // 2}h{plan.summary.total_available_minutes % 2:02d}",
-            f"- Required: {plan.summary.total_required_minutes // 2}h{plan.summary.total_required_minutes % 2:02d}",
-            f"- Planned: {plan.summary.total_planned_minutes // 2}h{plan.summary.total_planned_minutes % 2:02d}",
-            f"- Unscheduled: {plan.summary.total_unscheduled_minutes // 2}h{plan.summary.total_unscheduled_minutes % 2:02d}"
+            f"- Available: {self._fmt_dur(plan.summary.total_available_minutes)}",
+            f"- Required: {self._fmt_dur(plan.summary.total_required_minutes)}",
+            f"- Planned: {self._fmt_dur(plan.summary.total_planned_minutes)}",
+            f"- Unscheduled: {self._fmt_dur(plan.summary.total_unscheduled_minutes)}",
         ])
         lines.append("")
         current_day = None
@@ -959,16 +1000,16 @@ class ToolRegistry:
                 f"  {block.start_at.strftime('%H:%M')}-{block.end_at.strftime('%H:%M')} "
                 f"{block.assignment_title}" + (f" ({block.module_name})" if block.module_name else "")
             )
-        return done("\n".join(lines), data={"plan": plan.model_dump()})
+        return done("\n".join(lines), data={})
 
     def _tool_explain_deadline_risk(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
         """Explain workload and deadline risk based on current assignments."""
         summary = self._academic().get_workload_summary()
         lines = ["Deadline risk analysis", ""]
         lines.extend([
-            f"- Total workload: {summary.total_required_minutes // 2}h{summary.total_required_minutes % 2:02d}",
-            f"- Available time: {summary.total_available_minutes // 2}h{summary.total_available_minutes % 2:02d}",
-            f"- Unscheduled work: {summary.total_unscheduled_minutes // 2}h{summary.total_unscheduled_minutes % 2:02d}"
+            f"- Total workload: {self._fmt_dur(summary.total_required_minutes)}",
+            f"- Available time: {self._fmt_dur(summary.total_available_minutes)}",
+            f"- Unscheduled work: {self._fmt_dur(summary.total_unscheduled_minutes)}",
         ])
         if summary.unestimated_assignments:
             lines.append(f"- {len(summary.unestimated_assignments)} assignments need time estimates")
@@ -978,7 +1019,7 @@ class ToolRegistry:
             lines.append("- ⚠️  Some work may not fit in available windows")
         else:
             lines.append("- ✅  All work can be scheduled within available windows")
-        return done("\n".join(lines), data={"summary": summary.model_dump()})
+        return done("\n".join(lines), data={})
 
     def _tool_add_assignment(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
         """Auto-tier local write: add a new assignment with title, due date, and optional module/priority/hours."""
