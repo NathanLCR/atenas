@@ -73,13 +73,38 @@ class SkillRegistry:
 
         return [skill for skill in self._skills.values() if skill.enabled]
 
-    async def dispatch(self, command: str, args: str = "", user_id: int = 0) -> str:
+    async def dispatch(self, command: str, args: str = "", *, user_id: int) -> str:
         """Dispatch a command to its registered skill handler."""
 
         skill = self.get_by_command(command)
         if skill is None:
+            logger.info(
+                "command_executed",
+                extra={
+                    "event_type": "command_executed",
+                    "command": command,
+                    "actor_user_id": user_id,
+                    "success": False,
+                },
+            )
             return f"Unknown command: {command}"
-        return await skill.handler(command, args, user_id)
+        try:
+            result = await skill.handler(command, args, user_id)
+            success = True
+        except Exception:
+            success = False
+            raise
+        finally:
+            logger.info(
+                "command_executed",
+                extra={
+                    "event_type": "command_executed",
+                    "command": command,
+                    "actor_user_id": user_id,
+                    "success": success,
+                },
+            )
+        return result
 
 
 _registry = SkillRegistry()

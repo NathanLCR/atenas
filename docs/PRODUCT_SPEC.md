@@ -116,7 +116,9 @@ Verified on 2026-05-25:
 - `ToolRegistry` currently exposes v1 read, compute, act, system, and opt-in
   web tools for the main product areas listed above.
 - Confirm-first destructive/egress tools create pending Telegram confirmations;
-  auto-tier local writes execute through policy and audit logging.
+  auto-tier local writes are intended to execute through policy and audit
+  logging (the four `add_*` tools currently bypass that path — a recorded v1
+  gap, see below).
 - The local dashboard and TUI exist as read-only support surfaces.
 - Retrieval uses registered, non-archived notes/files, incremental SQLite/FTS5
   indexing, and local Ollama for generated answers when available.
@@ -132,8 +134,13 @@ Verified on 2026-05-25:
 
 Remaining v1 follow-up:
 
+- Close the 2026-06-11 audit defects (tool crashes, policy/audit bypass on
+  `add_*` tools, local-only guard header trust, pending-action status
+  accuracy, `/confirm`, command logging) per
+  `docs/superpowers/specs/2026-06-12-v1-defect-and-governance-closure-spec.md`.
 - Keep release/deployment checks local-only before any packaged release.
-- Backup/export remains a post-v1 local-support goal unless a separate
+- Local zip backup/restore ships via `atenas backup` / `atenas restore`;
+  richer export remains a post-v1 local-support goal unless a separate
   implementation spec promotes it.
 
 ---

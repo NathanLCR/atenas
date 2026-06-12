@@ -77,6 +77,36 @@ class AllowlistFilter:
         return False
 
 
+def _audit_cmd(fn):
+    """Wrap a Telegram command handler to emit a command_executed log event."""
+    import functools
+
+    @functools.wraps(fn)
+    async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        actor_user_id = update.effective_user.id if update.effective_user else None
+        msg = update.effective_message
+        text = msg.text if msg is not None else ""
+        command_name = text.split()[0] if text.strip().startswith("/") else fn.__name__
+        try:
+            await fn(update, context)
+            success = True
+        except Exception:
+            success = False
+            raise
+        finally:
+            logger.info(
+                "command_executed",
+                extra={
+                    "event_type": "command_executed",
+                    "command": command_name,
+                    "actor_user_id": actor_user_id,
+                    "success": success,
+                },
+            )
+
+    return wrapper
+
+
 async def ping_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Reply to /ping."""
 
@@ -201,16 +231,14 @@ async def natural_language_handler(update: Update, context: ContextTypes.DEFAULT
         lower = text.strip().lower()
         if lower in ("yes", "y", "confirm"):
             user_data.pop("nl_pending_action", None)
-            registry = _build_nl_tool_registry(context)
-            result = registry.execute_pending(pending, actor_user_id=user_id)
-            if pending_record is not None:
-                runtime_store.mark_pending_action(pending_record.id, status="executed")
-                runtime_store.mark_active_pending_actions(
-                    actor_user_id=user_id,
-                    channel="telegram",
-                    status="cancelled",
-                )
-            await _reply(update, result.message)
+            await _execute_pending_action(
+                update,
+                context,
+                user_id=user_id,
+                pending=pending,
+                pending_record=pending_record,
+                runtime_store=runtime_store,
+            )
             return
         if lower in ("no", "n", "cancel"):
             user_data.pop("nl_pending_action", None)
@@ -299,6 +327,65 @@ async def cancel_pending_command(update: Update, context: ContextTypes.DEFAULT_T
     if user_data is not None:
         user_data.pop("nl_pending_action", None)
     await _reply(update, "Cancelled pending action.")
+
+
+async def _execute_pending_action(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    user_id: int,
+    pending: object,
+    pending_record: object,
+    runtime_store: AgentRuntimeStore,
+) -> None:
+    """Execute a pending action and update durable store status based on outcome."""
+    registry = _build_nl_tool_registry(context)
+    result = registry.execute_pending(pending, actor_user_id=user_id)
+    if pending_record is not None:
+        if result.ok and result.executed:
+            runtime_store.mark_pending_action(pending_record.id, status="executed")
+            runtime_store.mark_active_pending_actions(
+                actor_user_id=user_id,
+                channel="telegram",
+                status="cancelled",
+            )
+        elif "Confirmation cancelled" in result.message:
+            runtime_store.mark_pending_action(pending_record.id, status="cancelled")
+        else:
+            runtime_store.mark_pending_action(pending_record.id, status="failed")
+            runtime_store.mark_active_pending_actions(
+                actor_user_id=user_id,
+                channel="telegram",
+                status="cancelled",
+            )
+    await _reply(update, result.message)
+
+
+async def confirm_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Execute the active pending action — deterministic equivalent of replying 'yes'."""
+    user_id = update.effective_user.id if update.effective_user else None
+    if user_id is None:
+        return
+    settings = _get_bot_settings(context)
+    runtime_store = AgentRuntimeStore(settings.db_path)
+    pending_record = runtime_store.get_active_pending_action(
+        actor_user_id=user_id,
+        channel="telegram",
+    )
+    if pending_record is None:
+        await _reply(update, "No pending action.")
+        return
+    user_data = getattr(context, "user_data", None)
+    if user_data is not None:
+        user_data.pop("nl_pending_action", None)
+    await _execute_pending_action(
+        update,
+        context,
+        user_id=user_id,
+        pending=pending_record.pending,
+        pending_record=pending_record,
+        runtime_store=runtime_store,
+    )
 
 
 async def _reply(update: Update, text: str) -> None:
@@ -737,44 +824,52 @@ def build_application(settings: Settings | None = None) -> Application:
     allowlist_filter = _build_allowlist_filter(runtime_settings.TELEGRAM_ALLOWED_USER_IDS)
     application = Application.builder().token(token).build()
     application.bot_data["settings"] = runtime_settings
-    application.add_handler(CommandHandler("ping", ping_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("status", status_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("skills", skills_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("today", today_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("week", week_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("deadlines", deadlines_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("availability", availability_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("plan", plan_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("study", study_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("pending", pending_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("cancel_pending", cancel_pending_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("add_module", add_module_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("add_class", add_class_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("add_shift", add_shift_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("add_assignment", add_assignment_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("set_status", set_status_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("set_hours", set_hours_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("modules", modules_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("classes", classes_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("shifts", shifts_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("assignments", assignments_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("add_note", add_note_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("notes", notes_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("note", note_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("archive_note", archive_note_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("add_file", add_file_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("files", files_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("search", search_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("link_note_file", link_note_file_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("ask_notes", ask_notes_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("ask_note", ask_note_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("sources", sources_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("summarize_note", summarize_note_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("explain_note", explain_note_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("questions_note", questions_note_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("flashcards_note", flashcards_note_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("rewrite_note", rewrite_note_command, filters=allowlist_filter))
-    application.add_handler(CommandHandler("reminders", reminders_command, filters=allowlist_filter))
+
+    _commands = [
+        ("ping", ping_command),
+        ("status", status_command),
+        ("skills", skills_command),
+        ("today", today_command),
+        ("week", week_command),
+        ("deadlines", deadlines_command),
+        ("availability", availability_command),
+        ("plan", plan_command),
+        ("study", study_command),
+        ("pending", pending_command),
+        ("cancel_pending", cancel_pending_command),
+        ("confirm", confirm_command),
+        ("add_module", add_module_command),
+        ("add_class", add_class_command),
+        ("add_shift", add_shift_command),
+        ("add_assignment", add_assignment_command),
+        ("set_status", set_status_command),
+        ("set_hours", set_hours_command),
+        ("modules", modules_command),
+        ("classes", classes_command),
+        ("shifts", shifts_command),
+        ("assignments", assignments_command),
+        ("add_note", add_note_command),
+        ("notes", notes_command),
+        ("note", note_command),
+        ("archive_note", archive_note_command),
+        ("add_file", add_file_command),
+        ("files", files_command),
+        ("search", search_command),
+        ("link_note_file", link_note_file_command),
+        ("ask_notes", ask_notes_command),
+        ("ask_note", ask_note_command),
+        ("sources", sources_command),
+        ("summarize_note", summarize_note_command),
+        ("explain_note", explain_note_command),
+        ("questions_note", questions_note_command),
+        ("flashcards_note", flashcards_note_command),
+        ("rewrite_note", rewrite_note_command),
+        ("reminders", reminders_command),
+    ]
+    for cmd_name, handler in _commands:
+        application.add_handler(
+            CommandHandler(cmd_name, _audit_cmd(handler), filters=allowlist_filter)
+        )
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & allowlist_filter, natural_language_handler))
     application.add_handler(MessageHandler(filters.COMMAND & allowlist_filter, unknown_command))
     return application

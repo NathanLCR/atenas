@@ -80,5 +80,5 @@ async def test_dispatch_calls_handler(registry: SkillRegistry) -> None:
         )
     )
 
-    assert await registry.dispatch("/status", "now", 42) == "/status:now:42"
+    assert await registry.dispatch("/status", "now", user_id=42) == "/status:now:42"
 

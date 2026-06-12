@@ -1,15 +1,23 @@
-# Atenas — Data Model v0.1
+# Atenas — Data Model
+
+## Status
+
+Refreshed against the implementation on 2026-06-12. The canonical SQLite
+schema owner is `core/db.py` (`SCHEMA_SQL` plus its migration helpers). This
+document summarizes that schema and records storage decisions; it does not
+duplicate the full DDL. If this summary and `core/db.py` disagree, `core/db.py`
+wins and this file must be updated.
 
 ## Storage Architecture
 
 | Layer | Technology | Role |
 |---|---|---|
-| **Source of truth for v1** | SQLite (`data/atenas.sqlite`) | Academic data, notes/files metadata, memory items, retrieval chunks, traces, and LLM call records |
+| **Source of truth for v1** | SQLite (`data/atenas.sqlite`) | Academic data, notes/files metadata, memory items, retrieval chunks, agent threads, pending actions, traces, and LLM call records |
 | **Human-readable files** | Registered files under allowed roots such as `inbox/` and `memory/` | User-provided source material for retrieval; not the canonical store for operational rows in v1 |
 
 SQLite is the v1 operational source of truth. If lost, restore from a database
-backup or a future export; the current implementation does not rebuild all user
-state from Markdown/YAML files.
+backup (`atenas backup` / `atenas restore`) or a future export; the current
+implementation does not rebuild all user state from Markdown/YAML files.
 
 ---
 
@@ -54,8 +62,8 @@ available.
 
 - All stored `created_at`/`updated_at` are UTC ISO 8601 (`utc_now()`).
 - All wall-clock fields (`date`, `start_time`, `end_time`) are **naive
-  local** and interpreted in `settings.timezone` (IANA, e.g.
-  `Europe/London`; default `UTC`).
+  local** and interpreted in `settings.timezone` (IANA; the configured
+  default is `Europe/Dublin` in `app/config.py`).
 - Every availability/fatigue/deadline computation converts via
   `settings.timezone` and uses the zone's real offset for that date, so DST
   shifts and an international student's relocation do not silently corrupt
@@ -64,230 +72,94 @@ available.
 
 ---
 
-## Key Design Decisions (corrections from PDF audit)
+## Key Design Decisions
 
-| Decision | Value | Source |
+| Decision | Value | Note |
 |---|---|---|
-| Primary keys | `TEXT` (UUID strings) | PDF spec |
-| fatigue_level | `TEXT` enum: `low`, `medium`, `high` | PDF spec |
-| work_shifts.date | Separate `TEXT` column (YYYY-MM-DD) | Added — PDF stores datetime in start_time but range queries need a date column |
-| work_shifts.start_time/end_time | `TEXT` HH:MM | PDF spec uses full datetime; we split for clarity |
-| Confidence threshold | 0.65 everywhere | PDF spec (was inconsistent across generated specs) |
+| Schema owner | `core/db.py` `SCHEMA_SQL` + `_apply_*_migrations` | One canonical DDL location; no duplicate schema definitions |
+| Primary keys | `TEXT` (UUID strings) for domain tables; `INTEGER AUTOINCREMENT` for `notes`/`files`/`note_file_links` | Knowledge tables predate the UUID convention and keep integer IDs |
+| fatigue_level | `TEXT` enum: `low`, `medium`, `high` with CHECK constraint | |
+| work_shifts datetimes | `start_at`/`end_at` ISO datetimes are the live fields; legacy `date`/`start_time`/`end_time` columns remain for backward compatibility | |
+| assignments deadlines | `due_at` ISO datetime is the live field; legacy `due_date` remains | |
+| assignments priority | `priority_rank INTEGER 1–5` is the live field; legacy `priority TEXT` remains | |
+| Confidence threshold | 0.65 everywhere | Secondary signal only — see `docs/SCHEMAS.md` conventions |
 
 ---
 
-## SQLite Schema v1
+## SQLite Schema v1 — Table Summary
 
-Directly from PDF spec with corrections noted.
+Full DDL lives in `core/db.py`. Tables by concern:
 
-```sql
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
+### Academic
 
-CREATE TABLE IF NOT EXISTS documents (
-    id          TEXT PRIMARY KEY,
-    title       TEXT NOT NULL,
-    type        TEXT NOT NULL,
-    domain      TEXT NOT NULL,
-    path        TEXT NOT NULL,
-    summary     TEXT,
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL
-);
+- `study_modules` — module catalog (`id`, `code`, `name`, `lecturer`, `notes`).
+- `assignments` — assignment tracking (`id`, `title`, `module_id`,
+  `description`, `due_date` legacy, `due_at`, `status` default `'todo'`,
+  `priority` legacy, `priority_rank` default `3`, `weight`,
+  `estimated_hours`, `completed_hours`, `notes`, `brief_path`).
+- `work_shifts` — work shifts (`id`, `title`, `date`, `workplace`,
+  `start_time`/`end_time` legacy, `start_at`/`end_at`, `location`, `role`,
+  `energy_cost`, `commute_minutes`, `fatigue_level` CHECK low/medium/high,
+  `notes`, `source`).
+- `class_sessions` — recurring classes (`id`, `module_id` nullable, `title`,
+  `weekday` 0–6, `start_time`, `end_time`, `location`, `recurrence`,
+  `active`, `notes`).
+- `study_blocks` — planned study blocks (`id`, `title`, `date`,
+  `start_time`, `end_time`, `intensity` CHECK recovery/light/medium/deep,
+  `task_id`, `module_id`, `plan_id`).
+- `tasks` — sub-assignment tasks (`id`, `title`, `description`, `domain`,
+  `module_id`, `assignment_id`, `status`, `priority`, `estimated_minutes`,
+  `due_date`).
 
-CREATE TABLE IF NOT EXISTS chunks (
-    id            TEXT PRIMARY KEY,
-    document_id   TEXT NOT NULL REFERENCES documents(id),
-    chunk_index   INTEGER NOT NULL,
-    text          TEXT NOT NULL,
-    summary       TEXT,
-    section       TEXT,
-    page_start    INTEGER,
-    page_end      INTEGER,
-    embedding_id  TEXT,
-    embedding     TEXT,
-    embedding_dim INTEGER,
-    created_at    TEXT NOT NULL
-);
+### Knowledge and retrieval
 
-CREATE TABLE IF NOT EXISTS nodes (
-    id          TEXT PRIMARY KEY,
-    type        TEXT NOT NULL,
-    title       TEXT NOT NULL,
-    path        TEXT,
-    summary     TEXT,
-    importance  TEXT,
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL
-);
+- `notes` — user notes (`id` INTEGER, `title`, `body`, `module_id`,
+  `assignment_id`, `source_type`, `tags`, `archived`).
+- `files` — registered local files (`id` INTEGER, `path`, `filename`,
+  `title`, `description`, `module_id`, `assignment_id`, `file_type`,
+  `mime_type`, `size_bytes`, `sha256`, `tags`, `archived`).
+- `note_file_links` — note↔file links (unique `note_id`+`file_id`).
+- `retrieval_chunks` — indexed text chunks (`id`, `source_kind`
+  CHECK note/file, `source_id`, `chunk_index`, `title`, `text`,
+  `module_id`, `assignment_id`, `updated_at`, `indexed_at`; unique
+  source_kind+source_id+chunk_index).
+- `retrieval_chunks_fts` — FTS5 virtual table mirroring `retrieval_chunks`
+  (`chunk_id` unindexed, `title`, `text`).
+- `documents` / `chunks` — reserved document-ingestion tables with an
+  `embedding` column reserved for a post-v1 embedding store. **No v1 code
+  writes embeddings**; see "Search Ranking Design" below.
 
-CREATE TABLE IF NOT EXISTS edges (
-    source_id   TEXT NOT NULL REFERENCES nodes(id),
-    relation    TEXT NOT NULL,
-    target_id   TEXT NOT NULL REFERENCES nodes(id),
-    confidence  REAL NOT NULL DEFAULT 1.0,
-    source      TEXT,
-    created_at  TEXT NOT NULL,
-    PRIMARY KEY (source_id, relation, target_id)
-);
+### Memory
 
-CREATE TABLE IF NOT EXISTS tasks (
-    id                 TEXT PRIMARY KEY,
-    title              TEXT NOT NULL,
-    description        TEXT,
-    domain             TEXT,
-    module_id          TEXT,
-    assignment_id      TEXT,
-    status             TEXT NOT NULL DEFAULT 'todo',
-    priority           TEXT NOT NULL DEFAULT 'medium',
-    estimated_minutes  INTEGER,
-    due_date           TEXT,
-    created_at         TEXT NOT NULL,
-    updated_at         TEXT NOT NULL
-);
+- `memory_items` — persistent user memory (`id`, `content`, `summary`,
+  `domain`, `topic`, `tags` JSON, `importance`, `source`, `inferred`,
+  `sensitive`, timestamps).
 
-CREATE TABLE IF NOT EXISTS assignments (
-    id              TEXT PRIMARY KEY,
-    title           TEXT NOT NULL,
-    module_id       TEXT,
-    description     TEXT,
-    due_date        TEXT,
-    estimated_hours REAL,
-    status          TEXT NOT NULL DEFAULT 'not_started',
-    priority        TEXT NOT NULL DEFAULT 'medium',
-    brief_path      TEXT,
-    created_at      TEXT NOT NULL,
-    updated_at      TEXT NOT NULL
-);
+### Agent runtime
 
--- CORRECTION: added date column; fatigue_level is TEXT CHECK constraint
-CREATE TABLE IF NOT EXISTS work_shifts (
-    id               TEXT PRIMARY KEY,
-    date             TEXT NOT NULL,
-    workplace        TEXT,
-    start_time       TEXT NOT NULL,
-    end_time         TEXT NOT NULL,
-    role             TEXT,
-    commute_minutes  INTEGER NOT NULL DEFAULT 0,
-    fatigue_level    TEXT NOT NULL DEFAULT 'medium'
-                         CHECK(fatigue_level IN ('low', 'medium', 'high')),
-    notes            TEXT,
-    source           TEXT NOT NULL DEFAULT 'telegram',
-    created_at       TEXT NOT NULL,
-    updated_at       TEXT NOT NULL
-);
+- `agent_threads` — durable conversation state per actor/channel (`id`,
+  `actor_user_id`, `channel`, `status`, `conversation_json`,
+  `selected_tools_json`).
+- `pending_actions` — durable confirm-first proposals (`id`, `thread_id`,
+  `actor_user_id`, `tool_name`, `action_type`, `proposal_json`,
+  `confirmation_message`, `status` pending/executed/cancelled/expired,
+  `expires_at`).
+- `agent_traces` / `agent_trace_steps` — operational trace metadata
+  (summaries only; no full prompt/note/file bodies).
 
-CREATE TABLE IF NOT EXISTS class_sessions (
-    id          TEXT PRIMARY KEY,
-    module_id   TEXT NOT NULL,
-    title       TEXT NOT NULL,
-    start_time  TEXT NOT NULL,
-    end_time    TEXT NOT NULL,
-    location    TEXT,
-    recurrence  TEXT,
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL
-);
+### Audit
 
-CREATE TABLE IF NOT EXISTS study_blocks (
-    id          TEXT PRIMARY KEY,
-    title       TEXT NOT NULL,
-    date        TEXT NOT NULL,
-    start_time  TEXT NOT NULL,
-    end_time    TEXT NOT NULL,
-    intensity   TEXT NOT NULL
-                    CHECK(intensity IN ('recovery','light','medium','deep')),
-    task_id     TEXT,
-    module_id   TEXT,
-    plan_id     TEXT,
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL
-);
+- `llm_calls` — LLM call records (`provider`, `model`, `task_type`, token
+  counts, `estimated_cost`, `success`, `latency_ms`, `schema_valid`,
+  `policy_passed`, `outcome`).
 
--- ADDITION: memory_items table (not in PDF but needed for FR-03)
-CREATE TABLE IF NOT EXISTS memory_items (
-    id          TEXT PRIMARY KEY,
-    content     TEXT NOT NULL,
-    summary     TEXT NOT NULL,
-    domain      TEXT NOT NULL,
-    topic       TEXT NOT NULL,
-    tags        TEXT NOT NULL DEFAULT '[]',
-    importance  TEXT NOT NULL DEFAULT 'medium',
-    source      TEXT NOT NULL DEFAULT 'telegram',
-    inferred    INTEGER NOT NULL DEFAULT 1,
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL
-);
+### Reserved (no v1 consumer)
 
-CREATE TABLE IF NOT EXISTS llm_calls (
-    id              TEXT PRIMARY KEY,
-    provider        TEXT NOT NULL,
-    model           TEXT NOT NULL,
-    task_type       TEXT NOT NULL,
-    input_tokens    INTEGER,
-    output_tokens   INTEGER,
-    estimated_cost  REAL,
-    success         INTEGER NOT NULL,
-    latency_ms      INTEGER,
-    schema_valid    INTEGER,
-    policy_passed   INTEGER,
-    outcome         TEXT NOT NULL DEFAULT 'success',
-    created_at      TEXT NOT NULL
-);
-```
+- `nodes` / `edges` — graph ontology tables, deferred to post-v1 (below).
 
-Add indexes for common queries:
-```sql
-CREATE INDEX IF NOT EXISTS idx_chunks_document ON chunks(document_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
-CREATE INDEX IF NOT EXISTS idx_tasks_due_date ON tasks(due_date);
-CREATE INDEX IF NOT EXISTS idx_assignments_status ON assignments(status);
-CREATE INDEX IF NOT EXISTS idx_assignments_due_date ON assignments(due_date);
-CREATE INDEX IF NOT EXISTS idx_work_shifts_date ON work_shifts(date);
-CREATE INDEX IF NOT EXISTS idx_study_blocks_date ON study_blocks(date);
-CREATE INDEX IF NOT EXISTS idx_memory_items_domain ON memory_items(domain);
-CREATE INDEX IF NOT EXISTS idx_memory_items_topic ON memory_items(topic);
-CREATE INDEX IF NOT EXISTS idx_llm_calls_task_type ON llm_calls(task_type);
-CREATE INDEX IF NOT EXISTS idx_llm_calls_provider ON llm_calls(provider);
-
--- FTS5 virtual table for retrieval full-text search
-CREATE VIRTUAL TABLE IF NOT EXISTS retrieval_chunks_fts
-USING fts5(chunk_id UNINDEXED, title, text);
-
--- Agent trace tables (operational metadata, no full prompt/note/file bodies)
-CREATE TABLE IF NOT EXISTS agent_traces (
-    id TEXT PRIMARY KEY,
-    actor_user_id INTEGER,
-    started_at TEXT NOT NULL,
-    completed_at TEXT,
-    model TEXT,
-    status TEXT NOT NULL,
-    user_message_summary TEXT NOT NULL,
-    final_message_summary TEXT,
-    tool_call_count INTEGER NOT NULL DEFAULT 0,
-    pending_action_type TEXT,
-    latency_ms INTEGER,
-    error TEXT
-);
-
-CREATE TABLE IF NOT EXISTS agent_trace_steps (
-    id TEXT PRIMARY KEY,
-    trace_id TEXT NOT NULL REFERENCES agent_traces(id),
-    step_index INTEGER NOT NULL,
-    tool_name TEXT NOT NULL,
-    arguments_summary TEXT NOT NULL,
-    ok INTEGER NOT NULL,
-    executed INTEGER NOT NULL,
-    pending INTEGER NOT NULL,
-    message_summary TEXT,
-    latency_ms INTEGER,
-    created_at TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_agent_traces_started ON agent_traces(started_at);
-CREATE INDEX IF NOT EXISTS idx_agent_traces_status ON agent_traces(status);
-CREATE INDEX IF NOT EXISTS idx_agent_trace_steps_trace ON agent_trace_steps(trace_id);
-```
+Backward-compatible column migrations for databases created by earlier phases
+are applied in `core/db.py` (`_apply_phase3_migrations`,
+`_apply_memory_migrations`).
 
 ---
 
@@ -301,24 +173,28 @@ operations.
 
 ---
 
-## Semantic Search Storage Design
+## Search Ranking Design
 
-Decision for v1 (single-user scale): **no external vector store** (Qdrant is
-out of scope, SQLite has no native vector type).
+**v1 decision (implemented):** retrieval ranking is FTS5/BM25 with a
+deterministic sparse lexical fallback (`core/retrieval/embeddings.py` provides
+tokenization and lexical scoring only — despite the module name, it computes no
+vector embeddings). There is no vector store, no embedding generation, and no
+cosine similarity in v1.
 
-- Each chunk's embedding is stored on the `chunks` row as `embedding` =
-  JSON-encoded `list[float]`, with `embedding_dim` recording the vector
-  length. `embedding_id` is reserved for a future external store and stays
-  null in v1.
-- Retrieval is **brute-force cosine** computed in Python over the candidate
-  chunk set (optionally pre-filtered by `document_id`/`section`). At
-  single-user scale (thousands of chunks, not millions) this is well within
-  the NFR-02 budget; a linear scan of ~10k 768-dim vectors is tens of ms.
-- **Documented ceiling:** if total chunks exceed ~50k, revisit (add an ANN
-  index or `sqlite-vec`). That is a post-v1 concern, explicitly noted so the
-  decision is not silently outgrown.
-- Embedding model: Ollama `nomic-embed-text` (config
-  `OLLAMA_EMBEDDING_MODEL`). Built in Phase 10, after Phase 9 chunking.
+**Post-v1 option (not implemented):** semantic search via per-chunk embeddings.
+The reserved design, recorded for when a concrete need arises:
+
+- Store each chunk's embedding on the `chunks` row as JSON-encoded
+  `list[float]` with `embedding_dim`; `embedding_id` stays reserved for a
+  future external store.
+- Brute-force cosine in Python over the candidate set is acceptable at
+  single-user scale; revisit with an ANN index or `sqlite-vec` past ~50k
+  chunks.
+- Candidate embedding model: Ollama `nomic-embed-text`
+  (`OLLAMA_EMBEDDING_MODEL` config exists but is unused in v1).
+
+No doc or feature may assume semantic search exists until this lands in code
+and tests.
 
 ---
 
@@ -349,12 +225,14 @@ StudyBlock  ──part_of──►  DailyPlan
 Paper       ──supports──►  Assignment
 Chunk       ──belongs_to──►  Paper
 Note        ──derived_from──►  Paper
-Concept     ──appears_in──►  Module
 ```
 
 ---
 
-## YAML File Formats
+## YAML File Formats (deferred protocol examples)
+
+These formats belong to the deferred Markdown/YAML source-of-truth protocol
+above. They are not read or written by v1 code.
 
 ### `memory/work/shifts.yaml`
 ```yaml

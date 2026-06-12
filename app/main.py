@@ -79,10 +79,11 @@ def create_app(settings: Settings | None = None, registry: SkillRegistry | None 
     async def local_only_guard(request: Request, call_next):
         if runtime_settings.allow_non_loopback_clients:
             return await call_next(request)
-        client_host = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-        if not client_host and request.client is not None:
-            client_host = request.client.host
-        if client_host and not _is_loopback_or_test_client(client_host):
+        peer_host = request.client.host if request.client is not None else None
+        if peer_host and not _is_loopback_or_test_client(peer_host):
+            return JSONResponse({"detail": "Atenas API/dashboard is local-only."}, status_code=403)
+        forwarded_for = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+        if forwarded_for and not _is_loopback_or_test_client(forwarded_for):
             return JSONResponse({"detail": "Atenas API/dashboard is local-only."}, status_code=403)
         return await call_next(request)
 

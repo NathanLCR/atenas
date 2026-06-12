@@ -44,6 +44,8 @@ Atenas ships a Click-based CLI accessed via the `atenas` command:
 atenas doctor        # Check DB, Ollama, config, Telegram, web tools
 atenas traces        # Show recent agent trace records (--limit N)
 atenas tui           # Launch the terminal TUI dashboard
+atenas backup        # Create a local zip backup (--include-logs)
+atenas restore PATH  # Restore a backup archive (--force to overwrite)
 ```
 
 Install the CLI with `pip install -e .` after creating the venv.

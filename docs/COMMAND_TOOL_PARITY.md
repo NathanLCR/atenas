@@ -15,6 +15,7 @@ behavior.
 | `/skills` | Command-only | Telegram command catalog/help surface. |
 | `/pending` | Command-only | Deterministic pending-action review shortcut backed by `AgentRuntimeStore`. |
 | `/cancel_pending` | Command-only | Deterministic pending-action cancellation shortcut backed by `AgentRuntimeStore`. |
+| `/confirm` | Command-only | Deterministic equivalent of replying `yes` to the active pending action; backed by `AgentRuntimeStore`. |
 | `/today` | `get_today_overview` | Equivalent read path. |
 | `/week` | `get_week_overview` | Equivalent read path. |
 | `/deadlines` | `get_deadlines` | Equivalent read path. |

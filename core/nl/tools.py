@@ -217,6 +217,10 @@ class ToolRegistry:
         self.action_executor.register_action("write_memory", self._execute_write_memory)
         self.action_executor.register_action("update_memory", self._execute_update_memory)
         self.action_executor.register_action("web_search", self._execute_web_search)
+        self.action_executor.register_action("add_assignment", self._execute_add_assignment)
+        self.action_executor.register_action("add_note", self._execute_add_note)
+        self.action_executor.register_action("add_class_session", self._execute_add_class_session)
+        self.action_executor.register_action("add_work_shift", self._execute_add_work_shift)
     @staticmethod
     def _default_tool_defs(*, web_enabled: bool = False) -> list[ToolDefinition]:
         """Return the canonical list of tool definitions."""
@@ -1024,89 +1028,102 @@ class ToolRegistry:
     def _tool_add_assignment(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
         """Auto-tier local write: add a new assignment with title, due date, and optional module/priority/hours."""
         parsed = typed(args, AddAssignmentArgs)
-        # Resolve module reference if provided
         module_id = None
         if parsed.module_id:
             module_res = self._resolve_module_id(parsed.module_id)
-            if isinstance(module_res, str):  # error message
+            if isinstance(module_res, str):
                 return tool_error(module_res)
             module_id = module_res
-        
-        # Create the assignment
-        result = self._academic().add_assignment(
-            title=parsed.title,
-            due_at=parsed.due_at,
-            module_id=module_id,
-            priority=parsed.priority,
-            estimated_hours=parsed.estimated_hours
+        payload = {
+            "title": parsed.title,
+            "due_at": parsed.due_at,
+            "module_id": module_id,
+            "priority": parsed.priority,
+            "estimated_hours": parsed.estimated_hours,
+        }
+        return self._gate_action(
+            tool_name="add_assignment",
+            action_type="add_assignment",
+            payload=payload,
+            tier=ActionTier.AUTO,
+            criticality=ActionCriticality.LOCAL_WRITE,
+            actor_user_id=actor_user_id,
+            confirmation_message="",
         )
-        if not result.success:
-            return tool_error(result.message)
-        return action_tool_run(command_action_result("add_assignment", result))
 
     def _tool_add_note(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
         """Auto-tier local write: create a new note with title, body, and optional module/tags."""
         parsed = typed(args, AddNoteArgs)
-        # Resolve module reference if provided
         module_id = None
         if parsed.module_id:
             module_res = self._resolve_module_id(parsed.module_id)
-            if isinstance(module_res, str):  # error message
+            if isinstance(module_res, str):
                 return tool_error(module_res)
             module_id = module_res
-        
-        # Create the note
-        result = self._knowledge().create_note(
-            title=parsed.title,
-            body=parsed.body,
-            module_id=module_id,
-            tags=parsed.tags,
-            source_type="manual"
+        payload = {
+            "title": parsed.title,
+            "body": parsed.body,
+            "module_id": module_id,
+            "tags": parsed.tags,
+        }
+        return self._gate_action(
+            tool_name="add_note",
+            action_type="add_note",
+            payload=payload,
+            tier=ActionTier.AUTO,
+            criticality=ActionCriticality.LOCAL_WRITE,
+            actor_user_id=actor_user_id,
+            confirmation_message="",
         )
-        if not result.success:
-            return tool_error(result.message)
-        return action_tool_run(command_action_result("add_note", result))
 
     def _tool_add_class_session(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
         """Auto-tier local write: add a recurring class session."""
         parsed = typed(args, AddClassSessionArgs)
-        # Resolve module reference if provided
         module_id = None
         if parsed.module_id:
             module_res = self._resolve_module_id(parsed.module_id)
-            if isinstance(module_res, str):  # error message
+            if isinstance(module_res, str):
                 return tool_error(module_res)
             module_id = module_res
-        
-        # Create the class session
-        result = self._academic().add_class_session(
-            title=parsed.title,
-            weekday=parsed.weekday,
-            start_time=parsed.start_time,
-            end_time=parsed.end_time,
-            module_id=module_id,
-            location=parsed.location
+        payload = {
+            "title": parsed.title,
+            "weekday": parsed.weekday,
+            "start_time": parsed.start_time,
+            "end_time": parsed.end_time,
+            "module_id": module_id,
+            "location": parsed.location,
+        }
+        return self._gate_action(
+            tool_name="add_class_session",
+            action_type="add_class_session",
+            payload=payload,
+            tier=ActionTier.AUTO,
+            criticality=ActionCriticality.LOCAL_WRITE,
+            actor_user_id=actor_user_id,
+            confirmation_message="",
         )
-        if not result.success:
-            return tool_error(result.message)
-        return action_tool_run(command_action_result("add_class_session", result))
 
     def _tool_add_work_shift(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
         """Auto-tier local write: add a work shift."""
         parsed = typed(args, AddWorkShiftArgs)
-        # Create the work shift
-        result = self._academic().add_work_shift(
-            title=parsed.title,
-            start_at=parsed.start_at,
-            end_at=parsed.end_at,
-            location=parsed.location,
-            role=parsed.role,
-            energy_cost=parsed.energy_cost,
-            fatigue_level=parsed.fatigue_level,
+        payload = {
+            "title": parsed.title,
+            "start_at": parsed.start_at,
+            "end_at": parsed.end_at,
+            "location": parsed.location,
+            "role": parsed.role,
+            "energy_cost": parsed.energy_cost,
+            "fatigue_level": parsed.fatigue_level.value if hasattr(parsed.fatigue_level, "value") else parsed.fatigue_level,
+        }
+        return self._gate_action(
+            tool_name="add_work_shift",
+            action_type="add_work_shift",
+            payload=payload,
+            tier=ActionTier.AUTO,
+            criticality=ActionCriticality.LOCAL_WRITE,
+            actor_user_id=actor_user_id,
+            confirmation_message="",
         )
-        if not result.success:
-            return tool_error(result.message)
-        return action_tool_run(command_action_result("add_work_shift", result))
 
     def _resolve_module_id(self, value: str) -> str | None:
         """Resolve a module reference to a module ID, returning error message if not found."""
@@ -1180,6 +1197,49 @@ class ToolRegistry:
         action_result = command_action_result("archive_note", result)
         action_result.payload["after_state"] = after_state
         return action_result
+
+    def _execute_add_assignment(self, payload: dict[str, Any]) -> ActionResult:
+        result = self._academic().add_assignment(
+            title=payload["title"],
+            due_at=payload["due_at"],
+            module_id=payload.get("module_id"),
+            priority=payload.get("priority", 3),
+            estimated_hours=payload.get("estimated_hours"),
+        )
+        return command_action_result("add_assignment", result)
+
+    def _execute_add_note(self, payload: dict[str, Any]) -> ActionResult:
+        result = self._knowledge().create_note(
+            title=payload["title"],
+            body=payload["body"],
+            module_id=payload.get("module_id"),
+            tags=payload.get("tags") or [],
+            source_type="manual",
+        )
+        return command_action_result("add_note", result)
+
+    def _execute_add_class_session(self, payload: dict[str, Any]) -> ActionResult:
+        result = self._academic().add_class_session(
+            title=payload["title"],
+            weekday=payload["weekday"],
+            start_time=payload["start_time"],
+            end_time=payload["end_time"],
+            module_id=payload.get("module_id"),
+            location=payload.get("location"),
+        )
+        return command_action_result("add_class_session", result)
+
+    def _execute_add_work_shift(self, payload: dict[str, Any]) -> ActionResult:
+        result = self._academic().add_work_shift(
+            title=payload["title"],
+            start_at=payload["start_at"],
+            end_at=payload["end_at"],
+            location=payload.get("location"),
+            role=payload.get("role"),
+            energy_cost=payload.get("energy_cost"),
+            fatigue_level=payload.get("fatigue_level", "medium"),
+        )
+        return command_action_result("add_work_shift", result)
 
     def _execute_write_memory(self, payload: dict[str, Any]) -> ActionResult:
         created, conflicts = self._memory().write(
