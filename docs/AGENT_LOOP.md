@@ -62,9 +62,14 @@ task instead of being re-classified from scratch.
 
 | Category | Purpose | Examples |
 |---|---|---|
-| **Read / search** | Pull current state and context | today/week overview, list assignments/modules/shifts, search notes, retrieve sources, *web search (guarded)* |
+| **Read / search** | Pull current state and context | today/week overview, list assignments/modules/shifts, search notes, retrieve sources |
 | **Compute / cross-reference** | Deterministic heavy lifting | study planner, **duplicate detector**, deadline-risk scoring, availability math |
 | **Act** | Change state or reach outside | create/update/delete records, **deduplicate**, set status, add class/shift, schedule, send |
+
+Web search is **not** a read tool. It is registered in its own guarded `web`
+category at the confirm-first tier (a query is egress), and only when web
+access is enabled. See "Web Use" below; `SECURITY.md` lists `web_search` in
+`CONFIRMATION_REQUIRED`.
 
 Tools have validated argument schemas and structured result schemas. The LLM
 calls tools only; it never touches services, repositories, files, or the shell.
@@ -136,6 +141,22 @@ Shipped tool-loop behavior:
    `deduplicate_modules`, `archive_note`, and `update_memory` capture prior
    state in `before_state` and post-execution state in `after_state` where
    meaningful, with sensitive content summarized or redacted.
+5. **Toolset visibility** — `core/nl/toolsets.py` groups tools into named
+   toolsets (safe, destructive, egress, readonly, dev-local). The agent only
+   sees tools in the toolsets selected for the current message; destructive
+   and egress toolsets are added per message by deterministic request-marker
+   matching, never by the model.
 
-Remaining v1 work is tracked in
+### Known gaps (2026-06-12)
+
+The 2026-06-11 audit found the implementation non-compliant with this
+contract in specific places. WP1 and WP2 from the closure spec have landed;
+the remaining open item is:
+
+- Toolset request markers are English-only, which can hide destructive tools
+  from non-English requests. (WP6 — pending)
+
+Fixes are specified in
+`docs/superpowers/specs/2026-06-12-v1-defect-and-governance-closure-spec.md`.
+Remaining earlier v1 work is tracked in
 `docs/superpowers/specs/2026-05-24-atenas-v1-gap-and-packaging-spec.md`.

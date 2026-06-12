@@ -18,8 +18,8 @@ Corrections applied from PDF audit:
 - Every `confidence` field is **model self-reported and uncalibrated** — it
   is a weak hint, not a probability. `MIN_CONFIDENCE_THRESHOLD` (0.65) is the
   *secondary* escalation signal only. The *primary*, reliable signals are
-  schema-validity and explicit task class (see AGENT_POLICY "LLM Routing").
-  Never make a safety or correctness decision on `confidence` alone.
+  schema-validity and explicit task class (see AGENT_POLICY "LLM Provider
+  Rules"). Never make a safety or correctness decision on `confidence` alone.
 
 ---
 
@@ -131,9 +131,11 @@ Fields:
 - `importance`: enum `low`, `medium`, `high`, `critical` (required)
 - `sensitive`: boolean (default false) — true marks the item as private
   (health, finances, relationships, credentials, anything the user would not
-  want sent off-device). The cloud gate (AGENT_POLICY "Memory Rules") MUST
-  refuse to send a `sensitive` item to a cloud LLM without explicit per-use
-  confirmation. This is the implementation hook that makes that rule real.
+  want sent off-device). The cloud gate (AGENT_POLICY "Memory and Notes" and
+  "LLM Provider Rules") MUST refuse to send a `sensitive` item to a cloud LLM
+  without explicit per-use confirmation. This is the implementation hook for
+  that rule; external providers are not wired in v1, so the gate is a target
+  contract for whichever change first enables them.
 - `tags`: array of strings, max 8 items
 - `confidence`: float 0.0-1.0 (required, self-reported — see Conventions)
 

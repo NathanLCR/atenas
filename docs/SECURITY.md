@@ -249,19 +249,36 @@ If a forbidden or invalid action is attempted:
 
 ## Current Enforcement State
 
-Verified on 2026-05-25:
+Verified on 2026-05-25, re-audited on 2026-06-11:
 
 - The FastAPI app installs a local-only middleware guard by default; Docker
   Compose publishes `127.0.0.1:8000:8000`.
 - Telegram startup fails when a bot token is configured without a non-empty
   allowlist.
 - Plain Telegram messages route through `AgentLoop` and `ToolRegistry`, with
-  Pydantic argument validation, deterministic action tiers, policy checks,
-  pending confirmation for confirm-first tools, and audit logging.
+  Pydantic argument validation, deterministic action tiers, pending
+  confirmation for confirm-first tools, and audit logging.
 - Web search is disabled by default and, when enabled, is confirm-first egress.
 - Retrieval and agent prompts delimit untrusted user/source/web content.
 - Slash-command and agent-tool parity is audited in
   `docs/COMMAND_TOOL_PARITY.md`, including command-only support surfaces.
+
+### Known non-compliance (2026-06-11 audit)
+
+All five items identified in the 2026-06-11 audit have been resolved by WP2
+of the closure spec (committed 2026-06-12):
+
+- X-Forwarded-For guard now bases its allow decision on the socket peer and
+  only uses the forwarded header to make the decision stricter.
+- The auto-tier act tools `add_assignment`, `add_note`, `add_class_session`,
+  and `add_work_shift` now route through `_gate_action` → `PolicyEngine` and
+  emit `action_executed` audit records.
+- Pending action status is now accurate: `executed`, `failed`, or `cancelled`
+  based on the actual `execute_pending` result.
+- `/confirm` is registered as a Telegram command and shares the same code
+  path as plain `yes` confirmation.
+- All Telegram command handlers emit `command_executed` log events via the
+  `_audit_cmd` decorator; `SkillRegistry.dispatch` does the same.
 
 Remaining security follow-up:
 
