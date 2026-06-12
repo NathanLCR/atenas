@@ -471,6 +471,13 @@ async def add_shift_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
 
     energy = args.get("energy")
+    energy_cost: int | None = None
+    if energy is not None:
+        try:
+            energy_cost = int(energy)
+        except (ValueError, TypeError):
+            await _reply(update, "energy must be a number 1-5")
+            return
     fatigue_level = args.get("fatigue_level") or args.get("fatigue")
     result = service.add_work_shift(
         title=args.get("title", "Work"),
@@ -478,7 +485,7 @@ async def add_shift_command(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         end_at=end,
         location=args.get("location"),
         role=args.get("role"),
-        energy_cost=int(energy) if energy else None,
+        energy_cost=energy_cost,
         fatigue_level=fatigue_level or "medium",
         notes=args.get("notes"),
     )
