@@ -147,16 +147,6 @@ Shipped tool-loop behavior:
    and egress toolsets are added per message by deterministic request-marker
    matching, never by the model.
 
-### Known gaps (2026-06-12)
-
-The 2026-06-11 audit found the implementation non-compliant with this
-contract in specific places. WP1 and WP2 from the closure spec have landed;
-the remaining open item is:
-
-- Toolset request markers are English-only, which can hide destructive tools
-  from non-English requests. (WP6 — pending)
-
-Fixes are specified in
-`docs/superpowers/specs/2026-06-12-v1-defect-and-governance-closure-spec.md`.
-Remaining earlier v1 work is tracked in
-`docs/superpowers/specs/2026-05-24-atenas-v1-gap-and-packaging-spec.md`.
+All defects identified by the 2026-06-11 audit are resolved as of 2026-06-13.
+See `docs/superpowers/specs/2026-06-12-v1-defect-and-governance-closure-spec.md`
+for the full record.
