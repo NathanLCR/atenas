@@ -33,3 +33,22 @@ def test_requirements_pin_python314_compatible_pydantic_stack() -> None:
 
     assert _version_tuple(_pinned_requirement("pydantic")) >= (2, 13, 4)
     assert _version_tuple(_pinned_requirement("pydantic-settings")) >= (2, 14, 0)
+
+
+def test_requirements_includes_all_pyproject_dependencies() -> None:
+    """Every [project] dependency name in pyproject.toml must appear in requirements.txt."""
+
+    import re
+
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    req_text = Path("requirements.txt").read_text(encoding="utf-8").lower()
+
+    for dep_spec in pyproject["project"]["dependencies"]:
+        # Extract bare package name (before version specifier and extras).
+        name = re.split(r"[>=<!;\[\s]", dep_spec, maxsplit=1)[0].strip().lower()
+        # Normalise dashes/underscores for lookup.
+        normalised = name.replace("-", "-").replace("_", "-")
+        assert normalised in req_text, (
+            f"'{name}' declared in pyproject.toml [project] dependencies "
+            f"but not found in requirements.txt"
+        )
