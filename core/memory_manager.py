@@ -8,7 +8,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from core.db import get_connection
+from core.db import connect
 from core.schemas import Importance, MemoryDomain, MemoryItem, StrictModel
 from core.time import utc_now_iso
 from pydantic import Field
@@ -75,7 +75,7 @@ class MemoryRepository:
         self.db_path = db_path
 
     def insert(self, item: MemoryItem) -> MemoryItem:
-        with get_connection(self.db_path) as conn:
+        with connect(self.db_path) as conn:
             conn.execute(
                 """
                 INSERT INTO memory_items (
@@ -102,7 +102,7 @@ class MemoryRepository:
         return item
 
     def get_by_id(self, memory_id: str) -> MemoryItemRecord | None:
-        with get_connection(self.db_path) as conn:
+        with connect(self.db_path) as conn:
             row = conn.execute(
                 "SELECT * FROM memory_items WHERE id = ?", (memory_id,),
             ).fetchone()
@@ -142,7 +142,7 @@ class MemoryRepository:
         where = "WHERE " + " AND ".join(conditions) if conditions else ""
         params.append(limit)
 
-        with get_connection(self.db_path) as conn:
+        with connect(self.db_path) as conn:
             rows = conn.execute(
                 f"SELECT * FROM memory_items {where} ORDER BY updated_at DESC LIMIT ?",
                 params,
@@ -158,7 +158,7 @@ class MemoryRepository:
         limit: int = 5,
     ) -> list[MemoryItemRecord]:
         """Find existing items that may conflict with a new memory entry."""
-        with get_connection(self.db_path) as conn:
+        with connect(self.db_path) as conn:
             rows = conn.execute(
                 """
                 SELECT * FROM memory_items
@@ -208,7 +208,7 @@ class MemoryRepository:
         set_clause = ", ".join(f"{k} = ?" for k in updates)
         values = list(updates.values()) + [memory_id]
 
-        with get_connection(self.db_path) as conn:
+        with connect(self.db_path) as conn:
             conn.execute(
                 f"UPDATE memory_items SET {set_clause} WHERE id = ?",
                 values,
@@ -218,7 +218,7 @@ class MemoryRepository:
         return self.get_by_id(memory_id)
 
     def delete(self, memory_id: str) -> bool:
-        with get_connection(self.db_path) as conn:
+        with connect(self.db_path) as conn:
             cursor = conn.execute(
                 "DELETE FROM memory_items WHERE id = ?",
                 (memory_id,),
@@ -227,7 +227,7 @@ class MemoryRepository:
         return cursor.rowcount > 0
 
     def count(self) -> int:
-        with get_connection(self.db_path) as conn:
+        with connect(self.db_path) as conn:
             row = conn.execute("SELECT COUNT(*) as cnt FROM memory_items").fetchone()
         return row["cnt"]
 

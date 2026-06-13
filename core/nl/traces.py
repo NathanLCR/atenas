@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from core.db import get_connection
+from core.db import connect
 from core.schemas import new_id
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ class AgentTraceStore:
         """Insert a new trace row and return its id."""
         trace_id = new_id()
         started_at = _now_iso()
-        with get_connection(self.db_path) as conn:
+        with connect(self.db_path) as conn:
             conn.execute(
                 """
                 INSERT INTO agent_traces
@@ -67,7 +67,7 @@ class AgentTraceStore:
         """Record a single tool-call step."""
         step_id = new_id()
         created_at = _now_iso()
-        with get_connection(self.db_path) as conn:
+        with connect(self.db_path) as conn:
             conn.execute(
                 """
                 INSERT INTO agent_trace_steps
@@ -99,7 +99,7 @@ class AgentTraceStore:
     ) -> None:
         """Mark a trace as completed with final status."""
         completed_at = _now_iso()
-        with get_connection(self.db_path) as conn:
+        with connect(self.db_path) as conn:
             conn.execute(
                 """
                 UPDATE agent_traces
@@ -123,7 +123,7 @@ class AgentTraceStore:
 
     def list_recent(self, limit: int = 20) -> list[dict[str, Any]]:
         """Return recent traces ordered by started_at DESC."""
-        with get_connection(self.db_path) as conn:
+        with connect(self.db_path) as conn:
             rows = conn.execute(
                 """
                 SELECT id, actor_user_id, started_at, completed_at, model,
