@@ -81,16 +81,28 @@ TOOLSET_TOOL_NAMES = {
 }
 
 DESTRUCTIVE_REQUEST_MARKERS = (
+    # English
     "archive",
     "clear",
     "deduplicate",
     "de-duplicate",
     "delete",
+    "merge",
     "merge duplicate",
     "remove",
+    # Portuguese
+    "apagar",
+    "arquivar",
+    "deletar",
+    "duplicado",
+    "duplicar",
+    "excluir",
+    "limpar",
+    "remover",
 )
 
 EGRESS_REQUEST_MARKERS = (
+    # English
     "google",
     "internet",
     "look up",
@@ -98,6 +110,12 @@ EGRESS_REQUEST_MARKERS = (
     "online",
     "search the web",
     "web",
+    # Portuguese
+    "buscar na internet",
+    "buscar na web",
+    "na internet",
+    "online",
+    "pesquisar",
 )
 
 
