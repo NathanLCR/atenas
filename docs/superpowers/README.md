@@ -32,8 +32,8 @@ Archival plans:
 | Pending-action UX | Done | `docs/superpowers/specs/2026-05-24-local-model-agent-runtime-state-spec.md` | Durable confirmation exists, and deterministic `/pending` plus `/cancel_pending` commands are registered. |
 | Toolsets | Done | `docs/superpowers/specs/2026-05-24-hermes-inspired-agent-hardening-spec.md` | `core/nl/toolsets.py` groups safe, egress, destructive, readonly, and dev-local tools; the agent loop filters visible tools by selected toolsets. |
 | Backup and restore | Done | `docs/superpowers/specs/2026-05-24-hermes-inspired-agent-hardening-spec.md` | `core/backup.py` and `atenas backup`/`atenas restore` exist with tests. |
-| v1 defect and governance closure | Next (current priority) | `docs/superpowers/specs/2026-06-12-v1-defect-and-governance-closure-spec.md` | Fix the 2026-06-11 audit findings: agent-tool crashes, policy/audit bypass on auto-tier `add_*` tools, local-only guard header trust, pending-action status accuracy, `/confirm`, command logging, and dead-module cleanup. |
-| Local model profile config | Next | Runtime state and Hermes specs | Add explicit context length, timeout, prompt limits, and doctor output. |
+| v1 defect and governance closure | Done | `docs/superpowers/specs/2026-06-12-v1-defect-and-governance-closure-spec.md` | All WP1–WP6 fixes landed 2026-06-13: tool crashes, policy/audit governance on add_* tools, X-Forwarded-For guard, pending-action status, /confirm command, command audit logging, dead-module removal, SQLite connection hygiene, WAL-safe backup, Portuguese toolset markers. |
+| Local model profile config | Next (current priority) | Runtime state and Hermes specs | Add explicit context length, timeout, prompt limits, and doctor output. |
 | Budgeted prompt assembly and tighter tool selection | Next | Runtime state spec | Extract prompt assembly from `core/nl/agent.py`, enforce model-profile budgets, and record selection metadata. |
 | Trace replay and search | Next | Runtime state and Hermes specs | Extend trace inspection without rerunning writes or exposing full prompts by default. |
 | Approved skill memory | Later | Hermes spec | Store reviewed procedural memories as context only; never grant permissions. |
@@ -68,9 +68,6 @@ Large files should be split as they are touched by the next phases:
 
 ## Next Recommended Slice
 
-Implement the v1 defect and governance closure spec
-(`docs/superpowers/specs/2026-06-12-v1-defect-and-governance-closure-spec.md`)
-before any feature work: correctness and policy-compliance fixes come first.
-After that, implement local model profile config (explicit context length,
-timeout, prompt limits, and doctor output) before prompt-budget and trace
-replay work.
+Implement local model profile config (explicit context length, timeout, prompt
+limits, and doctor output) before prompt-budget and trace replay work. The v1
+defect and governance closure spec is complete as of 2026-06-13.
