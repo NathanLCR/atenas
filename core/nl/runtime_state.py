@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from core.db import get_connection, init_db
+from core.db import connect, init_db
 from core.nl.tool_contracts import PendingToolAction
 from core.schemas import ActionProposal, StrictModel, new_id
 from core.utils import utc_now
@@ -54,7 +54,7 @@ class AgentRuntimeStore:
     ) -> AgentThreadRecord:
         """Return the active thread for an actor/channel, creating one."""
 
-        with get_connection(self.db_path) as conn:
+        with connect(self.db_path) as conn:
             row = conn.execute(
                 """
                 SELECT *
@@ -101,7 +101,7 @@ class AgentRuntimeStore:
             channel=channel,
         )
         now = utc_now()
-        with get_connection(self.db_path) as conn:
+        with connect(self.db_path) as conn:
             conn.execute(
                 """
                 UPDATE agent_threads
@@ -137,7 +137,7 @@ class AgentRuntimeStore:
         )
         pending_id = new_id()
         now = utc_now()
-        with get_connection(self.db_path) as conn:
+        with connect(self.db_path) as conn:
             conn.execute(
                 """
                 INSERT INTO pending_actions (
@@ -179,7 +179,7 @@ class AgentRuntimeStore:
     ) -> PendingActionRecord | None:
         """Return the newest pending action for this actor/channel."""
 
-        with get_connection(self.db_path) as conn:
+        with connect(self.db_path) as conn:
             row = conn.execute(
                 """
                 SELECT pending_actions.*, agent_threads.channel
@@ -207,7 +207,7 @@ class AgentRuntimeStore:
         """Mark a pending action as executed, cancelled, expired, or similar."""
 
         now = utc_now()
-        with get_connection(self.db_path) as conn:
+        with connect(self.db_path) as conn:
             conn.execute(
                 """
                 UPDATE pending_actions
@@ -228,7 +228,7 @@ class AgentRuntimeStore:
         """Mark all pending actions for an actor/channel with a terminal status."""
 
         now = utc_now()
-        with get_connection(self.db_path) as conn:
+        with connect(self.db_path) as conn:
             cursor = conn.execute(
                 """
                 UPDATE pending_actions

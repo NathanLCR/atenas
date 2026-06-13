@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sqlite3
+import tempfile
 import zipfile
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
@@ -62,13 +64,32 @@ class BackupService:
             "excluded_secret_paths": [".env"],
         }
 
-        with zipfile.ZipFile(archive_path, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
-            for item in files:
-                archive.write(item["source_path"], item["archive_path"])
-            archive.writestr(
-                "manifest.json",
-                json.dumps(manifest, indent=2, sort_keys=True),
-            )
+        db_path = Path(self.settings.db_path)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            snapshot_path = Path(tmpdir) / "atenas_snapshot.sqlite"
+            if db_path.exists():
+                src = sqlite3.connect(str(db_path))
+                try:
+                    dst = sqlite3.connect(str(snapshot_path))
+                    try:
+                        src.backup(dst)
+                    finally:
+                        dst.close()
+                finally:
+                    src.close()
+
+            with zipfile.ZipFile(archive_path, mode="w", compression=zipfile.ZIP_DEFLATED) as archive:
+                for item in files:
+                    source = item["source_path"]
+                    arc = item["archive_path"]
+                    if arc == "data/atenas.sqlite" and snapshot_path.exists():
+                        archive.write(str(snapshot_path), arc)
+                    else:
+                        archive.write(source, arc)
+                archive.writestr(
+                    "manifest.json",
+                    json.dumps(manifest, indent=2, sort_keys=True),
+                )
         return archive_path
 
     def restore_backup(self, archive_path: Path, *, force: bool = False) -> None:

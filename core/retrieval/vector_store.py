@@ -6,7 +6,7 @@ import sqlite3
 from pathlib import Path
 from typing import Iterable
 
-from core.db import get_connection, init_db
+from core.db import connect, init_db
 from core.retrieval.embeddings import lexical_score, query_terms
 from core.retrieval.models import RetrievalChunk, RetrievedSource
 from core.time import utc_now_iso
@@ -29,7 +29,7 @@ class RetrievalVectorStore:
 
     def rebuild(self, chunks: list[RetrievalChunk]) -> int:
         indexed_at = utc_now_iso()
-        with get_connection(self.db_path) as conn:
+        with connect(self.db_path) as conn:
             conn.execute("DELETE FROM retrieval_chunks")
             conn.executemany(
                 """
@@ -69,7 +69,7 @@ class RetrievalVectorStore:
     ) -> bool:
         """Return whether a source's indexed chunks match its current shape."""
 
-        with get_connection(self.db_path) as conn:
+        with connect(self.db_path) as conn:
             row = conn.execute(
                 """
                 SELECT COUNT(*) AS chunk_count,
@@ -99,7 +99,7 @@ class RetrievalVectorStore:
             raise ValueError("replace_source requires chunks from exactly one source")
 
         indexed_at = utc_now_iso()
-        with get_connection(self.db_path) as conn:
+        with connect(self.db_path) as conn:
             conn.execute(
                 "DELETE FROM retrieval_chunks WHERE source_kind = ? AND source_id = ?",
                 (source_kind, source_id),
@@ -142,7 +142,7 @@ class RetrievalVectorStore:
 
         active = set(active_sources)
         deleted = 0
-        with get_connection(self.db_path) as conn:
+        with connect(self.db_path) as conn:
             rows = conn.execute(
                 """
                 SELECT DISTINCT source_kind, source_id
@@ -163,13 +163,13 @@ class RetrievalVectorStore:
         return deleted
 
     def count(self) -> int:
-        with get_connection(self.db_path) as conn:
+        with connect(self.db_path) as conn:
             return int(conn.execute("SELECT COUNT(*) AS count FROM retrieval_chunks").fetchone()["count"])
 
     def _fts_available(self) -> bool:
         """Check if FTS5 is available and the virtual table exists."""
         try:
-            with get_connection(self.db_path) as conn:
+            with connect(self.db_path) as conn:
                 conn.execute("SELECT count(*) FROM retrieval_chunks_fts").fetchone()
             return True
         except sqlite3.OperationalError:
@@ -216,7 +216,7 @@ class RetrievalVectorStore:
 
         where = " AND ".join(conditions)
         try:
-            with get_connection(self.db_path) as conn:
+            with connect(self.db_path) as conn:
                 rows = conn.execute(
                     f"""
                     SELECT rc.source_kind, rc.source_id, rc.chunk_index,
@@ -294,7 +294,7 @@ class RetrievalVectorStore:
             params.append(assignment_id)
         where = "WHERE " + " AND ".join(conditions) if conditions else ""
 
-        with get_connection(self.db_path) as conn:
+        with connect(self.db_path) as conn:
             rows = conn.execute(
                 f"""
                 SELECT source_kind, source_id, chunk_index, title, text,

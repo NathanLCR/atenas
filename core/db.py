@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 import re
 import sqlite3
+from contextlib import contextmanager
+from collections.abc import Iterator
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -347,6 +349,20 @@ ON retrieval_chunks(module_id);
 CREATE INDEX IF NOT EXISTS idx_retrieval_chunks_assignment
 ON retrieval_chunks(assignment_id);
 """
+
+
+@contextmanager
+def connect(db_path: Path | str) -> Iterator[sqlite3.Connection]:
+    """Context manager that opens, yields, commits/rolls back, and closes."""
+    conn = get_connection(db_path)
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def get_connection(db_path: Path | str) -> sqlite3.Connection:
