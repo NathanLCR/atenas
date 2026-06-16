@@ -1,5 +1,7 @@
 # Atenas Core
 
+[![CI](https://github.com/nathanlcr/atenas/actions/workflows/ci.yml/badge.svg)](https://github.com/nathanlcr/atenas/actions/workflows/ci.yml)
+
 Atenas is a Telegram-first, local-running LLM study assistant for a working
 student. The app, database, files, dashboard, and REST API are local developer
 surfaces. Telegram is the primary product interface.
