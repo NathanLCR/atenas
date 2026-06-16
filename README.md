@@ -32,6 +32,12 @@ Everything that changes is logged.
   confirmation before execution. Forbidden actions are blocked. See
   `docs/AGENT_LOOP.md`.
 
+## Getting Started
+
+New here? Follow [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) for a
+step-by-step setup from a fresh clone: install, pull the local Ollama models,
+create your Telegram bot, configure `.env`, and verify with `atenas doctor`.
+
 ## Run
 
 ```bash
