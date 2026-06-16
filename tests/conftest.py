@@ -7,6 +7,23 @@ import pytest
 from app.config import Settings
 from core.db import init_db
 from core.skill_registry import SkillRegistry
+from core.utils import ensure_runtime_directories
+
+
+@pytest.fixture(autouse=True, scope="session")
+def _ensure_default_file_roots() -> None:
+    """Create the default file roots services fall back to (inbox, memory).
+
+    Several services default ``allowed_file_roots`` to ``[inbox, memory]``
+    relative to the working directory, and ``PathPolicy`` rejects a config
+    with no existing root. These directories are gitignored, so a fresh
+    checkout lacks them and the suite would fail at import-time service
+    construction. Creating them mirrors the runtime bootstrap done by app
+    startup and ``atenas doctor``.
+    """
+
+    defaults = Settings(_env_file=None).knowledge_file_roots
+    ensure_runtime_directories(defaults)
 
 
 @pytest.fixture
