@@ -18,7 +18,7 @@ from app.config import Settings, get_settings
 from app.dashboard import router as dashboard_router
 from core.db import init_db
 from core.skill_registry import SkillRegistry, get_registry
-from core.utils import setup_logging
+from core.utils import ensure_runtime_directories, setup_logging
 from skills.status.handler import register_status_skill
 
 logger = logging.getLogger(__name__)
@@ -32,6 +32,7 @@ def create_app(settings: Settings | None = None, registry: SkillRegistry | None 
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        ensure_runtime_directories(runtime_settings.runtime_directories)
         setup_logging(runtime_settings.logs_dir, runtime_settings.log_level)
         init_db(runtime_settings.db_path)
         register_status_skill(

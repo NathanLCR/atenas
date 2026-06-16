@@ -7,6 +7,8 @@ phase, or build-prompt docs — those caused the divergence we removed.
 
 ```text
 docs/
+├── GETTING_STARTED.md
+│                     Fresh-clone setup: install, Ollama models, Telegram, .env
 ├── AGENT_LOOP.md     The agent loop + action-tier governance contract (canonical)
 ├── PRODUCT_SPEC.md   What Atenas is, who it's for, success criteria
 ├── ARCHITECTURE.md   How the agent loop, tools, and layers are structured

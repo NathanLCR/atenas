@@ -1,5 +1,7 @@
 # Atenas Core
 
+[![CI](https://github.com/nathanlcr/atenas/actions/workflows/ci.yml/badge.svg)](https://github.com/nathanlcr/atenas/actions/workflows/ci.yml)
+
 Atenas is a Telegram-first, local-running LLM study assistant for a working
 student. The app, database, files, dashboard, and REST API are local developer
 surfaces. Telegram is the primary product interface.
@@ -31,6 +33,12 @@ Everything that changes is logged.
   (confirm-first tier) additionally show a pending action and require explicit
   confirmation before execution. Forbidden actions are blocked. See
   `docs/AGENT_LOOP.md`.
+
+## Getting Started
+
+New here? Follow [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) for a
+step-by-step setup from a fresh clone: install, pull the local Ollama models,
+create your Telegram bot, configure `.env`, and verify with `atenas doctor`.
 
 ## Run
 
@@ -108,3 +116,7 @@ docker-compose up
 - `docs/AGENT_POLICY.md` defines agent behavior and tool-use rules.
 - `docs/SECURITY.md` defines the local-only and Telegram security contract.
 - `docs/REQUIREMENTS.md` defines functional and non-functional requirements.
+
+## License
+
+Atenas is released under the MIT License. See [`LICENSE`](LICENSE).
