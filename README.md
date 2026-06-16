@@ -11,9 +11,10 @@ updates. Slash commands remain supported as fast shortcuts.
 The operating doctrine is:
 
 ```text
-LLM proposes.
-Deterministic systems validate.
-Human approves critical actions.
+The LLM is a tool-calling agent with strong tools.
+Deterministic systems validate and do the heavy lifting.
+The human approves only what deletes or leaves the machine.
+Everything that changes is logged.
 ```
 
 ## Product Posture
@@ -24,9 +25,12 @@ Human approves critical actions.
 - Local Ollama is the default LLM provider. Any external LLM provider is
   explicit opt-in because prompt and tool-result data leave the machine.
 - Read tools may run after Telegram allowlist validation.
-- LLM-originated writes must resolve stable IDs, show a pending action, require
-  explicit confirmation, pass the policy engine, execute through services, and
-  log the result.
+- Governance is tiered. Reversible, local, low-risk writes (auto tier) resolve
+  stable IDs, pass the policy engine, execute through services, and are
+  audit-logged — no prior confirmation. Destructive and egress actions
+  (confirm-first tier) additionally show a pending action and require explicit
+  confirmation before execution. Forbidden actions are blocked. See
+  `docs/AGENT_LOOP.md`.
 
 ## Run
 
