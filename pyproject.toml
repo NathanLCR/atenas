@@ -1,7 +1,11 @@
 [project]
 name = "atenas-core"
 version = "0.1.0"
+description = "Telegram-first, local-running LLM study assistant."
+readme = "README.md"
 requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "Nathan Lúcio" }]
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.6",
