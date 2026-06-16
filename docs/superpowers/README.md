@@ -40,7 +40,7 @@ Archival plans:
 | Trace replay and search | Next | Runtime state and Hermes specs | Extend trace inspection without rerunning writes or exposing full prompts by default. |
 | Approved skill memory | Later | Hermes spec | Store reviewed procedural memories as context only; never grant permissions. |
 | Channel adapter boundary | Later | Hermes spec | Extract only when a second channel is actually scoped. |
-| Reliable tool-decision parsing (WP1) | Proposed | `docs/superpowers/specs/2026-06-16-agent-best-practices-enhancement-spec.md` | Ollama structured output plus one bounded repair re-ask before fallback. Highest-value reliability win for the weak local model. |
+| Reliable tool-decision parsing (WP1) | Done | `docs/superpowers/specs/2026-06-16-agent-best-practices-enhancement-spec.md` | Ollama structured output (`format="json"`) plus one bounded repair re-ask before fallback; repair_count recorded in agent trace. Landed 2026-06-16. |
 | Tool result curation and pagination (WP2) | Proposed | `docs/superpowers/specs/2026-06-16-agent-best-practices-enhancement-spec.md` | Consistent limit/offset/truncation defaults and concise/detailed verbosity on read tools. |
 | Steering tool-error messages (WP4) | Proposed | `docs/superpowers/specs/2026-06-16-agent-best-practices-enhancement-spec.md` | Resolvers return candidate disambiguation so the agent can recover or ask. |
 | Conversational UX: progress, transparency, undo (WP5) | Proposed | `docs/superpowers/specs/2026-06-16-agent-best-practices-enhancement-spec.md` | Bridging "working on it" message, opt-in tools-used footer, and `/undo` for auto-tier writes via audit before-state. |

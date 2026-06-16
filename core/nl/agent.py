@@ -75,6 +75,7 @@ class AgentLoop:
         history = _clean_history(conversation or [])
         observations: list[dict[str, Any]] = []
         tool_call_count = 0
+        repair_count = 0
         trace_id = self._start_trace(user_message, actor_user_id)
         turn_started = time.perf_counter()
 
@@ -86,7 +87,7 @@ class AgentLoop:
             )
             started = time.perf_counter()
             try:
-                response = self.client.generate(prompt)
+                response = self._generate_decision(prompt)
                 latency_ms = int((time.perf_counter() - started) * 1000)
                 log_llm_call(
                     self._llm_log_path,
@@ -117,12 +118,30 @@ class AgentLoop:
                     trace_id, "llm_error",
                     final_message=fallback,
                     tool_call_count=tool_call_count,
+                    repair_count=repair_count,
                     all_latency_ms=all_latency,
                     error=str(exc),
                 )
                 return _turn_result(history, user_message, fallback)
 
-            decision = _parse_decision(response.text)
+            decision, parse_error = _parse_decision_with_error(response.text)
+            if decision is None and repair_count == 0:
+                repair_count = 1
+                logger.info(
+                    "agent_repair_attempt",
+                    extra={
+                        "event_type": "agent_repair_attempt",
+                        "parse_error": parse_error,
+                    },
+                )
+                repair_prompt = _build_repair_prompt(prompt, response.text, parse_error)
+                try:
+                    repair_response = self._generate_decision(repair_prompt)
+                except (ConnectionError, TimeoutError, OSError) as exc:
+                    decision = None
+                else:
+                    decision, _ = _parse_decision_with_error(repair_response.text)
+
             if decision is None:
                 message = (
                     "I could not get a valid tool decision, so nothing else changed. "
@@ -133,6 +152,7 @@ class AgentLoop:
                     trace_id, "error",
                     final_message=message,
                     tool_call_count=tool_call_count,
+                    repair_count=repair_count,
                     all_latency_ms=all_latency,
                 )
                 return _turn_result(history, user_message, message)
@@ -146,6 +166,7 @@ class AgentLoop:
                     trace_id, "success",
                     final_message=message,
                     tool_call_count=tool_call_count,
+                    repair_count=repair_count,
                     all_latency_ms=all_latency,
                 )
                 return _turn_result(history, user_message, message)
@@ -157,6 +178,7 @@ class AgentLoop:
                     trace_id, "tool_cap",
                     final_message=message,
                     tool_call_count=tool_call_count,
+                    repair_count=repair_count,
                     all_latency_ms=all_latency,
                 )
                 return _turn_result(history, user_message, message)
@@ -168,6 +190,7 @@ class AgentLoop:
                     trace_id, "error",
                     final_message=message,
                     tool_call_count=tool_call_count,
+                    repair_count=repair_count,
                     all_latency_ms=all_latency,
                 )
                 return _turn_result(history, user_message, message)
@@ -179,6 +202,7 @@ class AgentLoop:
                     trace_id, "tool_error",
                     final_message=message,
                     tool_call_count=tool_call_count,
+                    repair_count=repair_count,
                     all_latency_ms=all_latency,
                 )
                 return _turn_result(history, user_message, message)
@@ -217,6 +241,7 @@ class AgentLoop:
                     trace_id, "tool_error",
                     final_message=message,
                     tool_call_count=tool_call_count,
+                    repair_count=repair_count,
                     all_latency_ms=all_latency,
                 )
                 return _turn_result(history, user_message, message)
@@ -226,6 +251,7 @@ class AgentLoop:
                     trace_id, "success",
                     final_message=run.result.message,
                     tool_call_count=tool_call_count,
+                    repair_count=repair_count,
                     pending_action_type=run.pending_action.tool_name,
                     all_latency_ms=all_latency,
                 )
@@ -242,6 +268,7 @@ class AgentLoop:
             trace_id, "tool_cap",
             final_message=message,
             tool_call_count=tool_call_count,
+            repair_count=repair_count,
             all_latency_ms=all_latency,
         )
         return _turn_result(history, user_message, message)
@@ -284,6 +311,13 @@ class AgentLoop:
                 latency_ms=latency_ms,
             )
 
+    def _generate_decision(self, prompt: str):
+        """Call the LLM with structured-output hint, degrade gracefully if ignored."""
+        try:
+            return self.client.generate(prompt, format="json")
+        except TypeError:
+            return self.client.generate(prompt)
+
     def _finish_trace(
         self,
         trace_id: str | None,
@@ -294,6 +328,7 @@ class AgentLoop:
         pending_action_type: str | None = None,
         all_latency_ms: int | None = None,
         error: str | None = None,
+        repair_count: int = 0,
     ) -> None:
         if trace_id is not None and self._trace_store is not None:
             self._trace_store.finish_trace(
@@ -304,6 +339,7 @@ class AgentLoop:
                 pending_action_type=pending_action_type,
                 latency_ms=all_latency_ms,
                 error=error,
+                repair_count=repair_count,
             )
 
     def _build_prompt(
@@ -375,15 +411,52 @@ Return only valid JSON in one of these shapes:
 
 
 def _parse_decision(text: str) -> AgentDecision | None:
+    decision, _ = _parse_decision_with_error(text)
+    return decision
+
+
+def _parse_decision_with_error(text: str) -> tuple[AgentDecision | None, str]:
+    """Parse a decision and return (decision, error_description).
+
+    error_description is empty on success and contains a human-readable
+    validation summary on failure, suitable for the repair prompt.
+    """
     data = _extract_json_object(text)
     if data is None:
-        return None
+        return None, "Response did not contain a JSON object."
     data = _normalize_decision_shape(data)
     try:
-        return AgentDecision.model_validate(data)
-    except ValidationError:
+        return AgentDecision.model_validate(data), ""
+    except ValidationError as exc:
         logger.info("agent_invalid_decision", extra={"event_type": "agent_invalid_decision"})
-        return None
+        return None, str(exc)
+
+
+_REPAIR_PROMPT = """Your previous response could not be parsed as a valid agent decision.
+
+Validation error:
+{parse_error}
+
+Required JSON shape — pick exactly one:
+{{"type":"tool_call","tool_name":"<name>","arguments":{{...}}}}
+{{"type":"final","message":"<short Telegram reply>"}}
+
+Respond with only the corrected JSON object and nothing else.
+
+Original prompt context:
+{original_prompt}
+
+Your malformed response was:
+{bad_response}
+"""
+
+
+def _build_repair_prompt(original_prompt: str, bad_response: str, parse_error: str) -> str:
+    return _REPAIR_PROMPT.format(
+        parse_error=parse_error,
+        original_prompt=original_prompt[-2000:],
+        bad_response=bad_response[:500],
+    )
 
 
 def _extract_json_object(text: str) -> dict[str, Any] | None:
