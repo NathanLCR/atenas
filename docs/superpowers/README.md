@@ -12,6 +12,8 @@ plans are archival, what comes next, and which refactors support that work.
 - `docs/superpowers/README.md` is the live roadmap.
 - `docs/superpowers/specs/*.md` are design records. Some remain current, but
   implementation status is summarized here.
+- `docs/superpowers/research/*.md` are cited research syntheses that inform
+  specs (e.g., agent best-practices research feeding the enhancement spec).
 - `docs/superpowers/plans/*.md` are archival implementation records. Their
   unchecked boxes preserve original task breakdowns, not current project state.
 
@@ -38,6 +40,18 @@ Archival plans:
 | Trace replay and search | Next | Runtime state and Hermes specs | Extend trace inspection without rerunning writes or exposing full prompts by default. |
 | Approved skill memory | Later | Hermes spec | Store reviewed procedural memories as context only; never grant permissions. |
 | Channel adapter boundary | Later | Hermes spec | Extract only when a second channel is actually scoped. |
+| Reliable tool-decision parsing (WP1) | Proposed | `docs/superpowers/specs/2026-06-16-agent-best-practices-enhancement-spec.md` | Ollama structured output plus one bounded repair re-ask before fallback. Highest-value reliability win for the weak local model. |
+| Tool result curation and pagination (WP2) | Proposed | `docs/superpowers/specs/2026-06-16-agent-best-practices-enhancement-spec.md` | Consistent limit/offset/truncation defaults and concise/detailed verbosity on read tools. |
+| Steering tool-error messages (WP4) | Proposed | `docs/superpowers/specs/2026-06-16-agent-best-practices-enhancement-spec.md` | Resolvers return candidate disambiguation so the agent can recover or ask. |
+| Conversational UX: progress, transparency, undo (WP5) | Proposed | `docs/superpowers/specs/2026-06-16-agent-best-practices-enhancement-spec.md` | Bridging "working on it" message, opt-in tools-used footer, and `/undo` for auto-tier writes via audit before-state. |
+| Offline agent eval harness (WP6) | Proposed | `docs/superpowers/specs/2026-06-16-agent-best-practices-enhancement-spec.md` | Trajectory regression tests against a scripted model; runs in CI without Ollama. |
+| Semantic user-profile memory (WP7) | Later | `docs/superpowers/specs/2026-06-16-agent-best-practices-enhancement-spec.md` | Compact, capped, consented preference profile as context only; never grants permissions. Extends "Approved skill memory". |
+
+The agent best-practices enhancement spec is grounded in
+`docs/superpowers/research/2026-06-16-agent-best-practices.md`. Its WP3
+(model-profile prompt budget and history compaction) extends the existing
+"Local model profile config" and "Budgeted prompt assembly" phases above rather
+than duplicating them.
 
 ## Refactor Support
 
@@ -71,3 +85,9 @@ Large files should be split as they are touched by the next phases:
 Implement local model profile config (explicit context length, timeout, prompt
 limits, and doctor output) before prompt-budget and trace replay work. The v1
 defect and governance closure spec is complete as of 2026-06-13.
+
+After model profile config, the highest-value new work is WP1 (reliable
+tool-decision parsing) from the agent best-practices enhancement spec: Ollama
+structured output plus one bounded repair re-ask directly attacks the weak
+local model's dominant failure mode. WP2 (tool result curation) and WP4
+(steering errors) are small, independent follow-ups.

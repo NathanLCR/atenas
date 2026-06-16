@@ -28,6 +28,30 @@ def test_db_path_property_resolves_correctly(tmp_path: Path) -> None:
     assert settings.db_path == tmp_path / "data" / "atenas.sqlite"
 
 
+def test_runtime_directories_cover_roots_without_duplicates(tmp_path: Path) -> None:
+    """runtime_directories must include all roots and dedupe overlaps."""
+
+    settings = Settings(
+        _env_file=None,
+        data_dir=tmp_path / "data",
+        logs_dir=tmp_path / "logs",
+        memory_dir=tmp_path / "memory",
+        inbox_dir=tmp_path / "inbox",
+        output_dir=tmp_path / "output",
+        knowledge_file_roots=[tmp_path / "inbox", tmp_path / "memory"],
+    )
+
+    dirs = settings.runtime_directories
+
+    assert tmp_path / "data" in dirs
+    assert tmp_path / "logs" in dirs
+    assert tmp_path / "inbox" in dirs
+    assert tmp_path / "memory" in dirs
+    assert tmp_path / "output" in dirs
+    # inbox/memory appear in both the dir fields and knowledge_file_roots.
+    assert len(dirs) == len(set(str(path) for path in dirs))
+
+
 def test_single_numeric_telegram_user_id_is_accepted() -> None:
     """A single numeric Telegram ID should be normalized to a list."""
 

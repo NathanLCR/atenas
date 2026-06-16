@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from collections.abc import Iterable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,24 @@ def utc_now() -> str:
     """Return the current UTC time as an ISO 8601 string."""
 
     return datetime.now(timezone.utc).isoformat()
+
+
+def ensure_runtime_directories(paths: Iterable[Path | str]) -> list[Path]:
+    """Create the runtime directories Atenas needs, idempotently.
+
+    A fresh checkout does not contain the gitignored runtime directories
+    (``data``, ``logs``, ``memory``, ``inbox``, ``output``). Services such as
+    the file ``PathPolicy`` require their roots to exist, so creating them up
+    front lets the app and its tests start from a clean clone. Returns the
+    resolved directories that were ensured.
+    """
+
+    ensured: list[Path] = []
+    for raw in paths:
+        directory = Path(raw).expanduser()
+        directory.mkdir(parents=True, exist_ok=True)
+        ensured.append(directory)
+    return ensured
 
 
 def slugify(text: str) -> str:

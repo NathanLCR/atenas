@@ -6,7 +6,34 @@ import json
 import logging
 from pathlib import Path
 
-from core.utils import JSONLHandler
+from core.utils import JSONLHandler, ensure_runtime_directories
+
+
+def test_ensure_runtime_directories_creates_missing_dirs(tmp_path: Path) -> None:
+    """A fresh checkout lacks runtime dirs; the helper must create them."""
+
+    inbox = tmp_path / "inbox"
+    memory = tmp_path / "nested" / "memory"
+    assert not inbox.exists()
+    assert not memory.exists()
+
+    ensured = ensure_runtime_directories([inbox, memory])
+
+    assert inbox.is_dir()
+    assert memory.is_dir()
+    assert set(ensured) == {inbox, memory}
+
+
+def test_ensure_runtime_directories_is_idempotent(tmp_path: Path) -> None:
+    """Re-running against existing directories must not raise."""
+
+    target = tmp_path / "data"
+    target.mkdir()
+    (target / "keep.txt").write_text("keep", encoding="utf-8")
+
+    ensure_runtime_directories([target])
+
+    assert (target / "keep.txt").read_text(encoding="utf-8") == "keep"
 
 
 def test_jsonl_handler_writes_exception_payload(tmp_path: Path) -> None:

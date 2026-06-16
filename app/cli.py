@@ -14,6 +14,7 @@ from core.backup import BackupService
 from core.db import get_connection, init_db
 from core.llm.client import OllamaClient
 from core.llm.engine import EngineHealth, OllamaEngine
+from core.utils import ensure_runtime_directories
 
 
 logger = logging.getLogger(__name__)
@@ -72,6 +73,10 @@ def _run_doctor() -> None:
 
     click.echo("Atenas Doctor")
     click.echo("=" * 40)
+
+    # Runtime directories
+    ensure_runtime_directories(settings.runtime_directories)
+    click.echo(f"  Runtime dirs: {len(settings.runtime_directories)} ensured — OK")
 
     # DB
     db_path = settings.db_path

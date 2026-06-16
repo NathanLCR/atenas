@@ -165,6 +165,33 @@ class Settings(BaseSettings):
         return self
 
     @property
+    def runtime_directories(self) -> list[Path]:
+        """Runtime directories that must exist before services start.
+
+        Includes the configured data/logs/memory/inbox/output roots plus any
+        knowledge file roots, deduplicated while preserving order. A fresh
+        checkout omits these gitignored directories, so startup and `atenas
+        doctor` create them before constructing services that require them.
+        """
+
+        candidates = [
+            self.data_dir,
+            self.logs_dir,
+            self.memory_dir,
+            self.inbox_dir,
+            self.output_dir,
+            *self.knowledge_file_roots,
+        ]
+        seen: set[str] = set()
+        ordered: list[Path] = []
+        for path in candidates:
+            key = str(path)
+            if key not in seen:
+                seen.add(key)
+                ordered.append(path)
+        return ordered
+
+    @property
     def db_path(self) -> Path:
         """Path to the SQLite operational database."""
 
