@@ -108,3 +108,7 @@ docker-compose up
 - `docs/AGENT_POLICY.md` defines agent behavior and tool-use rules.
 - `docs/SECURITY.md` defines the local-only and Telegram security contract.
 - `docs/REQUIREMENTS.md` defines functional and non-functional requirements.
+
+## License
+
+Atenas is released under the MIT License. See [`LICENSE`](LICENSE).
