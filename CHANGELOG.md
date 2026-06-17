@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   use the existing safe fallback. Repair attempts are recorded in the agent trace
   (`repair_count` column on `agent_traces`).
 
+- **WP2 — Tool result curation and pagination**: all read/compute list tools
+  (`list_modules`, `list_assignments`, `list_class_sessions`, `list_work_shifts`,
+  `search_notes`, `retrieve_sources`, `detect_duplicate_modules`) now support
+  `limit` (default 10), `offset` (default 0), and `verbosity` (`"concise"` or
+  `"detailed"`, default `"concise"`). Concise mode returns only actionable
+  summary fields; detailed mode returns the full object. Results include
+  `total` and `truncated` in `data`, and the message signals pagination
+  (e.g., "Showing 1–10 of 23. Use offset=10 to see more."). Invalid
+  pagination arguments return a steering error, not a crash.
+
 ## [0.1.0] - 2026-06-16
 
 First deliverable release: Atenas runs from a clean clone and can be handed to

@@ -25,10 +25,12 @@ from core.nl.tool_contracts import (
     AvailabilityArgs,
     DeadlinesArgs,
     DeduplicateModulesArgs,
+    DetectDuplicateModulesArgs,
     EmptyArgs,
     GenerateStudyPlanArgs,
     ListAssignmentsArgs,
     ListClassSessionsArgs,
+    ListModulesArgs,
     ListWorkShiftsArgs,
     ModuleDeleteArgs,
     PendingToolAction,
@@ -229,7 +231,7 @@ class ToolRegistry:
                 name="list_modules",
                 description="List study modules with stable IDs.",
                 category=ToolCategory.READ,
-                args_schema=EmptyArgs,
+                args_schema=ListModulesArgs,
                 result_schema=StructuredToolResult,
                 handler=None,
             ),
@@ -269,7 +271,7 @@ class ToolRegistry:
                 name="detect_duplicate_modules",
                 description="Detect duplicate study modules and propose canonical modules to keep.",
                 category=ToolCategory.COMPUTE,
-                args_schema=EmptyArgs,
+                args_schema=DetectDuplicateModulesArgs,
                 result_schema=StructuredToolResult,
                 handler=None,
             ),
@@ -540,12 +542,38 @@ class ToolRegistry:
         )
 
     def _tool_list_modules(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
+        parsed = typed(args, ListModulesArgs)
         modules = self._academic().list_modules()
-        data = {"modules": [module_data(module) for module in modules]}
+        total = len(modules)
+        sliced = modules[parsed.offset : parsed.offset + parsed.limit]
+
+        if parsed.verbosity == "concise":
+            serialized = [{"id": m.id, "name": m.name, "code": m.code} for m in sliced]
+        else:
+            serialized = [module_data(m) for m in sliced]
+
+        data = {
+            "modules": serialized,
+            "total": total,
+            "truncated": parsed.offset + parsed.limit < total,
+        }
+
         if not modules:
             return done("No modules found.", data=data)
+
+        if parsed.offset >= total:
+            return done(f"Offset {parsed.offset} is out of range. Total modules: {total}.", data=data)
+
         lines = ["Modules", ""]
-        lines.extend(f"- #{module.id[:8]} {module.name}{code_label(module.code)}" for module in modules)
+        lines.extend(f"- #{m.id[:8]} {m.name}{code_label(m.code)}" for m in sliced)
+
+        # Message pagination suffix
+        msg = f"Showing {parsed.offset+1}–{min(parsed.offset+parsed.limit, total)} of {total} modules."
+        if parsed.offset + parsed.limit < total:
+            msg += f" Use offset={parsed.offset+parsed.limit} to see more."
+        lines.append("")
+        lines.append(msg)
+
         return done("\n".join(lines), data=data)
 
     def _tool_list_assignments(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
@@ -559,14 +587,47 @@ class ToolRegistry:
                 assignment for assignment in assignments
                 if query in assignment.title.casefold() or assignment.id.startswith(parsed.query)
             ]
-        data = {"assignments": [assignment_data(assignment) for assignment in assignments]}
+        total = len(assignments)
+        sliced = assignments[parsed.offset : parsed.offset + parsed.limit]
+
+        if parsed.verbosity == "concise":
+            serialized = [
+                {
+                    "id": a.id,
+                    "title": a.title,
+                    "status": a.status.value,
+                    "due_at": a.due_at.isoformat(),
+                }
+                for a in sliced
+            ]
+        else:
+            serialized = [assignment_data(a) for a in sliced]
+
+        data = {
+            "assignments": serialized,
+            "total": total,
+            "truncated": parsed.offset + parsed.limit < total,
+        }
+
         if not assignments:
             return done("No matching assignments found.", data=data)
+
+        if parsed.offset >= total:
+            return done(f"Offset {parsed.offset} is out of range. Total assignments: {total}.", data=data)
+
         lines = ["Assignments", ""]
         lines.extend(
-            f"- #{assignment.id[:8]} {assignment.title} ({assignment.status.value})"
-            for assignment in assignments
+            f"- #{a.id[:8]} {a.title} ({a.status.value})"
+            for a in sliced
         )
+
+        # Message pagination suffix
+        msg = f"Showing {parsed.offset+1}–{min(parsed.offset+parsed.limit, total)} of {total} assignments."
+        if parsed.offset + parsed.limit < total:
+            msg += f" Use offset={parsed.offset+parsed.limit} to see more."
+        lines.append("")
+        lines.append(msg)
+
         return done("\n".join(lines), data=data)
 
     def _tool_suggest_next_task(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
@@ -587,46 +648,145 @@ class ToolRegistry:
 
     def _tool_search_notes(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
         parsed = typed(args, SearchNotesArgs)
-        results, error = self._knowledge().search(parsed.query, limit=parsed.limit)
+        results, error = self._knowledge().search(parsed.query, limit=1000)
         if error:
             return done(error, data={"results": []}, ok=False)
-        data = {"results": [result.model_dump(mode="json") for result in results]}
-        return done(f"Found {len(results)} local result(s).", data=data)
+        total = len(results)
+        sliced = results[parsed.offset : parsed.offset + parsed.limit]
+
+        if parsed.verbosity == "concise":
+            serialized = [
+                {
+                    "kind": r.kind,
+                    "id": r.id,
+                    "title": r.title,
+                    "snippet": r.snippet,
+                }
+                for r in sliced
+            ]
+        else:
+            serialized = [r.model_dump(mode="json") for r in sliced]
+
+        data = {
+            "results": serialized,
+            "total": total,
+            "truncated": parsed.offset + parsed.limit < total,
+        }
+
+        if parsed.offset >= total:
+            return done(f"Offset {parsed.offset} is out of range. Total results: {total}.", data=data)
+
+        msg = f"Showing {parsed.offset+1}–{min(parsed.offset+parsed.limit, total)} of {total} local result(s)."
+        if parsed.offset + parsed.limit < total:
+            msg += f" Use offset={parsed.offset+parsed.limit} to see more."
+
+        return done(msg, data=data)
 
     def _tool_retrieve_sources(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
         parsed = typed(args, RetrieveSourcesArgs)
         sources, error = self._retrieval().retrieve_sources(
             parsed.question,
-            limit=parsed.limit,
+            limit=1000,
             include_files=parsed.include_files,
         )
         if error:
             return done(error, data={"sources": []}, ok=False)
-        data = {"sources": [source.model_dump(mode="json") for source in sources]}
+        total = len(sources)
+        sliced = sources[parsed.offset : parsed.offset + parsed.limit]
+
+        if parsed.verbosity == "concise":
+            serialized = [
+                {
+                    "source_kind": s.source_kind,
+                    "source_id": s.source_id,
+                    "title": s.title,
+                    "snippet": s.snippet,
+                }
+                for s in sliced
+            ]
+        else:
+            serialized = [s.model_dump(mode="json") for s in sliced]
+
+        data = {
+            "sources": serialized,
+            "total": total,
+            "truncated": parsed.offset + parsed.limit < total,
+        }
+
         if not sources:
             return done("No local sources found for that question.", data=data)
-        return done(f"Retrieved {len(sources)} local source(s).", data=data)
+
+        if parsed.offset >= total:
+            return done(f"Offset {parsed.offset} is out of range. Total sources: {total}.", data=data)
+
+        msg = f"Showing {parsed.offset+1}–{min(parsed.offset+parsed.limit, total)} of {total} local source(s)."
+        if parsed.offset + parsed.limit < total:
+            msg += f" Use offset={parsed.offset+parsed.limit} to see more."
+
+        return done(msg, data=data)
 
     def _tool_detect_duplicate_modules(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
+        parsed = typed(args, DetectDuplicateModulesArgs)
         groups = self._academic().detect_duplicate_modules()
-        data = {
-            "groups": [
+        total = len(groups)
+        sliced = groups[parsed.offset : parsed.offset + parsed.limit]
+
+        if parsed.verbosity == "concise":
+            serialized = [
                 {
-                    "key": group.key,
-                    "canonical_module": module_data(group.canonical_module),
-                    "duplicate_modules": [module_data(module) for module in group.duplicate_modules],
-                    "all_modules": [module_data(module) for module in group.all_modules],
+                    "key": g.key,
+                    "canonical_module": {
+                        "id": g.canonical_module.id,
+                        "name": g.canonical_module.name,
+                        "code": g.canonical_module.code,
+                    },
+                    "duplicate_modules": [
+                        {
+                            "id": m.id,
+                            "name": m.name,
+                            "code": m.code,
+                        }
+                        for m in g.duplicate_modules
+                    ],
                 }
-                for group in groups
+                for g in sliced
             ]
+        else:
+            serialized = [
+                {
+                    "key": g.key,
+                    "canonical_module": module_data(g.canonical_module),
+                    "duplicate_modules": [module_data(m) for m in g.duplicate_modules],
+                    "all_modules": [module_data(m) for m in g.all_modules],
+                }
+                for g in sliced
+            ]
+
+        data = {
+            "groups": serialized,
+            "total": total,
+            "truncated": parsed.offset + parsed.limit < total,
         }
+
         if not groups:
             return done("No duplicate modules found.", data=data)
+
+        if parsed.offset >= total:
+            return done(f"Offset {parsed.offset} is out of range. Total duplicate module groups: {total}.", data=data)
+
         lines = ["Duplicate modules found", ""]
-        for group in groups:
-            lines.append(f"Keep #{group.canonical_module.id[:8]} {group.canonical_module.name}")
-            for module in group.duplicate_modules:
-                lines.append(f"Delete/merge #{module.id[:8]} {module.name}{code_label(module.code)}")
+        for g in sliced:
+            lines.append(f"Keep #{g.canonical_module.id[:8]} {g.canonical_module.name}")
+            for m in g.duplicate_modules:
+                lines.append(f"Delete/merge #{m.id[:8]} {m.name}{code_label(m.code)}")
+
+        # Message pagination suffix
+        msg = f"Showing {parsed.offset+1}–{min(parsed.offset+parsed.limit, total)} of {total} duplicate module group(s)."
+        if parsed.offset + parsed.limit < total:
+            msg += f" Use offset={parsed.offset+parsed.limit} to see more."
+        lines.append("")
+        lines.append(msg)
+
         return done("\n".join(lines), data=data)
 
     def _tool_set_assignment_status(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
@@ -918,24 +1078,83 @@ class ToolRegistry:
         """List class sessions with their times."""
         parsed = typed(args, ListClassSessionsArgs)
         sessions = self._academic().list_class_sessions(active_only=parsed.active_only)
+        total = len(sessions)
+        sliced = sessions[parsed.offset : parsed.offset + parsed.limit]
+
+        if parsed.verbosity == "concise":
+            serialized = [
+                {
+                    "id": s.id,
+                    "title": s.title,
+                    "weekday": s.weekday,
+                    "start_time": s.start_time,
+                    "end_time": s.end_time,
+                }
+                for s in sliced
+            ]
+        else:
+            serialized = [s.model_dump() for s in sliced]
+
+        data = {
+            "sessions": serialized,
+            "total": total,
+            "truncated": parsed.offset + parsed.limit < total,
+        }
+
         if not sessions:
-            return done("No class sessions found.", data={"sessions": []})
+            return done("No class sessions found.", data=data)
+
+        if parsed.offset >= total:
+            return done(f"Offset {parsed.offset} is out of range. Total class sessions: {total}.", data=data)
+
         lines = ["Class sessions", ""]
         lines.extend(
             f"- #{s.id[:8]} {s.title} on {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'][s.weekday]} "
             f"{s.start_time}-{s.end_time}" + (f" (module: {s.module_id})" if s.module_id else "")
-            for s in sessions
+            for s in sliced
         )
-        return done("\n".join(lines), data={"sessions": [s.model_dump() for s in sessions]})
+
+        # Message pagination suffix
+        msg = f"Showing {parsed.offset+1}–{min(parsed.offset+parsed.limit, total)} of {total} class sessions."
+        if parsed.offset + parsed.limit < total:
+            msg += f" Use offset={parsed.offset+parsed.limit} to see more."
+        lines.append("")
+        lines.append(msg)
+
+        return done("\n".join(lines), data=data)
 
     def _tool_list_work_shifts(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
         """List work shifts with their times and fatigue levels."""
         parsed = typed(args, ListWorkShiftsArgs)
         shifts = self._academic().list_work_shifts()
+        total = len(shifts)
+        sliced = shifts[parsed.offset : parsed.offset + parsed.limit]
+
+        if parsed.verbosity == "concise":
+            serialized = [
+                {
+                    "id": s.id,
+                    "title": s.title,
+                    "start_at": s.start_at.isoformat(),
+                    "end_at": s.end_at.isoformat(),
+                }
+                for s in sliced
+            ]
+        else:
+            serialized = [s.model_dump() for s in sliced]
+
+        data = {
+            "shifts": serialized,
+            "total": total,
+            "truncated": parsed.offset + parsed.limit < total,
+        }
+
         if not shifts:
-            return done("No work shifts found.", data={"shifts": []})
-        # Limit results as per args
-        limited_shifts = shifts[:parsed.limit] if parsed.limit < len(shifts) else shifts
+            return done("No work shifts found.", data=data)
+
+        if parsed.offset >= total:
+            return done(f"Offset {parsed.offset} is out of range. Total work shifts: {total}.", data=data)
+
         lines = ["Work shifts", ""]
         lines.extend(
             f"- #{s.id[:8]} {s.title} on {s.start_at.strftime('%a %d %b %H:%M')}-{s.end_at.strftime('%H:%M')}"
@@ -943,11 +1162,17 @@ class ToolRegistry:
             + f" (fatigue: {s.fatigue_level.value})"
             + (f" at {s.location}" if s.location else "")
             + (f" as {s.role}" if s.role else "")
-            for s in limited_shifts
+            for s in sliced
         )
-        if len(shifts) > parsed.limit:
-            lines.append(f"... and {len(shifts) - parsed.limit} more")
-        return done("\n".join(lines), data={"shifts": [s.model_dump() for s in limited_shifts]})
+
+        # Message pagination suffix
+        msg = f"Showing {parsed.offset+1}–{min(parsed.offset+parsed.limit, total)} of {total} work shifts."
+        if parsed.offset + parsed.limit < total:
+            msg += f" Use offset={parsed.offset+parsed.limit} to see more."
+        lines.append("")
+        lines.append(msg)
+
+        return done("\n".join(lines), data=data)
 
     def _tool_get_local_llm_status(self, args: BaseModel, actor_user_id: int | None) -> ToolRun:
         """Check whether the local LLM provider is reachable."""

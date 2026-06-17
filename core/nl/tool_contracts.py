@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -34,26 +34,49 @@ class EmptyArgs(StrictModel):
     """Tool with no arguments."""
 
 
+class ListModulesArgs(StrictModel):
+    """Arguments for listing modules."""
+
+    limit: int = Field(default=10, ge=1, le=100)
+    offset: int = Field(default=0, ge=0, le=100000)
+    verbosity: Literal["concise", "detailed"] = Field(default="concise")
+
+
 class ListAssignmentsArgs(StrictModel):
     """Arguments for assignment listing."""
 
     include_completed: bool = False
     query: str | None = None
+    limit: int = Field(default=10, ge=1, le=100)
+    offset: int = Field(default=0, ge=0, le=100000)
+    verbosity: Literal["concise", "detailed"] = Field(default="concise")
 
 
 class SearchNotesArgs(StrictModel):
     """Arguments for local note/file keyword search."""
 
     query: str = Field(min_length=2)
-    limit: int = Field(default=5, ge=1, le=10)
+    limit: int = Field(default=10, ge=1, le=100)
+    offset: int = Field(default=0, ge=0, le=100000)
+    verbosity: Literal["concise", "detailed"] = Field(default="concise")
 
 
 class RetrieveSourcesArgs(StrictModel):
     """Arguments for controlled local retrieval."""
 
     question: str = Field(min_length=2)
-    limit: int = Field(default=5, ge=1, le=10)
+    limit: int = Field(default=10, ge=1, le=100)
+    offset: int = Field(default=0, ge=0, le=100000)
+    verbosity: Literal["concise", "detailed"] = Field(default="concise")
     include_files: bool = True
+
+
+class DetectDuplicateModulesArgs(StrictModel):
+    """Arguments for detecting duplicate modules."""
+
+    limit: int = Field(default=10, ge=1, le=100)
+    offset: int = Field(default=0, ge=0, le=100000)
+    verbosity: Literal["concise", "detailed"] = Field(default="concise")
 
 
 class SetAssignmentStatusArgs(StrictModel):
@@ -156,12 +179,17 @@ class ListClassSessionsArgs(StrictModel):
     """Arguments for listing class sessions."""
 
     active_only: bool = True
+    limit: int = Field(default=10, ge=1, le=100)
+    offset: int = Field(default=0, ge=0, le=100000)
+    verbosity: Literal["concise", "detailed"] = Field(default="concise")
 
 
 class ListWorkShiftsArgs(StrictModel):
     """Arguments for listing work shifts."""
 
-    limit: int = Field(default=30, ge=1, le=100)
+    limit: int = Field(default=10, ge=1, le=100)
+    offset: int = Field(default=0, ge=0, le=100000)
+    verbosity: Literal["concise", "detailed"] = Field(default="concise")
 
 
 class GenerateStudyPlanArgs(StrictModel):

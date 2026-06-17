@@ -41,7 +41,7 @@ Archival plans:
 | Approved skill memory | Later | Hermes spec | Store reviewed procedural memories as context only; never grant permissions. |
 | Channel adapter boundary | Later | Hermes spec | Extract only when a second channel is actually scoped. |
 | Reliable tool-decision parsing (WP1) | Done | `docs/superpowers/specs/2026-06-16-agent-best-practices-enhancement-spec.md` | Ollama structured output (`format="json"`) plus one bounded repair re-ask before fallback; repair_count recorded in agent trace. Landed 2026-06-16. |
-| Tool result curation and pagination (WP2) | Proposed | `docs/superpowers/specs/2026-06-16-agent-best-practices-enhancement-spec.md` | Consistent limit/offset/truncation defaults and concise/detailed verbosity on read tools. |
+| Tool result curation and pagination (WP2) | Done | `docs/superpowers/specs/2026-06-16-agent-best-practices-enhancement-spec.md` | Consistent limit/offset/verbosity on 7 read tools; concise mode returns summary fields, detailed returns full shape; pagination signalled in data and message. Landed 2026-06-17. |
 | Steering tool-error messages (WP4) | Proposed | `docs/superpowers/specs/2026-06-16-agent-best-practices-enhancement-spec.md` | Resolvers return candidate disambiguation so the agent can recover or ask. |
 | Conversational UX: progress, transparency, undo (WP5) | Proposed | `docs/superpowers/specs/2026-06-16-agent-best-practices-enhancement-spec.md` | Bridging "working on it" message, opt-in tools-used footer, and `/undo` for auto-tier writes via audit before-state. |
 | Offline agent eval harness (WP6) | Proposed | `docs/superpowers/specs/2026-06-16-agent-best-practices-enhancement-spec.md` | Trajectory regression tests against a scripted model; runs in CI without Ollama. |
