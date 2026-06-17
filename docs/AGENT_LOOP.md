@@ -54,6 +54,16 @@ task instead of being re-classified from scratch.
   *whether to apply*, not *how to compute*. Few decisions, well-scaffolded.
 - **Bounded iterations.** A hard cap on tool calls per turn. On reaching it, the
   agent stops and summarizes/asks instead of looping forever.
+- **Structured output request.** The decision call passes `format="json"` to
+  the Ollama client so backends that support it return valid JSON directly.
+  Backends that ignore the hint are handled by the existing JSON-extraction
+  logic — no strict dependency on the backend honouring the field.
+- **Bounded repair re-ask.** When the model response cannot be parsed as a valid
+  `AgentDecision`, the loop makes exactly one repair re-ask: the corrective
+  prompt includes the validation error and the required JSON shape. The repair
+  does not count against `max_tool_calls` and is capped at one attempt. Only
+  after repair fails does the loop fall through to the safe fallback. The repair
+  attempt is recorded in the agent trace (`repair_count`).
 - **Deterministic fallback.** If the model fails to produce a valid tool call,
   fall back to a safe read or a clarifying question — never to a silent mutation.
 - **Tool results are authoritative** over model memory.

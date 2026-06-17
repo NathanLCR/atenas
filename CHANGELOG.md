@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **WP1 — Reliable tool-decision parsing**: the decision call now passes
+  `format="json"` to the Ollama client (backends that ignore the field degrade
+  gracefully). On a parse/validation failure the loop makes exactly one bounded
+  repair re-ask with the validation error and required JSON shape; the repair
+  does not count against `max_tool_calls`. Only after repair fails does the loop
+  use the existing safe fallback. Repair attempts are recorded in the agent trace
+  (`repair_count` column on `agent_traces`).
+
 ## [0.1.0] - 2026-06-16
 
 First deliverable release: Atenas runs from a clean clone and can be handed to

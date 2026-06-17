@@ -38,15 +38,14 @@ class OllamaClient:
         self.model = model
         self.timeout = timeout
 
-    def generate(self, prompt: str) -> OllamaResponse:
+    def generate(self, prompt: str, *, format: str | None = None) -> OllamaResponse:
         """Send a generate request to Ollama and return the response text."""
 
         url = f"{self.base_url}/api/generate"
-        payload = json.dumps({
-            "model": self.model,
-            "prompt": prompt,
-            "stream": False,
-        }).encode("utf-8")
+        body: dict = {"model": self.model, "prompt": prompt, "stream": False}
+        if format is not None:
+            body["format"] = format
+        payload = json.dumps(body).encode("utf-8")
 
         req = urllib.request.Request(
             url,
