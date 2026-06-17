@@ -96,6 +96,7 @@ class AgentTraceStore:
         pending_action_type: str | None = None,
         latency_ms: int | None = None,
         error: str | None = None,
+        repair_count: int = 0,
     ) -> None:
         """Mark a trace as completed with final status."""
         completed_at = _now_iso()
@@ -109,14 +110,15 @@ class AgentTraceStore:
                     tool_call_count = ?,
                     pending_action_type = ?,
                     latency_ms = ?,
-                    error = ?
+                    error = ?,
+                    repair_count = ?
                 WHERE id = ?
                 """,
                 (
                     completed_at, status,
                     _summarize(final_message) if final_message else None,
                     tool_call_count, pending_action_type, latency_ms,
-                    error, trace_id,
+                    error, repair_count, trace_id,
                 ),
             )
             conn.commit()
@@ -128,7 +130,8 @@ class AgentTraceStore:
                 """
                 SELECT id, actor_user_id, started_at, completed_at, model,
                        status, user_message_summary, final_message_summary,
-                       tool_call_count, pending_action_type, latency_ms, error
+                       tool_call_count, pending_action_type, latency_ms, error,
+                       repair_count
                 FROM agent_traces
                 ORDER BY started_at DESC
                 LIMIT ?

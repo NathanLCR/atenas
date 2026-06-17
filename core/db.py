@@ -274,7 +274,8 @@ CREATE TABLE IF NOT EXISTS agent_traces (
     tool_call_count INTEGER NOT NULL DEFAULT 0,
     pending_action_type TEXT,
     latency_ms INTEGER,
-    error TEXT
+    error TEXT,
+    repair_count INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS agent_trace_steps (
@@ -394,6 +395,7 @@ def init_db(db_path: Path | str) -> None:
         _apply_phase3_migrations(conn)
         _apply_phase3_indexes(conn)
         _apply_memory_migrations(conn)
+        _apply_wp1_migrations(conn)
     finally:
         conn.close()
     logger.info("database_initialized", extra={"event_type": "database_initialized", "db_path": str(db_path)})
@@ -432,6 +434,12 @@ def _apply_memory_migrations(connection: sqlite3.Connection) -> None:
     """Add memory_items columns introduced after initial schema creation."""
 
     _ensure_column(connection, "memory_items", "sensitive", "INTEGER NOT NULL DEFAULT 0")
+
+
+def _apply_wp1_migrations(connection: sqlite3.Connection) -> None:
+    """Add WP1 repair-count column to agent_traces for existing databases."""
+
+    _ensure_column(connection, "agent_traces", "repair_count", "INTEGER NOT NULL DEFAULT 0")
 
 
 VALID_TABLE_NAMES = frozenset({

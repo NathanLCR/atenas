@@ -23,9 +23,11 @@ class FakeToolClient:
     def __init__(self, responses: list[dict]) -> None:
         self.responses = [json.dumps(response) for response in responses]
         self.prompts: list[str] = []
+        self.formats: list[str | None] = []
 
-    def generate(self, prompt: str) -> OllamaResponse:
+    def generate(self, prompt: str, *, format: str | None = None) -> OllamaResponse:
         self.prompts.append(prompt)
+        self.formats.append(format)
         if not self.responses:
             return OllamaResponse(text=json.dumps({"type": "final", "message": "done"}), model="test")
         return OllamaResponse(text=self.responses.pop(0), model="test")
@@ -528,3 +530,85 @@ def test_llm_unavailable_creates_llm_error_trace(tmp_db: Path) -> None:
     traces = trace_store.list_recent(limit=5)
     latest = traces[0]
     assert latest["status"] == "llm_error"
+
+
+# ── WP1: Reliable tool-decision parsing ───────────────────────────────────────
+
+
+def test_wp1_format_json_passed_to_client(tmp_db: Path) -> None:
+    """AgentLoop must pass format='json' on every decision call."""
+    registry = ToolRegistry(tmp_db)
+    client = FakeToolClient([{"type": "final", "message": "ok"}])
+    agent = AgentLoop(registry=registry, client=client)
+
+    agent.run("hello", actor_user_id=1)
+
+    assert all(f == "json" for f in client.formats), (
+        f"Expected all generate() calls to receive format='json', got: {client.formats}"
+    )
+
+
+def test_wp1_malformed_then_valid_succeeds_with_repair_in_trace(tmp_db: Path) -> None:
+    """One bad response then a valid response should succeed after repair; trace records repair_count=1."""
+    from core.nl.traces import AgentTraceStore
+
+    trace_store = AgentTraceStore(tmp_db)
+    registry = ToolRegistry(tmp_db)
+
+    class RepairClient:
+        """Returns malformed JSON first, then a valid final decision."""
+        def __init__(self) -> None:
+            self.call_count = 0
+            self.formats: list[str | None] = []
+
+        def generate(self, prompt: str, *, format: str | None = None):
+            self.call_count += 1
+            self.formats.append(format)
+            if self.call_count == 1:
+                return OllamaResponse(text="not json at all", model="test")
+            return OllamaResponse(
+                text=json.dumps({"type": "final", "message": "Repaired reply"}),
+                model="test",
+            )
+
+    client = RepairClient()
+    agent = AgentLoop(registry=registry, client=client, trace_store=trace_store)
+
+    result = agent.run("hello", actor_user_id=1)
+
+    assert result.message == "Repaired reply"
+    assert client.call_count == 2
+
+    traces = trace_store.list_recent(limit=1)
+    assert traces[0]["status"] == "success"
+    assert traces[0]["repair_count"] == 1
+
+
+def test_wp1_two_malformed_responses_returns_safe_fallback(tmp_db: Path) -> None:
+    """Two consecutive parse failures should return the safe fallback; trace status=error, repair_count=1."""
+    from core.nl.traces import AgentTraceStore
+
+    trace_store = AgentTraceStore(tmp_db)
+    registry = ToolRegistry(tmp_db)
+
+    class AlwaysBadClient:
+        def __init__(self) -> None:
+            self.call_count = 0
+
+        def generate(self, prompt: str, *, format: str | None = None):
+            self.call_count += 1
+            return OllamaResponse(text="still bad json", model="test")
+
+    client = AlwaysBadClient()
+    agent = AgentLoop(registry=registry, client=client, trace_store=trace_store)
+
+    result = agent.run("hello", actor_user_id=1)
+
+    assert "could not get a valid tool decision" in result.message
+    assert result.pending_action is None
+    # Exactly two calls: original + one repair
+    assert client.call_count == 2
+
+    traces = trace_store.list_recent(limit=1)
+    assert traces[0]["status"] == "error"
+    assert traces[0]["repair_count"] == 1
