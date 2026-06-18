@@ -84,6 +84,28 @@ access is enabled. See "Web Use" below; `SECURITY.md` lists `web_search` in
 Tools have validated argument schemas and structured result schemas. The LLM
 calls tools only; it never touches services, repositories, files, or the shell.
 
+### Read tool result curation (WP2)
+
+All read/compute tools that return lists (`list_modules`, `list_assignments`,
+`list_class_sessions`, `list_work_shifts`, `search_notes`, `retrieve_sources`,
+`detect_duplicate_modules`) accept consistent pagination and verbosity arguments:
+
+- `limit` (default 10, max 100) — maximum items to return
+- `offset` (default 0) — zero-based index of the first item to return
+- `verbosity` (default `"concise"`, options: `"concise"`, `"detailed"`) — field
+  set per item
+
+**Concise mode** returns only the fields the agent needs to act (e.g., name/title
++ one key field). **Detailed mode** returns the full current object shape.
+
+Results never silently truncate: the structured `data` payload always includes
+`total` (total matching items) and `truncated` (whether the slice is incomplete).
+The human-readable `message` includes a pagination suffix, e.g.:
+"Showing 1–10 of 23. Use offset=10 to see more."
+
+Pagination arguments are validated (non-negative, bounded) and invalid values
+produce a steering error (`ok=False`, descriptive message), not a crash.
+
 ## Action Tiers (governance)
 
 The execution tier is decided by **code**, from the tool's declared category —
