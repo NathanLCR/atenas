@@ -140,6 +140,18 @@ def _run_doctor() -> None:
     web_enabled = getattr(settings, "enable_web_tools", False)
     click.echo(f"  Web tools: {'enabled' if web_enabled else 'disabled'}")
 
+    # Model Profile
+    profile = settings.get_model_profile()
+    click.echo(f"  Model profile: {profile.name}")
+    click.echo(f"    Context window: {profile.context_window_tokens} tokens")
+    click.echo(f"    Prompt budget: {profile.prompt_token_budget} tokens")
+    click.echo(f"    Timeout: {profile.timeout_seconds}s")
+    click.echo(f"    Max history: {profile.max_history_items} items")
+    click.echo(f"    Max tools/turn: {profile.max_tools_per_turn}")
+    click.echo(f"    Max turn iterations: {profile.max_turn_iterations}")
+    click.echo(f"    Temperature: {profile.temperature}")
+    click.echo(f"    Strict JSON: {profile.strict_json}")
+
     click.echo()
     if ok:
         click.echo("All checks passed.")
