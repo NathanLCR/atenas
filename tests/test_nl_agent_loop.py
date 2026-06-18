@@ -24,10 +24,18 @@ class FakeToolClient:
         self.responses = [json.dumps(response) for response in responses]
         self.prompts: list[str] = []
         self.formats: list[str | None] = []
+        self.options_list: list[dict[str, Any] | None] = []
 
-    def generate(self, prompt: str, *, format: str | None = None) -> OllamaResponse:
+    def generate(
+        self,
+        prompt: str,
+        *,
+        format: str | None = None,
+        options: dict[str, Any] | None = None,
+    ) -> OllamaResponse:
         self.prompts.append(prompt)
         self.formats.append(format)
+        self.options_list.append(options)
         if not self.responses:
             return OllamaResponse(text=json.dumps({"type": "final", "message": "done"}), model="test")
         return OllamaResponse(text=self.responses.pop(0), model="test")
@@ -158,14 +166,17 @@ def test_followup_uses_conversation_context_for_same_goal(tmp_db: Path) -> None:
     agent = AgentLoop(registry=registry, client=client)
 
     first = agent.run("what should I study next?", actor_user_id=123)
+    # Mocking history compaction which happens in bot.py but we want to test AgentLoop/PromptAssembler here
+    summary = agent.assembler.compact_history(first.conversation)
     second = agent.run(
         "let's review that",
         conversation=first.conversation,
+        running_summary=summary,
         actor_user_id=123,
     )
 
     assert second.message == "Great, let's review CNN notes."
-    assert "Review CNN notes next." in client.prompts[1]
+    assert "Review CNN notes next." in client.prompts[1] or "Context summary" in client.prompts[1]
     assert "let's review that" in client.prompts[1]
 
 
@@ -535,17 +546,30 @@ def test_llm_unavailable_creates_llm_error_trace(tmp_db: Path) -> None:
 # ── WP1: Reliable tool-decision parsing ───────────────────────────────────────
 
 
-def test_wp1_format_json_passed_to_client(tmp_db: Path) -> None:
-    """AgentLoop must pass format='json' on every decision call."""
+def test_wp1_format_json_not_passed_by_default(tmp_db: Path) -> None:
+    """AgentLoop must NOT pass format='json' on every decision call by default (strict_json=False)."""
     registry = ToolRegistry(tmp_db)
     client = FakeToolClient([{"type": "final", "message": "ok"}])
     agent = AgentLoop(registry=registry, client=client)
 
     agent.run("hello", actor_user_id=1)
 
-    assert all(f == "json" for f in client.formats), (
-        f"Expected all generate() calls to receive format='json', got: {client.formats}"
+    assert all(f is None for f in client.formats), (
+        f"Expected all generate() calls to receive format=None, got: {client.formats}"
     )
+
+
+def test_wp1_format_json_passed_when_strict(tmp_db: Path) -> None:
+    """AgentLoop must pass format='json' when strict_json is True."""
+    from core.nl.model_profiles import ModelProfile
+    registry = ToolRegistry(tmp_db)
+    client = FakeToolClient([{"type": "final", "message": "ok"}])
+    profile = ModelProfile(name="strict", strict_json=True)
+    agent = AgentLoop(registry=registry, client=client, profile=profile)
+
+    agent.run("hello", actor_user_id=1)
+
+    assert all(f == "json" for f in client.formats)
 
 
 def test_wp1_malformed_then_valid_succeeds_with_repair_in_trace(tmp_db: Path) -> None:

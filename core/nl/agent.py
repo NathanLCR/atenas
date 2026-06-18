@@ -11,6 +11,8 @@ from typing import Any, Literal
 from pydantic import Field, ValidationError
 
 from core.llm.audit import log_llm_call
+from core.nl.model_profiles import ModelProfile, CONSERVATIVE_PROFILE
+from core.nl.prompt_assembler import PromptAssembler
 from core.nl.tool_contracts import PendingToolAction
 from core.nl.toolsets import ToolsetName
 from core.nl.tools import ToolRegistry
@@ -18,8 +20,6 @@ from core.nl.traces import AgentTraceStore
 from core.schemas import StrictModel
 
 logger = logging.getLogger(__name__)
-
-MAX_HISTORY_ITEMS = 12
 
 
 class AgentDecision(StrictModel):
@@ -47,14 +47,15 @@ class AgentLoop:
         *,
         registry: ToolRegistry,
         client: Any,
-        max_tool_calls: int = 5,
+        profile: ModelProfile = CONSERVATIVE_PROFILE,
         llm_log_path: Path | str | None = None,
         trace_store: AgentTraceStore | None = None,
         toolsets: set[ToolsetName] | None = None,
     ) -> None:
         self.registry = registry
         self.client = client
-        self.max_tool_calls = max_tool_calls
+        self.profile = profile
+        self.max_tool_calls = profile.max_turn_iterations
         self._llm_log_path = Path(llm_log_path) if llm_log_path is not None else None
         self._trace_store = trace_store
         self.toolsets = (
@@ -62,17 +63,19 @@ class AgentLoop:
             if toolsets is None
             else {ToolsetName(toolset) for toolset in toolsets}
         )
+        self.assembler = PromptAssembler(profile)
 
     def run(
         self,
         user_message: str,
         *,
         conversation: list[dict[str, str]] | None = None,
+        running_summary: str | None = None,
         actor_user_id: int | None = None,
     ) -> AgentTurnResult:
         """Run one bounded agent turn with optional trace recording."""
 
-        history = _clean_history(conversation or [])
+        history = conversation or []
         observations: list[dict[str, Any]] = []
         tool_call_count = 0
         repair_count = 0
@@ -80,10 +83,12 @@ class AgentLoop:
         turn_started = time.perf_counter()
 
         while tool_call_count <= self.max_tool_calls:
-            prompt = self._build_prompt(
+            prompt = self.assembler.assemble(
                 user_message=user_message,
-                conversation=history,
+                tools=self.registry.list_tools_for_toolsets(self.toolsets),
+                history=history,
                 observations=observations,
+                running_summary=running_summary,
             )
             started = time.perf_counter()
             try:
@@ -313,9 +318,12 @@ class AgentLoop:
 
     def _generate_decision(self, prompt: str):
         """Call the LLM with structured-output hint, degrade gracefully if ignored."""
+        fmt = "json" if self.profile.strict_json else None
+        options = {"temperature": self.profile.temperature}
         try:
-            return self.client.generate(prompt, format="json")
+            return self.client.generate(prompt, format=fmt, options=options)
         except TypeError:
+            # Fallback for older clients that don't support options/format
             return self.client.generate(prompt)
 
     def _finish_trace(
@@ -342,26 +350,6 @@ class AgentLoop:
                 repair_count=repair_count,
             )
 
-    def _build_prompt(
-        self,
-        *,
-        user_message: str,
-        conversation: list[dict[str, str]],
-        observations: list[dict[str, Any]],
-    ) -> str:
-        visible_tools = self.registry.list_tools_for_toolsets(self.toolsets)
-        tools_json = json.dumps(
-            [tool.schema_for_llm() for tool in visible_tools],
-            ensure_ascii=False,
-        )
-        history_json = json.dumps(conversation[-MAX_HISTORY_ITEMS:], ensure_ascii=False)
-        observations_json = json.dumps(observations, ensure_ascii=False)
-        return AGENT_PROMPT.format(
-            tools_json=tools_json,
-            history_json=history_json,
-            observations_json=observations_json,
-            user_message=user_message,
-        )
 
     def _visible_tool_names(self) -> set[str]:
         return {
@@ -495,16 +483,6 @@ def _normalize_decision_shape(data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
-def _clean_history(history: list[dict[str, str]]) -> list[dict[str, str]]:
-    cleaned = []
-    for item in history[-MAX_HISTORY_ITEMS:]:
-        role = item.get("role")
-        content = item.get("content")
-        if role in {"user", "assistant"} and isinstance(content, str):
-            cleaned.append({"role": role, "content": content[:2000]})
-    return cleaned
-
-
 def _turn_result(
     history: list[dict[str, str]],
     user_message: str,
@@ -516,7 +494,7 @@ def _turn_result(
         *history,
         {"role": "user", "content": user_message[:2000]},
         {"role": "assistant", "content": assistant_message[:2000]},
-    ][-MAX_HISTORY_ITEMS:]
+    ]
     return AgentTurnResult(
         message=assistant_message,
         conversation=updated,
