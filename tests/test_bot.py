@@ -220,12 +220,23 @@ class _FakeAgent:
     def __init__(self, message: str) -> None:
         self.message = message
         self.calls: list[dict] = []
+        self.assembler = SimpleNamespace(
+            compact_history=lambda conv, existing_summary=None: "fake summary"
+        )
 
-    def run(self, message: str, *, conversation: list, actor_user_id: int | None):
+    def run(
+        self,
+        message: str,
+        *,
+        conversation: list,
+        running_summary: str | None = None,
+        actor_user_id: int | None,
+    ):
         self.calls.append(
             {
                 "message": message,
                 "conversation": conversation,
+                "running_summary": running_summary,
                 "actor_user_id": actor_user_id,
             }
         )
