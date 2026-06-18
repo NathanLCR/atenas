@@ -20,6 +20,7 @@ class AgentThreadRecord(StrictModel):
     channel: str
     status: str
     conversation: list[dict[str, str]]
+    running_summary: str | None = None
     selected_tools: list[str]
     created_at: str
     updated_at: str
@@ -93,6 +94,7 @@ class AgentRuntimeStore:
         actor_user_id: int,
         channel: str,
         conversation: list[dict[str, str]],
+        running_summary: str | None = None,
     ) -> AgentThreadRecord:
         """Persist the latest sanitized conversation for an actor/channel."""
 
@@ -105,10 +107,10 @@ class AgentRuntimeStore:
             conn.execute(
                 """
                 UPDATE agent_threads
-                SET conversation_json = ?, updated_at = ?
+                SET conversation_json = ?, running_summary = ?, updated_at = ?
                 WHERE id = ?
                 """,
-                (json.dumps(conversation), now, thread.id),
+                (json.dumps(conversation), running_summary, now, thread.id),
             )
             conn.commit()
             row = conn.execute(
@@ -254,6 +256,7 @@ def _thread_from_row(row: Any) -> AgentThreadRecord:
         channel=row["channel"],
         status=row["status"],
         conversation=json.loads(row["conversation_json"]),
+        running_summary=row["running_summary"],
         selected_tools=json.loads(row["selected_tools_json"]),
         created_at=row["created_at"],
         updated_at=row["updated_at"],

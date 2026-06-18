@@ -303,6 +303,7 @@ CREATE TABLE IF NOT EXISTS agent_threads (
     channel TEXT NOT NULL DEFAULT 'telegram',
     status TEXT NOT NULL DEFAULT 'active',
     conversation_json TEXT NOT NULL DEFAULT '[]',
+    running_summary TEXT,
     selected_tools_json TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -396,6 +397,7 @@ def init_db(db_path: Path | str) -> None:
         _apply_phase3_indexes(conn)
         _apply_memory_migrations(conn)
         _apply_wp1_migrations(conn)
+        _apply_agent_runtime_migrations(conn)
     finally:
         conn.close()
     logger.info("database_initialized", extra={"event_type": "database_initialized", "db_path": str(db_path)})
@@ -440,6 +442,12 @@ def _apply_wp1_migrations(connection: sqlite3.Connection) -> None:
     """Add WP1 repair-count column to agent_traces for existing databases."""
 
     _ensure_column(connection, "agent_traces", "repair_count", "INTEGER NOT NULL DEFAULT 0")
+
+
+def _apply_agent_runtime_migrations(connection: sqlite3.Connection) -> None:
+    """Add running_summary column to agent_threads for existing databases."""
+
+    _ensure_column(connection, "agent_threads", "running_summary", "TEXT")
 
 
 VALID_TABLE_NAMES = frozenset({
