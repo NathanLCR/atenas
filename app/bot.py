@@ -264,13 +264,19 @@ async def natural_language_handler(update: Update, context: ContextTypes.DEFAULT
     result = agent.run(
         text.strip(),
         conversation=user_data.get("nl_agent_history", thread.conversation),
+        running_summary=thread.running_summary,
         actor_user_id=user_id,
     )
     user_data["nl_agent_history"] = result.conversation
+    new_summary = agent.assembler.compact_history(
+        result.conversation,
+        existing_summary=thread.running_summary,
+    )
     runtime_store.save_conversation(
         actor_user_id=user_id,
         channel="telegram",
         conversation=result.conversation,
+        running_summary=new_summary,
     )
     if result.pending_action is not None:
         pending_record = runtime_store.save_pending_action(
@@ -1565,16 +1571,18 @@ def _build_nl_tool_registry(context: ContextTypes.DEFAULT_TYPE) -> ToolRegistry:
 def _build_nl_agent(context: ContextTypes.DEFAULT_TYPE) -> AgentLoop:
     settings = _get_bot_settings(context)
     registry = _build_nl_tool_registry(context)
+    profile = settings.get_model_profile()
     client = OllamaClient(
         base_url=settings.ollama_base_url,
         model=settings.ollama_model,
-        timeout=settings.ollama_timeout_seconds,
+        timeout=profile.timeout_seconds,
     )
     user_data = getattr(context, "user_data", {})
     toolsets = user_data.get(_NL_SELECTED_TOOLSETS_KEY)
     return AgentLoop(
         registry=registry,
         client=client,
+        profile=profile,
         llm_log_path=settings.llm_log_path,
         toolsets=toolsets,
     )

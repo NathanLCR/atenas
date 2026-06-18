@@ -61,6 +61,16 @@ class Settings(BaseSettings):
     ollama_model: str = DEFAULT_OLLAMA_MODEL
     ollama_timeout_seconds: int = 60
 
+    agent_model_profile: str = "conservative"
+    agent_context_window_tokens: int | None = None
+    agent_prompt_token_budget: int | None = None
+    agent_timeout_seconds: int | None = None
+    agent_max_history_items: int | None = None
+    agent_max_tools_per_turn: int | None = None
+    agent_max_turn_iterations: int | None = None
+    agent_strict_json: bool | None = None
+    agent_temperature: float | None = None
+
     cloud_llm_provider: str = "openai"
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
@@ -256,6 +266,33 @@ class Settings(BaseSettings):
         """Compatibility alias for brief-style uppercase settings access."""
 
         return self.deadline_alert_hours
+
+    def get_model_profile(self) -> "core.nl.model_profiles.ModelProfile":
+        """Return the effective model profile, merged with overrides."""
+        from core.nl.model_profiles import get_profile
+
+        profile = get_profile(self.agent_model_profile)
+        overrides = {}
+        if self.agent_context_window_tokens is not None:
+            overrides["context_window_tokens"] = self.agent_context_window_tokens
+        if self.agent_prompt_token_budget is not None:
+            overrides["prompt_token_budget"] = self.agent_prompt_token_budget
+        if self.agent_timeout_seconds is not None:
+            overrides["timeout_seconds"] = self.agent_timeout_seconds
+        if self.agent_max_history_items is not None:
+            overrides["max_history_items"] = self.agent_max_history_items
+        if self.agent_max_tools_per_turn is not None:
+            overrides["max_tools_per_turn"] = self.agent_max_tools_per_turn
+        if self.agent_max_turn_iterations is not None:
+            overrides["max_turn_iterations"] = self.agent_max_turn_iterations
+        if self.agent_strict_json is not None:
+            overrides["strict_json"] = self.agent_strict_json
+        if self.agent_temperature is not None:
+            overrides["temperature"] = self.agent_temperature
+
+        if overrides:
+            return profile.model_copy(update=overrides)
+        return profile
 
 
 @lru_cache
