@@ -55,14 +55,12 @@ def test_home_route_renders_cockpit_overview_from_local_data(settings: Settings)
         response = client.get("/dashboard/")
 
     assert response.status_code == 200
-    assert "Local-Only" in response.text
-    assert "Study Orchestrator" in response.text
-    assert "Today&#39;s Summary" in response.text
+    assert "AT EN AS OS" in response.text
+    assert "Today" in response.text
     assert "Dissertation reading" in response.text
     assert "NLP CA1" in response.text
-    assert "System Health" in response.text
-    assert "Weekly Capacity" in response.text
-    assert "System Status" in response.text
+    assert "Study Plan" in response.text
+    assert "Deadlines" in response.text
 
 
 def test_dashboard_shell_does_not_render_mutating_controls(settings: Settings) -> None:
@@ -329,6 +327,7 @@ class _FakeDashboardAcademicService:
             status=SimpleNamespace(value="todo"),
             estimated_hours=4,
             completed_hours=1,
+            module_id="mod-1",
         )
         self.study_block = SimpleNamespace(
             assignment_id="asg-1",
@@ -408,4 +407,10 @@ class _FakeDashboardAcademicService:
         )
 
     def list_upcoming_assignments(self, limit: int = 10, include_completed: bool = False) -> list[SimpleNamespace]:
+        return [self.assignment]
+
+    def list_modules(self) -> list[SimpleNamespace]:
+        return [SimpleNamespace(id="mod-1", name="NLP", code="NLP")]
+
+    def list_all_assignments(self, include_completed: bool = False) -> list[SimpleNamespace]:
         return [self.assignment]

@@ -7,51 +7,25 @@
     <link rel="stylesheet" href="/static/styles.css">
   </head>
   <body>
-    {% set current_path = request.url.path %}
-    <div class="app-shell">
-      <aside class="sidebar">
-        <div class="sidebar-brand">
-          <span class="brand-mark">A</span>
-          <div>
-            <div class="brand-name">Atenas</div>
-            <div class="brand-subtitle">Study Orchestrator</div>
-          </div>
-        </div>
-        <nav class="sidebar-nav" aria-label="Dashboard">
-          <a class="nav-link {{ 'is-active' if current_path == '/dashboard/' else '' }}" href="/dashboard/"><span>OV</span>Overview</a>
-          <a class="nav-link {{ 'is-active' if current_path == '/dashboard/week' else '' }}" href="/dashboard/week"><span>WK</span>Week</a>
-          <a class="nav-link {{ 'is-active' if current_path == '/dashboard/plan' else '' }}" href="/dashboard/plan"><span>PL</span>Plan</a>
-          <a class="nav-link {{ 'is-active' if current_path == '/dashboard/deadlines' else '' }}" href="/dashboard/deadlines"><span>DL</span>Deadlines</a>
-          <div class="nav-separator"></div>
-          <a class="nav-link {{ 'is-active' if current_path == '/dashboard/data' else '' }}" href="/dashboard/data"><span>DB</span>Data</a>
-          <a class="nav-link {{ 'is-active' if current_path == '/dashboard/notes' else '' }}" href="/dashboard/notes"><span>NT</span>Notes</a>
-          <a class="nav-link {{ 'is-active' if current_path == '/dashboard/files' else '' }}" href="/dashboard/files"><span>FL</span>Files</a>
-          <a class="nav-link {{ 'is-active' if current_path == '/dashboard/search' else '' }}" href="/dashboard/search"><span>SE</span>Search</a>
-          <div class="nav-separator"></div>
-          <a class="nav-link {{ 'is-active' if current_path == '/dashboard/retrieval' else '' }}" href="/dashboard/retrieval"><span>RT</span>Retrieval</a>
-          <a class="nav-link {{ 'is-active' if current_path == '/dashboard/llm' else '' }}" href="/dashboard/llm"><span>LM</span>LLM</a>
-          <a class="nav-link {{ 'is-active' if current_path == '/dashboard/traces' else '' }}" href="/dashboard/traces"><span>TR</span>Traces</a>
-          <a class="nav-link {{ 'is-active' if current_path == '/dashboard/logs' else '' }}" href="/dashboard/logs"><span>LG</span>Logs</a>
-        </nav>
-      </aside>
+    <div class="container">
+      <main>
+        {% block main %}{% endblock %}
+      </main>
 
-      <div class="page">
-        <header class="topbar">
-          <h1>{% block page_title %}Dashboard{% endblock %}</h1>
-          <div class="topbar-status" aria-label="Local status">
-            <span class="local-chip">Local-Only</span>
-            <span class="topbar-token">TIME</span>
-            <span class="topbar-token">MEM</span>
-          </div>
-        </header>
-        <main class="main-stage">
-          {% block main %}{% endblock %}
-        </main>
-        <footer class="status-strip">
-          <span>System Status: Retrieval Local | Agent: Operational</span>
-          <span><a href="/dashboard/logs">System Logs</a> <a href="/dashboard/traces">Agent Traces</a></span>
-        </footer>
-      </div>
+      <footer class="dashboard-nav">
+        <a class="nav-item" href="/dashboard/">today</a>
+        <a class="nav-item" href="/dashboard/week">week</a>
+        <a class="nav-item" href="/dashboard/plan">plan</a>
+        <a class="nav-item" href="/dashboard/deadlines">deadlines</a>
+        <a class="nav-item" href="/dashboard/data">data</a>
+        <a class="nav-item" href="/dashboard/notes">notes</a>
+        <a class="nav-item" href="/dashboard/files">files</a>
+        <a class="nav-item" href="/dashboard/search">search</a>
+        <a class="nav-item" href="/dashboard/retrieval">retrieval</a>
+        <a class="nav-item" href="/dashboard/llm">llm</a>
+        <a class="nav-item" href="/dashboard/traces">traces</a>
+        <a class="nav-item" href="/dashboard/logs">logs</a>
+      </footer>
     </div>
   </body>
 </html>

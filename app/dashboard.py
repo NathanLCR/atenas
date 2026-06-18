@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -37,21 +37,36 @@ async def home(request: Request) -> HTMLResponse:
     trace_records = _load_trace_records(settings)
     llm_records = _load_llm_call_records(settings)
     knowledge_counts = _load_knowledge_counts(settings)
+
+    # New data for redesign
+    now = datetime.now(ZoneInfo(settings.timezone))
+    week_days = [
+        datetime.combine(week_overview.start_date + timedelta(days=i), datetime.min.time())
+        for i in range(7)
+    ]
+
+    plan_by_module = {}
+    for block in study_plan.blocks:
+        m_name = block.module_name or "OTHER"
+        plan_by_module[m_name] = plan_by_module.get(m_name, 0) + block.minutes
+
     return templates.TemplateResponse(
         request,
         "home.html",
         {
             "app_name": settings.APP_NAME,
             "version": settings.APP_VERSION,
-            "utc_now": utc_now_iso(),
+            "utc_now": now.strftime("%H:%M %Z · %d %b %Y"),
             "today": today_overview,
             "next_study_block": _select_next_study_block(study_plan, settings.timezone),
             "deadlines": list(today_overview.deadlines[:4]),
-            "health": _build_health_summary(
-                trace_records=trace_records,
-                llm_records=llm_records,
-                knowledge_counts=knowledge_counts,
-            ),
+            "plan": study_plan,
+            "plan_by_module": plan_by_module,
+            "watch_outs": _build_watch_outs(today_overview, study_plan, week_overview),
+            "week_number": now.isocalendar()[1],
+            "week_days": week_days,
+            "grid_data": _build_grid_data(week_overview),
+            "modules_activity": _build_modules_activity(academic_service, week_days),
             "capacity": _build_capacity_summary(week_overview),
             "format_minutes": _format_minutes,
             "format_time": _format_time,
@@ -494,3 +509,56 @@ def _minutes_until(value: object, timezone_name: str = "Europe/Dublin") -> int |
     delta = value - datetime.now(ZoneInfo(timezone_name))
     minutes = int(delta.total_seconds() // 60)
     return minutes if minutes > 0 else None
+
+
+def _build_watch_outs(today: object, plan: object, week: object) -> list[str]:
+    """Identify potential issues for the user."""
+    watches = []
+
+    # 1. Overdue assignments
+    if plan.summary.overdue_assignments:
+        watches.append(f"Overdue: {len(plan.summary.overdue_assignments)} assignments.")
+
+    # 2. Tight deadlines
+    urgent = [d for d in today.deadlines if (d.due_at - datetime.now(d.due_at.tzinfo)).days < 3]
+    if urgent:
+        watches.append(f"Deadlines <72h: {len(urgent)} items need immediate focus.")
+
+    # 3. Capacity alerts
+    if plan.summary.total_unscheduled_minutes > 0:
+        watches.append(f"Unscheduled workload: {plan.summary.total_unscheduled_minutes}m will not fit this week.")
+
+    return watches
+
+
+def _build_grid_data(week_overview: object) -> list[dict]:
+    """Build day-by-day indicators for the weekly grid."""
+    grid = []
+    for day in week_overview.day_summaries:
+        grid.append({
+            "has_shift": day.work_minutes > 0,
+            "has_classes": day.class_minutes > 0,
+        })
+    return grid
+
+
+def _build_modules_activity(service: AcademicService, week_days: list[datetime]) -> list[dict]:
+    """Map module activity across the week for the grid dots."""
+    modules = service.list_modules()
+    assignments = service.list_all_assignments(include_completed=True)
+
+    # For a high-density "routine-plan" look, we just need dots.
+    # In a real system, this would look at sessions and study blocks.
+    activity = []
+    for m in modules:
+        days_active = []
+        for day in week_days:
+            # Simple heuristic: module is active if it has a deadline or class that day
+            is_active = any(a.module_id == m.id and a.due_at.date() == day.date() for a in assignments)
+            days_active.append(is_active)
+        activity.append({
+            "name": m.name,
+            "code": m.code,
+            "days": days_active
+        })
+    return activity
