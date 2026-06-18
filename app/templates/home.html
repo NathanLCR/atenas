@@ -1,153 +1,142 @@
 {% extends "base.html" %}
 
-{% block page_title %}Overview{% endblock %}
-
 {% block main %}
-<div class="cockpit-grid overview-grid">
-  <div class="panel-stack">
-    <section class="panel panel-accent">
-      <div class="panel-header">
-        <h2>Today&#39;s Summary</h2>
-        <span class="mono-label">{{ format_date(today.date) }}</span>
-      </div>
-      <div class="event-list">
-        {% for item in today.classes %}
-        <div class="event-row">
-          <div>
-            <span class="event-kind">Class</span>
-            <strong>{{ item.title }}</strong>
-          </div>
-          <span class="mono-label">{{ format_time(item.start_at) }} - {{ format_time(item.end_at) }}</span>
-        </div>
-        {% endfor %}
-        {% for item in today.work_shifts %}
-        <div class="event-row">
-          <div>
-            <span class="event-kind">Work</span>
-            <strong>{{ item.title }}</strong>
-          </div>
-          <div class="event-meta">
-            <span class="mono-label">{{ format_time(item.start_at) }} - {{ format_time(item.end_at) }}</span>
-            {% if item.metadata.fatigue_level %}
-            <span class="chip chip-danger">{{ format_status(item.metadata.fatigue_level) }} Fatigue</span>
-            {% endif %}
-          </div>
-        </div>
-        {% endfor %}
-        {% for window in today.availability.study_windows[:2] %}
-        <div class="event-row">
-          <div>
-            <span class="event-kind">Study</span>
-            <strong>Free study window</strong>
-          </div>
-          <div class="event-meta">
-            <span class="mono-label">{{ format_time(window.start_at) }} - {{ format_time(window.end_at) }}</span>
-            <span class="chip chip-soft">{{ format_status(window.max_intensity) }}</span>
-          </div>
-        </div>
-        {% endfor %}
-        {% if not today.classes and not today.work_shifts and not today.availability.study_windows %}
-        <p class="muted">No local schedule data for today.</p>
-        {% endif %}
-      </div>
-    </section>
-
-    <section class="panel">
-      <div class="panel-header">
-        <h2>Next Study Block</h2>
-        {% if next_study_block and minutes_until(next_study_block.start_at) %}
-        <span class="chip chip-soft mono-label">in {{ minutes_until(next_study_block.start_at) }}m</span>
-        {% endif %}
-      </div>
-      {% if next_study_block %}
-      <div class="study-callout">
-        <div>
-          <h3>{{ next_study_block.assignment_title }}</h3>
-          <p class="mono-label">
-            {{ format_time(next_study_block.start_at) }} - {{ format_time(next_study_block.end_at) }}
-            &middot; {{ format_minutes(next_study_block.minutes) }}
-          </p>
-        </div>
-        <span class="chip chip-primary">{{ format_status(next_study_block.intensity) }}</span>
-        <p class="reason-text">{{ next_study_block.reason }}</p>
-      </div>
-      {% else %}
-      <p class="muted">No deterministic study block is currently available.</p>
-      {% endif %}
-    </section>
-
-    <section class="panel">
-      <div class="panel-header">
-        <h2>Upcoming Deadlines</h2>
-        <a class="text-link" href="/dashboard/deadlines">View all</a>
-      </div>
-      {% if deadlines %}
-      <div class="event-list">
-        {% for item in deadlines %}
-        <div class="event-row deadline-row">
-          <div>
-            <span class="event-kind">Due</span>
-            <strong>{{ item.title }}</strong>
-            <span class="mono-label">{{ item.due_at.strftime("%a %d %b %H:%M") }}</span>
-          </div>
-          <span class="chip {{ 'chip-danger' if item.priority <= 1 else 'chip-warning' if item.priority == 2 else 'chip-soft' }}">
-            P{{ item.priority }}
-          </span>
-        </div>
-        {% endfor %}
-      </div>
-      {% else %}
-      <p class="muted">No open deadlines in the local dashboard window.</p>
-      {% endif %}
-    </section>
+<header>
+  <div class="branding">
+    <span>GA TE WA Y</span>
+    <span>AT EN AS OS</span>
   </div>
 
-  <aside class="panel-stack">
-    <section class="panel panel-dark">
-      <div class="panel-header">
-        <h2>System Health</h2>
-        <span class="chip chip-{{ health.status_class }}">{{ format_status(health.trace_status) }}</span>
-      </div>
-      <div class="health-list">
-        <div>
-          <span class="mono-label">Retrieval Index</span>
-          <strong>{{ health.retrieval_label }}</strong>
-          <div class="meter"><span style="width: {{ health.retrieval_percent }}%"></span></div>
-        </div>
-        <div>
-          <span class="mono-label">Recent Agent Activity</span>
-          <code>{{ health.trace_summary }}</code>
-          <span class="mono-label">tools={{ health.trace_tool_count }}</span>
-        </div>
-        <div>
-          <span class="mono-label">LLM Calls</span>
-          <strong>{{ health.llm_label }}</strong>
-          <span class="mono-label">{{ health.llm_model }}</span>
-        </div>
-      </div>
-    </section>
+  <div class="meta-info">
+    <div>DBS MSc AI {{ format_date(today.date) }} DUBLIN IE</div>
+    <div>regen {{ utc_now }}</div>
+  </div>
 
-    <section class="panel">
-      <div class="panel-header">
-        <h2>Weekly Capacity</h2>
-        <span class="mono-label">{{ capacity.range_label }}</span>
-      </div>
-      <div class="capacity-list">
-        {% for row in capacity.rows %}
-        <div class="capacity-row">
-          <span class="mono-label">{{ row.label }}</span>
-          <div class="capacity-track">
-            <span class="capacity-fill capacity-fill--{{ row.kind }}" style="width: {{ row.percent }}%"></span>
-          </div>
-          <span class="mono-label">{{ format_minutes(row.minutes) }}</span>
-        </div>
+  <div class="status-line">
+    {{ today.date.strftime('%A %Y-%m-%d') | upper }} ·
+    {% if today.classes or today.work_shifts %}
+      MIXED |
+      {% if today.classes %}
+        {{ today.classes|length }} CLASSES
+        {{ format_time(today.classes[0].start_at) }}–{{ format_time(today.classes[-1].end_at) }}
+      {% endif %}
+    {% else %}
+      NO FIXED BLOCKS
+    {% endif %}
+  </div>
+
+  {% if today.work_shifts %}
+  <div class="status-line">
+    SHIFT {{ format_time(today.work_shifts[0].start_at) }}–{{ format_time(today.work_shifts[0].end_at) }} · {{ format_minutes(today.availability.total_study_minutes) }} HOURS
+  </div>
+  {% endif %}
+
+  <div class="brief-id">brief-{{ today.date.isoformat() }}</div>
+</header>
+
+<section>
+  <h2>Today</h2>
+  <div class="section-content">
+    {% if next_study_block %}
+    <p>Next focus: {{ next_study_block.assignment_title }}. {{ next_study_block.reason }}</p>
+    <p>PEAK WINDOW {{ format_time(next_study_block.start_at) }} – {{ format_time(next_study_block.end_at) }} ({{ format_minutes(next_study_block.minutes) }})</p>
+    {% else %}
+    <p>No study blocks planned for today.</p>
+    {% endif %}
+  </div>
+
+  <h3>Tasks · Today</h3>
+  <div class="section-content">
+    {% if deadlines %}
+      {% for item in deadlines %}
+        <p>› {{ item.title }} (due {{ item.due_at.strftime('%d %b') }})</p>
+      {% endfor %}
+    {% else %}
+      <p>No high-priority tasks in today's brief.</p>
+    {% endif %}
+  </div>
+
+  <div class="watch-outs">
+    <h3>Watch-outs</h3>
+    <ul>
+      {% if watch_outs %}
+        {% for watch in watch_outs %}
+          <li>{{ watch }}</li>
         {% endfor %}
+      {% else %}
+        <li>No critical watch-outs.</li>
+      {% endif %}
+    </ul>
+  </div>
+</section>
+
+<section>
+  <div class="weekly-grid">
+    <div class="grid-header">WK {{ week_number }}</div>
+    {% for day in week_days %}
+      <div class="grid-header">[{{ loop.index }}]{{ day.strftime('%a %d') | upper }}</div>
+    {% endfor %}
+
+    <div class="grid-row">
+      <div class="grid-label">Shift</div>
+      {% for day in grid_data %}
+        <div class="grid-cell">
+          {% if day.has_shift %}<span class="active-dot">·</span>{% else %}<span class="dot">—</span>{% endif %}
+        </div>
+      {% endfor %}
+    </div>
+
+    {% for module in modules_activity %}
+    <div class="grid-row">
+      <div class="grid-label">{{ module.code or module.name[:4]|upper }}</div>
+      {% for day_active in module.days %}
+        <div class="grid-cell">
+          {% if day_active %}<span class="active-dot">·</span>{% else %}<span class="dot">·</span>{% endif %}
+        </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
+  <div class="grid-legend">
+    scheduled class · past class · work · activity ⚑ deadline
+  </div>
+</section>
+
+<section>
+  <h2>Study Plan</h2>
+  <div class="dense-list">
+    <div class="list-item">
+      <div class="item-main">
+        <span class="item-label">This Week</span>
       </div>
-      <div class="panel-footer-line">
-        <span class="mono-label">Committed</span>
-        <strong>{{ format_minutes(capacity.committed_minutes) }}</strong>
+      <div class="item-value">{{ format_minutes(capacity.committed_minutes) }} this week</div>
+    </div>
+    {% if plan_by_module %}
+      {% for module, mins in plan_by_module.items() %}
+      <div class="list-item">
+        <div class="item-main">
+          <span class="item-label">{{ module }}</span>
+        </div>
+        <div class="item-value">—/{{ format_minutes(mins) }}</div>
       </div>
-    </section>
-  </aside>
-</div>
+      {% endfor %}
+    {% endif %}
+  </div>
+</section>
+
+<section>
+  <h2>Deadlines</h2>
+  <div class="dense-list">
+    {% for item in deadlines %}
+    <div class="list-item">
+      <div class="item-main">
+        <span class="item-label">{{ item.module_name or "CORE" }}</span>
+        <span class="item-sub">{{ item.title }}</span>
+      </div>
+      <div class="item-value">{{ item.due_at.strftime('%Y-%m-%d') }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+
 {% endblock %}
