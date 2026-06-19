@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block page_title %}{{ note.title if note else 'Note not found' }}{% endblock %}
+
+{% block main %}
+{% if note %}
+<section class="panel">
+  <div class="panel-header panel-header--large">
+    <div>
+      <h2>{{ note.title }}</h2>
+      <p class="muted">
+        {{ note.source_type }}{% if note.module_id %} · module {{ note.module_id }}{% endif %} · updated {{ note.updated_at[:10] }}
+      </p>
+    </div>
+    <a class="chip chip-soft" href="/dashboard/notes">← all notes</a>
+  </div>
+
+  {% if note.tags %}
+  <div class="tags" style="padding:12px 18px 0;">
+    {% for tag in note.tags %}<span class="badge badge-soft">{{ tag }}</span>{% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="note-body">{{ note.body }}</div>
+</section>
+{% else %}
+<div class="empty-state">
+  <h3>Note not found</h3>
+  <p class="muted">No note with id {{ note_id }}. <a href="/dashboard/notes">Back to notes</a>.</p>
+</div>
+{% endif %}
+{% endblock %}
