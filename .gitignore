@@ -17,3 +17,6 @@ build/
 .swarm/
 .understand-anything/
 ruvector.db
+.scripts/
+server.log
+*.log

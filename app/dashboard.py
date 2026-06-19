@@ -177,6 +177,20 @@ async def notes(request: Request) -> HTMLResponse:
     )
 
 
+@router.get("/notes/{note_id}", response_class=HTMLResponse)
+async def note_detail(request: Request, note_id: int) -> HTMLResponse:
+    """Render a read-only single-note view."""
+
+    settings = _get_request_settings(request)
+    service = _get_knowledge_service(settings)
+    note = service.get_note(note_id)
+    return templates.TemplateResponse(
+        request,
+        "note_detail.html",
+        {"note": note, "note_id": note_id},
+    )
+
+
 @router.get("/files", response_class=HTMLResponse)
 async def files(request: Request) -> HTMLResponse:
     """Render a read-only files listing page."""

@@ -8,7 +8,7 @@
   {% for note in notes %}
   <div class="card">
     <div class="card-header">
-      <h3>{{ note.title }}</h3>
+      <h3><a href="/dashboard/notes/{{ note.id }}">{{ note.title }}</a></h3>
       <span class="badge">{{ note.source_type }}</span>
     </div>
     <div class="card-body">
@@ -23,6 +23,7 @@
     </div>
     <div class="card-footer">
       <span class="muted">Updated {{ note.updated_at[:10] }}</span>
+      <a href="/dashboard/notes/{{ note.id }}">Read note →</a>
     </div>
   </div>
   {% endfor %}
