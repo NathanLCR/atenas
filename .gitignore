@@ -23,3 +23,6 @@ scripts/
 server.log
 *.log
 * 2.*
+
+# agent planning notes (local only)
+docs/superpowers/
