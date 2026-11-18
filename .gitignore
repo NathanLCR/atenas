@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 data/
 logs/
+memory/
 inbox/
 output/
 .pytest_cache/
@@ -18,5 +19,7 @@ build/
 .understand-anything/
 ruvector.db
 .scripts/
+scripts/
 server.log
 *.log
+* 2.*
