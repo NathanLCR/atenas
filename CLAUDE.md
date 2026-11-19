@@ -87,7 +87,7 @@ Python project. Do not run npm build/test commands for Atenas.
 
 ```bash
 python3.11 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+.venv/bin/pip install -r requirements-dev.txt
 .venv/bin/pytest -q
 .venv/bin/uvicorn app.main:app --reload
 ```
