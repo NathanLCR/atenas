@@ -100,8 +100,17 @@ before starting the app.
 On startup Atenas launches the Telegram bot (when a token is set) alongside the
 local API and dashboard. Open Telegram, send `/start` to your bot, and try:
 
+- `/start` — a welcome message with example prompts; `/help` lists every command
+  (the same list appears in Telegram's command menu).
 - `/status` — a deterministic slash command.
 - A plain message like *"what's due this week?"* — routed to the LLM tool agent.
+  Atenas shows a typing indicator while the local model works.
+- Send a PDF, Markdown or text file as a Telegram document (optionally with a
+  caption as its title, plus `module=<id>`). Atenas saves it to `inbox/`,
+  registers it and, for PDF/text files, indexes it so `/ask_notes` can answer
+  from it. Files over `TELEGRAM_MAX_UPLOAD_MB` (default and maximum 20) are
+  refused; types that cannot be indexed (for example `.docx`) are saved but
+  reported as not searchable.
 
 The local dashboard and API are support surfaces bound to `127.0.0.1:8000`:
 

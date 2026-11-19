@@ -238,6 +238,23 @@ Allowed application data roots:
 Never allow LLM tools unrestricted filesystem access. Never read parent
 directories, source files, `.env`, SSH keys, or arbitrary user home paths.
 
+### Telegram Document Uploads
+
+Documents sent to the bot are handled only for allowlisted users (the handler
+sits behind the same allowlist filter as commands, and re-checks it). Before
+anything is downloaded the handler checks the extension against a fixed
+allowlist (`.pdf`, `.md`, `.txt`, `.csv`, `.ipynb`, `.json`, `.xml`, `.yaml`,
+`.yml`, `.docx`, `.pptx`) and `document.file_size` against
+`TELEGRAM_MAX_UPLOAD_MB` (default 20, the Bot API download cap). The filename is
+reduced to a safe stem (no path components, no leading dots) and saved into
+`INBOX_DIR` with a random suffix, so uploads never overwrite or traverse. The
+file is then registered through `KnowledgeService.register_file`, which applies
+the path policy; a rejected registration deletes the saved file. Registration
+is an auto-tier reversible local write and emits a `file_uploaded` audit event.
+PDF text is extracted locally with `pypdf` (page and character capped);
+encrypted or corrupt PDFs are logged and left unindexed. No content is sent to
+any external service.
+
 ## Incident Response
 
 If a forbidden or invalid action is attempted:

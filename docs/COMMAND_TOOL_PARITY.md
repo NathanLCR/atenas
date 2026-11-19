@@ -10,6 +10,8 @@ behavior.
 
 | Slash command | Agent path | Status |
 |---|---|---|
+| `/start` | Command-only | Static onboarding text; not a stateful agent task. |
+| `/help` | Command-only | Static grouped command list generated from the catalog. |
 | `/ping` | Command-only | Local adapter health shortcut; `get_status` covers agent status. |
 | `/status` | `get_status` | Equivalent read path. |
 | `/skills` | Command-only | Telegram command catalog/help surface. |
