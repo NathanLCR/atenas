@@ -12,14 +12,15 @@
     <span class="mono">
       {{ today.date.isoformat() }} ·
       {% if today.classes %}{{ today.classes|length }} CLASS{% if today.classes|length != 1 %}ES{% endif %} · {% endif %}
-      {{ format_minutes(today.availability.total_study_minutes) }} STUDY
+      {{ format_minutes(today.availability.total_study_minutes) }} FREE TO STUDY
     </span>
   </div>
 
   <div class="brief">
     <span class="script">today</span>
     {% if next_study_block %}
-    <p>Next focus is <strong>{{ next_study_block.assignment_title }}</strong> at
+    <p>Next focus{% if not next_block_is_today %} (nothing more planned today){% endif %} is <strong>{{ next_study_block.assignment_title }}</strong>
+      {{ next_block_day_label }} at
       {{ format_time(next_study_block.start_at) }}–{{ format_time(next_study_block.end_at) }}
       ({{ format_minutes(next_study_block.minutes) }}). {{ next_study_block.reason }}</p>
     {% else %}
@@ -41,14 +42,13 @@
     <div class="block">
       <div class="blocktop">
         <span class="blocklabel" style="color:var(--teal)">Classes</span>
-        <span class="timepill" style="color:var(--teal);border-color:#3a808066">{{ format_time(today.classes[0].start_at) }} – {{ format_time(today.classes[-1].end_at) }}</span>
       </div>
       {% for cls in today.classes %}
-      <div class="blockitem"><span style="color:var(--teal)">›</span><span>{{ cls.title if cls.title is defined else 'Class' }}</span></div>
+      <div class="blockitem"><span style="color:var(--teal)">›</span><span>{{ format_time(cls.start_at) }}–{{ format_time(cls.end_at) }} · {{ cls.title if cls.title is defined else 'Class' }}</span></div>
       {% endfor %}
     </div>
     {% endif %}
-    {% if next_study_block %}
+    {% if next_study_block and next_block_is_today %}
     <div class="block">
       <div class="blocktop">
         <span class="blocklabel" style="color:var(--green)">Study</span>
@@ -135,7 +135,7 @@
   <section class="inner">
     <div class="inner-title">
       <h3>Study Plan</h3>
-      <span class="mono-label">{{ format_minutes(capacity.committed_minutes) }} committed this week</span>
+      <span class="mono-label">{{ format_minutes(planned_minutes) }} planned this week</span>
     </div>
     {% if plan_by_module %}
       {% set maxmin = plan_by_module.values() | max %}
