@@ -15,17 +15,33 @@ The product around that core was weaker than the code. The review found:
 
 | # | Finding | Impact | Status |
 |---|---|---|---|
-| 1 | `main` was red: local-only planning notes were untracked but 3 tests and 21 doc links still depended on them | CI badge on the README showed failing | In progress |
-| 2 | Docker quickstart returned 403 on every request (bridge-gateway peer rejected by the local-only guard) and could not reach host Ollama | Documented install path did not work | In progress (`TRUSTED_CLIENT_NETWORKS`, fixed compose subnet, `host.docker.internal`) |
-| 3 | `/start` and `/help` were not registered; no Telegram command menu | A new user's first message got "Unknown command" | In progress |
-| 4 | No typing indicator during 10–60 s local-model turns | Bot looks dead | In progress |
-| 5 | Files could only be added by typing a server filesystem path | Unusable from a phone | In progress (Telegram document upload) |
-| 6 | Registered PDFs were never indexed for retrieval | Core study use case (slides, papers) silently failed | In progress (`pypdf` extraction, "not searchable" warnings) |
-| 7 | Docs contradicted each other on whether the 2026-06-11 audit defects were open | Reviewer cannot trust the docs | In progress |
-| 8 | 18 dependency advisories (starlette via pinned FastAPI, pytest); test deps shipped as runtime deps | Supply-chain hygiene | In progress (bumped, `requirements-dev.txt`, `pip-audit` in CI, Dependabot) |
-| 9 | No lint in CI; 123 ruff findings | Code-quality signal | In progress (ruff in CI) |
-| 10 | Empty first run: no way to evaluate the planner without a Telegram bot | Reviewer bounces | In progress (`atenas demo`) |
-| 11 | Dashboard labelled work + class + free time as "committed study"; author's school hard-coded in the template | Misleading numbers, personal data in product UI | In progress |
+| 1 | `main` was red: local-only planning notes were untracked but 3 tests and 21 doc links still depended on them | CI badge on the README showed failing | Fixed |
+| 2 | Docker quickstart returned 403 on every request (bridge-gateway peer rejected by the local-only guard) and could not reach host Ollama | Documented install path did not work | Fixed (`TRUSTED_CLIENT_NETWORKS`, fixed compose subnet, `host.docker.internal`) |
+| 3 | `/start` and `/help` were not registered; no Telegram command menu | A new user's first message got "Unknown command" | Fixed |
+| 4 | No typing indicator during 10–60 s local-model turns | Bot looks dead | Fixed |
+| 5 | Files could only be added by typing a server filesystem path | Unusable from a phone | Fixed (Telegram document upload) |
+| 6 | Registered PDFs were never indexed for retrieval | Core study use case (slides, papers) silently failed | Fixed (`pypdf` extraction, "not searchable" warnings) |
+| 7 | Docs contradicted each other on whether the 2026-06-11 audit defects were open | Reviewer cannot trust the docs | Fixed |
+| 8 | 18 dependency advisories (starlette via pinned FastAPI, pytest); test deps shipped as runtime deps | Supply-chain hygiene | Fixed (bumped, `requirements-dev.txt`, `pip-audit` in CI, Dependabot) |
+| 9 | No lint in CI; 123 ruff findings | Code-quality signal | Fixed (ruff in CI) |
+| 10 | Empty first run: no way to evaluate the planner without a Telegram bot | Reviewer bounces | Fixed (`atenas demo`) |
+| 11 | Dashboard labelled work + class + free time as "committed study"; author's school hard-coded in the template | Misleading numbers, personal data in product UI | Fixed |
+
+## Follow-ups from the fixes
+
+- **Smoke-test on real infrastructure.** The Docker setup was validated with
+  `docker compose config` only; build it and confirm the dashboard answers via
+  the trusted gateway on Linux and Docker Desktop. Run a live Telegram session
+  on `python-telegram-bot` 22 (the test suite mocks Telegram).
+- **Route uploads through the policy engine.** Telegram uploads and
+  `/add_file` are validated and audit-logged but skip `PolicyEngine`, which
+  CLAUDE.md requires for auto-tier writes.
+- **Remove the temporary ruff per-file ignores** on `app/bot.py`,
+  `app/cli.py`, `app/dashboard.py`, `core/retrieval/*`, `core/knowledge/*`.
+- **Timezone defaults.** Some `core/` services and `app/bot.py` still default to
+  `Europe/Dublin`; settings default to `UTC`. Make settings the only source.
+- **Bind-mount permissions.** `./data` owned by the host user may not be
+  writable by the container's `appuser`; document or set `user:` in compose.
 
 ## Now — finish v1 polish (small, high leverage)
 
