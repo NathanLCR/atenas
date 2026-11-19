@@ -14,3 +14,13 @@ data/
 memory/
 inbox/
 output/
+.env.*
+**/.env
+*.sqlite
+*.sqlite-*
+.claude/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+tests/

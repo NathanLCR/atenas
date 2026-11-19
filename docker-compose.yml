@@ -2,6 +2,7 @@ services:
   atenas:
     build: .
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    # Published on the host loopback only; never expose this port publicly.
     ports:
       - "127.0.0.1:8000:8000"
     volumes:
@@ -12,4 +13,39 @@ services:
       - ./output:/app/output
     env_file:
       - .env
+    environment:
+      # Requests published on 127.0.0.1:8000 reach the container from the
+      # bridge gateway, not from loopback. Trust exactly that one address.
+      TRUSTED_CLIENT_NETWORKS: "172.30.57.1/32"
+      # Ollama on the host machine (reached through host.docker.internal), or
+      # the bundled one: DOCKER_OLLAMA_BASE_URL=http://ollama:11434 with
+      # `docker compose --profile ollama up`. Both are non-loopback from the
+      # container's point of view, hence ALLOW_EXTERNAL_OLLAMA. This is still
+      # local-only: the host machine / sibling container, not a remote service.
+      OLLAMA_BASE_URL: "${DOCKER_OLLAMA_BASE_URL:-http://host.docker.internal:11434}"
+      ALLOW_EXTERNAL_OLLAMA: "true"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - atenas
     restart: unless-stopped
+
+  # Optional local Ollama: docker compose --profile ollama up
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ollama"]
+    volumes:
+      - ollama-models:/root/.ollama
+    networks:
+      - atenas
+    restart: unless-stopped
+
+networks:
+  atenas:
+    ipam:
+      config:
+        - subnet: 172.30.57.0/24
+          gateway: 172.30.57.1
+
+volumes:
+  ollama-models:
