@@ -63,6 +63,13 @@ atenas restore PATH --force    # Restore a backup zip into configured runtime pa
 
 The TUI reads the same SQLite database through core services (`1-8` tabs, `/` search, `r` refresh, `q` quit) without mutating state or calling the LLM.
 
+## Telegram tips
+
+Send `/start` for a welcome and `/help` for the full command list (also in
+Telegram's command menu). Send a PDF, Markdown or text file as a document to add
+it to your library; PDFs and text files are indexed so you can ask questions
+about them (limit `TELEGRAM_MAX_UPLOAD_MB`, default 20).
+
 ## Docker
 
 `docker-compose.yml` publishes `127.0.0.1:8000:8000` only and mounts `./data`, `./logs`, `./memory`, `./inbox`, and `./output`:

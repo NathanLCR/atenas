@@ -8,6 +8,13 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from app.config import Settings, get_settings
+from app.telegram_onboarding import (
+    help_command,
+    register_command_menu,
+    start_command,
+    typing_indicator,
+)
+from app.telegram_uploads import document_handler
 from core.academic.models import Assignment, TimeBlock
 from core.academic.service import AcademicService
 from core.academic.validators import parse_kv_args, parse_weekday, validate_hours, validate_priority, validate_status
@@ -20,7 +27,7 @@ from core.nl.toolsets import toolsets_for_telegram_message
 from core.nl.tools import ToolRegistry
 from core.notifications.service import NotificationService, seconds_until, seconds_until_weekday
 from core.retrieval.models import NO_SOURCE_FALLBACK
-from core.retrieval.service import RetrievalService
+from core.retrieval.service import RetrievalService, describe_index_result
 from skills.status import handler as status_handler
 
 if TYPE_CHECKING:
@@ -261,12 +268,16 @@ async def natural_language_handler(update: Update, context: ContextTypes.DEFAULT
         agent = _build_nl_agent(context)
     finally:
         user_data.pop(_NL_SELECTED_TOOLSETS_KEY, None)
-    result = agent.run(
-        text.strip(),
-        conversation=user_data.get("nl_agent_history", thread.conversation),
-        running_summary=thread.running_summary,
-        actor_user_id=user_id,
-    )
+    # agent.run is synchronous and can take a minute on a local model; run it in a
+    # worker thread so the event loop can keep refreshing the typing indicator.
+    async with typing_indicator(update, context):
+        result = await asyncio.to_thread(
+            agent.run,
+            text.strip(),
+            conversation=user_data.get("nl_agent_history", thread.conversation),
+            running_summary=thread.running_summary,
+            actor_user_id=user_id,
+        )
     user_data["nl_agent_history"] = result.conversation
     new_summary = agent.assembler.compact_history(
         result.conversation,
@@ -839,6 +850,8 @@ def build_application(settings: Settings | None = None) -> Application:
     application.bot_data["settings"] = runtime_settings
 
     _commands = [
+        ("start", start_command),
+        ("help", help_command),
         ("ping", ping_command),
         ("status", status_command),
         ("skills", skills_command),
@@ -884,6 +897,7 @@ def build_application(settings: Settings | None = None) -> Application:
             CommandHandler(cmd_name, _audit_cmd(handler), filters=allowlist_filter)
         )
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & allowlist_filter, natural_language_handler))
+    application.add_handler(MessageHandler(filters.Document.ALL & allowlist_filter, document_handler))
     application.add_handler(MessageHandler(filters.COMMAND & allowlist_filter, unknown_command))
     return application
 
@@ -903,6 +917,7 @@ async def start_bot(app: Application) -> None:
     """Initialize and start the Telegram application under FastAPI control."""
 
     await app.initialize()
+    await register_command_menu(app.bot)
     await app.start()
     await app.updater.start_polling()
     _start_notification_tasks(app)
@@ -1396,7 +1411,19 @@ async def add_file_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     tags = [t.strip() for t in tags_str.split(",") if t.strip()] if tags_str else []
     result = service.register_file(path=path, title=title, module_id=module_id,
                                     assignment_id=assignment_id, tags=tags)
-    await _reply(update, result.message)
+    message = result.message
+    if result.success and result.record_id is not None:
+        message += "\n" + _index_new_file(context, result.record_id, path)
+    await _reply(update, message)
+
+
+def _index_new_file(context: ContextTypes.DEFAULT_TYPE, file_id: int, path: str) -> str:
+    try:
+        searchable, chunks = _build_retrieval_service(context).index_file(file_id)
+    except Exception:
+        logger.warning("add_file_index_failed", extra={"event_type": "add_file_index_failed"})
+        return "Registered; indexing failed, it will be retried on the next search."
+    return describe_index_result(searchable, chunks, path)
 
 
 async def files_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

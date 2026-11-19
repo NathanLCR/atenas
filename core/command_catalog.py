@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 COMMAND_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
-    ("Core", ("/ping", "/status", "/skills", "/pending", "/cancel_pending", "/confirm")),
+    ("Core", ("/start", "/help", "/ping", "/status", "/skills", "/pending", "/cancel_pending", "/confirm")),
     ("Schedule", ("/today", "/week", "/deadlines", "/availability", "/plan", "/study")),
     (
         "Data",
@@ -43,7 +43,57 @@ COMMAND_GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ),
 )
 
+COMMAND_DESCRIPTIONS: dict[str, str] = {
+    "/start": "Welcome and quick start",
+    "/help": "List all commands",
+    "/ping": "Check the bot is alive",
+    "/status": "System status",
+    "/skills": "Command catalog",
+    "/pending": "Show the action awaiting confirmation",
+    "/cancel_pending": "Cancel the pending action",
+    "/confirm": "Confirm the pending action",
+    "/today": "Today's classes, shifts and deadlines",
+    "/week": "This week's overview",
+    "/deadlines": "Upcoming deadlines",
+    "/availability": "Free study time",
+    "/plan": "Generate a study plan",
+    "/study": "Suggest what to study next",
+    "/add_module": "Add a module",
+    "/add_class": "Add a class session",
+    "/add_shift": "Add a work shift",
+    "/add_assignment": "Add an assignment",
+    "/set_status": "Set assignment status",
+    "/set_hours": "Set assignment hours",
+    "/modules": "List modules",
+    "/classes": "List classes",
+    "/shifts": "List work shifts",
+    "/assignments": "List assignments",
+    "/reminders": "Review reminders",
+    "/add_note": "Save a note",
+    "/notes": "List or search notes",
+    "/note": "Show one note",
+    "/archive_note": "Archive a note",
+    "/add_file": "Register a file by server path",
+    "/files": "List registered files",
+    "/search": "Search notes",
+    "/link_note_file": "Link a note to a file",
+    "/ask_notes": "Ask a question about your notes",
+    "/ask_note": "Ask a question about one note",
+    "/sources": "Show matching sources",
+    "/summarize_note": "Summarize a note",
+    "/explain_note": "Explain a note",
+    "/questions_note": "Practice questions from a note",
+    "/flashcards_note": "Flashcards from a note",
+    "/rewrite_note": "Rewrite a note",
+}
+
 COMMAND_TOOL_PARITY: dict[str, dict[str, str]] = {
+    "/start": {
+        "command_only_reason": "Static onboarding text shown on first contact; not a stateful agent task.",
+    },
+    "/help": {
+        "command_only_reason": "Static grouped command list generated from the catalog; not a stateful agent task.",
+    },
     "/ping": {
         "command_only_reason": "Local adapter health shortcut; agent status uses get_status instead.",
     },

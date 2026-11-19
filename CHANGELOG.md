@@ -35,6 +35,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Telegram onboarding and uploads**: `/start` welcome and `/help` grouped
+  command list (generated from the command catalog), Telegram command menu via
+  `set_my_commands` (best-effort), a typing indicator while the agent works,
+  and document upload (`TELEGRAM_MAX_UPLOAD_MB`, default 20) that saves to the
+  inbox, registers and indexes the file. PDF text extraction via `pypdf` for
+  registered files; unsupported types are reported as registered but not
+  searchable in `/add_file` and upload replies.
+
 - **WP1 — Reliable tool-decision parsing**: the decision call now passes
   `format="json"` to the Ollama client (backends that ignore the field degrade
   gracefully). On a parse/validation failure the loop makes exactly one bounded
