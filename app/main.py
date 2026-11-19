@@ -75,16 +75,17 @@ def create_app(settings: Settings | None = None, registry: SkillRegistry | None 
             logger.info("application_shutdown", extra={"event_type": "application_shutdown"})
 
     app = FastAPI(title=runtime_settings.app_name, lifespan=lifespan)
+    trusted_networks = runtime_settings.trusted_networks
 
     @app.middleware("http")
     async def local_only_guard(request: Request, call_next):
         if runtime_settings.allow_non_loopback_clients:
             return await call_next(request)
         peer_host = request.client.host if request.client is not None else None
-        if peer_host and not _is_loopback_or_test_client(peer_host):
+        if peer_host and not _is_allowed_host(peer_host, trusted_networks):
             return JSONResponse({"detail": "Atenas API/dashboard is local-only."}, status_code=403)
         forwarded_for = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-        if forwarded_for and not _is_loopback_or_test_client(forwarded_for):
+        if forwarded_for and not _is_allowed_host(forwarded_for, trusted_networks):
             return JSONResponse({"detail": "Atenas API/dashboard is local-only."}, status_code=403)
         return await call_next(request)
 
@@ -122,3 +123,14 @@ def _is_loopback_or_test_client(host: str) -> bool:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
         return host == "localhost"
+
+
+def _is_allowed_host(host: str, trusted_networks: list) -> bool:
+    """Return True for loopback/test clients or hosts inside a trusted network."""
+    if _is_loopback_or_test_client(host):
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return any(address in network for network in trusted_networks)

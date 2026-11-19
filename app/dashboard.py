@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -22,7 +22,17 @@ from core.time import utc_now_iso
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/dashboard")
-templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
+def _stamp_context(request: Request) -> dict[str, str]:
+    """Expose the configured header stamp lines to every dashboard template."""
+
+    line1, line2 = _get_request_settings(request).dashboard_stamp_lines
+    return {"stamp_line1": line1, "stamp_line2": line2}
+
+
+templates = Jinja2Templates(
+    directory=Path(__file__).parent / "templates",
+    context_processors=[_stamp_context],
+)
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -34,11 +44,7 @@ async def home(request: Request) -> HTMLResponse:
     today_overview = academic_service.get_today_overview()
     study_plan = academic_service.get_study_plan()
     week_overview = academic_service.get_week_overview()
-    trace_records = _load_trace_records(settings)
-    llm_records = _load_llm_call_records(settings)
-    knowledge_counts = _load_knowledge_counts(settings)
 
-    # New data for redesign
     now = datetime.now(ZoneInfo(settings.timezone))
     week_days = [
         datetime.combine(week_overview.start_date + timedelta(days=i), datetime.min.time())
@@ -50,6 +56,9 @@ async def home(request: Request) -> HTMLResponse:
         m_name = block.module_name or "OTHER"
         plan_by_module[m_name] = plan_by_module.get(m_name, 0) + block.minutes
 
+    next_block = _select_next_study_block(study_plan, settings.timezone)
+    next_block_label = _day_label(next_block.start_at.date(), now.date()) if next_block else None
+
     return templates.TemplateResponse(
         request,
         "home.html",
@@ -58,7 +67,9 @@ async def home(request: Request) -> HTMLResponse:
             "version": settings.APP_VERSION,
             "utc_now": now.strftime("%H:%M %Z · %d %b %Y"),
             "today": today_overview,
-            "next_study_block": _select_next_study_block(study_plan, settings.timezone),
+            "next_study_block": next_block,
+            "next_block_is_today": bool(next_block and next_block.start_at.date() == now.date()),
+            "next_block_day_label": next_block_label,
             "deadlines": list(today_overview.deadlines[:4]),
             "plan": study_plan,
             "plan_by_module": plan_by_module,
@@ -66,13 +77,16 @@ async def home(request: Request) -> HTMLResponse:
             "week_number": now.isocalendar()[1],
             "week_days": week_days,
             "grid_data": _build_grid_data(week_overview),
+            "module_labels": {
+                m.id: (m.code or m.name) for m in academic_service.list_modules()
+            },
             "modules_activity": _build_modules_activity(academic_service, week_days),
-            "capacity": _build_capacity_summary(week_overview),
+            "planned_minutes": study_plan.summary.total_planned_minutes,
             "format_minutes": _format_minutes,
             "format_time": _format_time,
             "format_date": _format_date,
             "format_status": _format_status,
-            "minutes_until": _minutes_until,
+            "minutes_until": lambda value: _minutes_until(value, settings.timezone),
         },
     )
 
@@ -297,75 +311,14 @@ def _select_next_study_block(plan: object, timezone_name: str) -> object | None:
     return future_blocks[0] if future_blocks else blocks[0]
 
 
-def _load_knowledge_counts(settings: Settings) -> dict[str, int]:
-    """Return local knowledge counts without failing the overview page."""
+def _day_label(day: date, today: date) -> str:
+    """Return "today", "tomorrow" or a weekday/date label for a plan day."""
 
-    try:
-        service = _get_knowledge_service(settings)
-        return {
-            "notes": len(service.list_notes(limit=1000)),
-            "files": len(service.list_files(limit=1000)),
-        }
-    except sqlite3.OperationalError as exc:
-        logger.debug("knowledge_counts_unavailable", exc_info=exc)
-        return {"notes": 0, "files": 0}
-
-
-def _build_health_summary(
-    *,
-    trace_records: list[dict[str, object]],
-    llm_records: list[dict[str, object]],
-    knowledge_counts: dict[str, int],
-) -> dict[str, object]:
-    """Build read-only local health labels from actual local records."""
-
-    source_count = knowledge_counts["notes"] + knowledge_counts["files"]
-    latest_trace = trace_records[0] if trace_records else {}
-    latest_llm = llm_records[0] if llm_records else {}
-    trace_status = str(latest_trace.get("status") or "idle")
-    llm_success = latest_llm.get("success")
-    return {
-        "retrieval_label": f"{source_count} local sources",
-        "retrieval_percent": 100 if source_count else 0,
-        "trace_status": trace_status,
-        "trace_summary": str(latest_trace.get("user_message_summary") or "No agent traces recorded"),
-        "trace_tool_count": int(latest_trace.get("tool_call_count") or 0),
-        "llm_label": "last call ok" if llm_success else "no successful calls logged",
-        "llm_model": str(latest_llm.get("model") or "local model not recorded"),
-        "status_class": _status_class(trace_status),
-    }
-
-
-def _build_capacity_summary(overview: object) -> dict[str, object]:
-    """Build weekly capacity rows from real week overview summaries."""
-
-    day_summaries = list(getattr(overview, "day_summaries", []) or [])
-    class_minutes = sum(int(getattr(day, "class_minutes", 0) or 0) for day in day_summaries)
-    work_minutes = sum(int(getattr(day, "work_minutes", 0) or 0) for day in day_summaries)
-    study_minutes = int(getattr(getattr(overview, "availability", None), "total_study_minutes", 0) or 0)
-    committed = class_minutes + work_minutes + study_minutes
-    denominator = max(committed, 1)
-    rows = [
-        _capacity_row("Work", work_minutes, denominator, "work"),
-        _capacity_row("Classes", class_minutes, denominator, "class"),
-        _capacity_row("Study", study_minutes, denominator, "study"),
-    ]
-    return {
-        "rows": rows,
-        "committed_minutes": committed,
-        "range_label": f"{_format_date(overview.start_date)} - {_format_date(overview.end_date)}",
-    }
-
-
-def _capacity_row(label: str, minutes: int, denominator: int, kind: str) -> dict[str, object]:
-    """Return one capacity bar row."""
-
-    return {
-        "label": label,
-        "minutes": minutes,
-        "percent": min(100, round((minutes / denominator) * 100)) if denominator else 0,
-        "kind": kind,
-    }
+    if day == today:
+        return "today"
+    if day == today + timedelta(days=1):
+        return "tomorrow"
+    return day.strftime("%a %d %b")
 
 
 def _build_trace_summary(records: list[dict[str, object]]) -> list[dict[str, str]]:
@@ -389,19 +342,6 @@ def _build_trace_summary(records: list[dict[str, object]]) -> list[dict[str, str
             }
         )
     return lines
-
-
-def _status_class(status: object) -> str:
-    """Map local status values to semantic CSS suffixes."""
-
-    normalized = str(status or "").lower()
-    if normalized in {"success", "ok", "done", "healthy"}:
-        return "success"
-    if normalized in {"pending", "in_progress", "warning", "warn"}:
-        return "warning"
-    if normalized in {"error", "fail", "failed", "danger"}:
-        return "danger"
-    return "soft"
 
 
 def _get_request_settings(request: Request) -> Settings:
@@ -515,7 +455,7 @@ def _format_status(value: object) -> str:
     return str(value or "").replace("_", " ").title()
 
 
-def _minutes_until(value: object, timezone_name: str = "Europe/Dublin") -> int | None:
+def _minutes_until(value: object, timezone_name: str) -> int | None:
     """Return whole minutes until a datetime, or None for past values."""
 
     if not isinstance(value, datetime):
@@ -560,15 +500,15 @@ def _build_modules_activity(service: AcademicService, week_days: list[datetime])
     """Map module activity across the week for the grid dots."""
     modules = service.list_modules()
     assignments = service.list_all_assignments(include_completed=True)
-
-    # For a high-density "routine-plan" look, we just need dots.
-    # In a real system, this would look at sessions and study blocks.
+    sessions = service.list_class_sessions()
     activity = []
     for m in modules:
         days_active = []
         for day in week_days:
-            # Simple heuristic: module is active if it has a deadline or class that day
-            is_active = any(a.module_id == m.id and a.due_at.date() == day.date() for a in assignments)
+            # Active if the module has a deadline or a weekly class that day.
+            is_active = any(
+                a.module_id == m.id and a.due_at.date() == day.date() for a in assignments
+            ) or any(c.module_id == m.id and c.weekday == day.weekday() for c in sessions)
             days_active.append(is_active)
         activity.append({
             "name": m.name,

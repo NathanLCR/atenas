@@ -49,11 +49,24 @@ atenas doctor
 
 Default Ollama models in `.env.example` are `llama3.1:8b`, `llama3.2`, and `nomic-embed-text`. Once running, open `http://127.0.0.1:8000/dashboard/`.
 
+## Try it in 2 minutes without Telegram
+
+No bot, no Ollama needed. Seed a fictional study week (four made-up modules, recurring classes, work shifts including a late close, assignments due in the next days) and look at the planner output:
+
+```bash
+atenas demo                    # refuses if modules already exist; --force to add anyway, --db PATH for another database
+.venv/bin/uvicorn app.main:app
+# open http://127.0.0.1:8000/dashboard/
+```
+
+Dates are computed relative to today in your `TIMEZONE`, so the dashboard always shows a live week. The plan page shows deterministic study blocks that avoid classes, shifts, and late-shift recovery.
+
 ## CLI and terminal UI
 
 Installing editable (`pip install -e .`) exposes the Click CLI (`app/cli.py`):
 
 ```bash
+atenas demo                    # Seed a synthetic study week for the dashboard and planner
 atenas doctor                  # Check runtime dirs, SQLite, Telegram allowlist, Ollama, model profile
 atenas traces --limit 20       # Show recent agent traces and tool call counts
 atenas tui                     # Launch the read-only curses TUI (or: .venv/bin/python -m app.tui)
@@ -72,12 +85,24 @@ about them (limit `TELEGRAM_MAX_UPLOAD_MB`, default 20).
 
 ## Docker
 
-`docker-compose.yml` publishes `127.0.0.1:8000:8000` only and mounts `./data`, `./logs`, `./memory`, `./inbox`, and `./output`:
-
 ```bash
 cp .env.example .env
-docker-compose up
+docker compose up --build
+# open http://127.0.0.1:8000/dashboard/
+docker compose exec atenas atenas demo      # optional: seed demo data
+docker compose exec atenas atenas doctor
 ```
+
+`docker-compose.yml` publishes `127.0.0.1:8000:8000` only and mounts `./data`, `./logs`, `./memory`, `./inbox`, and `./output`. It defines a network with a fixed subnet (`172.30.57.0/24`) and sets `TRUSTED_CLIENT_NETWORKS=172.30.57.1/32`: requests published through `127.0.0.1` reach the container from the bridge gateway, and the local-only guard accepts only that single address (the `X-Forwarded-For` check still applies). `TRUSTED_CLIENT_NETWORKS` accepts private or loopback CIDRs only; `0.0.0.0/0` and public ranges are rejected at startup.
+
+Ollama: the container reaches Ollama on the host machine at `http://host.docker.internal:11434` (`ALLOW_EXTERNAL_OLLAMA=true` is set because that is not loopback inside the container; it is still your own machine). To run Ollama in Compose instead:
+
+```bash
+DOCKER_OLLAMA_BASE_URL=http://ollama:11434 docker compose --profile ollama up --build
+docker compose exec ollama ollama pull llama3.1:8b
+```
+
+The image installs the package, runs as a non-root user, and has a `/health` healthcheck.
 
 ## Tests
 

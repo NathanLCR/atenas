@@ -1,13 +1,15 @@
 """Application configuration loading for Atenas Core."""
 
+import ipaddress
+import json
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Annotated
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 if TYPE_CHECKING:
     from core.nl.model_profiles import ModelProfile
@@ -40,10 +42,10 @@ class Settings(BaseSettings):
     # IANA timezone for all wall-clock scheduling (shifts, classes, plans,
     # "today"/"this week" windows). Stored timestamps stay UTC ISO 8601;
     # only user-facing scheduling math is interpreted in this zone.
-    timezone: str = "Europe/Dublin"
+    timezone: str = "UTC"
 
     telegram_bot_token: str | None = None
-    telegram_allowed_user_ids: list[int] = Field(default_factory=list)
+    telegram_allowed_user_ids: Annotated[list[int], NoDecode] = Field(default_factory=list)
     notifications_chat_id: int | None = None
     deadline_alert_hours: int = Field(default=72, ge=1, le=336)
     notifications_enabled: bool = True
@@ -54,7 +56,7 @@ class Settings(BaseSettings):
     output_dir: Path = Path("output")
     inbox_dir: Path = Path("inbox")
     logs_dir: Path = Path("logs")
-    knowledge_file_roots: list[Path] = Field(
+    knowledge_file_roots: Annotated[list[Path], NoDecode] = Field(
         default_factory=lambda: [Path("inbox"), Path("memory")]
     )
 
@@ -89,6 +91,13 @@ class Settings(BaseSettings):
     enable_web_tools: bool = False
     allow_external_ollama: bool = False
     allow_non_loopback_clients: bool = False
+    # Narrow allowlist of private/loopback CIDRs whose peers may reach the
+    # local-only API/dashboard (e.g. the Docker bridge gateway). Empty = none.
+    trusted_client_networks: Annotated[list[str], NoDecode] = Field(default_factory=list)
+
+    # Two short lines shown in the dashboard header stamp.
+    dashboard_stamp_line1: str = "LOCAL STUDY DESK"
+    dashboard_stamp_line2: str | None = None
 
     log_level: str = "INFO"
 
@@ -143,6 +152,32 @@ class Settings(BaseSettings):
             raise ValueError(f"Invalid IANA timezone: {value!r}") from exc
         return value
 
+    @field_validator("trusted_client_networks", mode="before")
+    @classmethod
+    def parse_trusted_client_networks(cls, value: object) -> object:
+        """Parse and validate trusted CIDRs: private/loopback only, never any-address."""
+
+        if value is None or value == "":
+            return []
+        if isinstance(value, str):
+            value = [item.strip() for item in value.split(",") if item.strip()]
+        if not isinstance(value, (list, tuple)):
+            raise ValueError("TRUSTED_CLIENT_NETWORKS must be a comma-separated list of CIDRs")
+        normalized: list[str] = []
+        for item in value:
+            try:
+                network = ipaddress.ip_network(str(item).strip(), strict=False)
+            except ValueError as exc:
+                raise ValueError(f"Invalid trusted client network: {item!r}") from exc
+            if network.prefixlen == 0:
+                raise ValueError(f"Trusted client network too broad: {item!r}")
+            if not (network.is_private or network.is_loopback) or network.is_unspecified:
+                raise ValueError(
+                    f"Trusted client network must be private or loopback: {item!r}"
+                )
+            normalized.append(str(network))
+        return normalized
+
     @field_validator("telegram_allowed_user_ids", mode="before")
     @classmethod
     def parse_allowed_user_ids(cls, value: object) -> object:
@@ -153,6 +188,8 @@ class Settings(BaseSettings):
         if isinstance(value, int):
             return [value]
         if isinstance(value, str):
+            if value.strip().startswith("["):
+                return json.loads(value)
             return [int(item.strip()) for item in value.split(",") if item.strip()]
         return value
 
@@ -164,6 +201,8 @@ class Settings(BaseSettings):
         if value is None or value == "":
             return [Path("inbox"), Path("memory")]
         if isinstance(value, str):
+            if value.strip().startswith("["):
+                return [Path(item) for item in json.loads(value)]
             return [Path(item.strip()) for item in value.split(",") if item.strip()]
         return value
 
@@ -204,6 +243,23 @@ class Settings(BaseSettings):
                 seen.add(key)
                 ordered.append(path)
         return ordered
+
+    @property
+    def trusted_networks(self) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+        """Parsed trusted client networks."""
+
+        return [ipaddress.ip_network(item) for item in self.trusted_client_networks]
+
+    @property
+    def dashboard_stamp_lines(self) -> tuple[str, str]:
+        """Header stamp lines: configured, else app name and timezone city."""
+
+        line1 = self.dashboard_stamp_line1.strip() or self.app_name.upper()
+        line2 = self.dashboard_stamp_line2
+        if line2 is None:
+            city = self.timezone.rsplit("/", 1)[-1].replace("_", " ")
+            line2 = city
+        return line1, line2.strip()
 
     @property
     def db_path(self) -> Path:

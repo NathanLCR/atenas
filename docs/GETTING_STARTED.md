@@ -119,6 +119,19 @@ The local dashboard and API are support surfaces bound to `127.0.0.1:8000`:
 
 Do not expose these on a LAN or public host. See `docs/SECURITY.md`.
 
+No Telegram bot yet? Run `atenas demo` first to seed a fictional study week and
+explore the dashboard and planner (see the README).
+
+### Docker notes
+
+`docker compose up --build` runs the same app with the port published on
+`127.0.0.1` only. Compose sets `TRUSTED_CLIENT_NETWORKS` to the bridge gateway
+of its fixed subnet so the local-only guard accepts published requests, and
+points `OLLAMA_BASE_URL` at `http://host.docker.internal:11434` (Ollama on your
+machine). Use `docker compose --profile ollama up` plus
+`DOCKER_OLLAMA_BASE_URL=http://ollama:11434` to run Ollama in Compose. Run CLI
+commands with `docker compose exec atenas atenas doctor`.
+
 ## 8. Run the tests (optional)
 
 ```bash

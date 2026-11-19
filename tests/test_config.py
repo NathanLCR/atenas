@@ -17,7 +17,7 @@ def test_default_settings_load_without_env() -> None:
     assert settings.max_cloud_cost_per_day_usd == 1.00
     assert settings.max_cloud_calls_per_day == 50
     assert settings.telegram_allowed_user_ids == []
-    assert settings.timezone == "Europe/Dublin"
+    assert settings.timezone == "UTC"
 
 
 def test_db_path_property_resolves_correctly(tmp_path: Path) -> None:
@@ -107,3 +107,16 @@ def test_explicit_ollama_model_wins_over_small_model() -> None:
     )
 
     assert settings.ollama_model == "llama3.1:8b"
+
+
+def test_multi_value_env_lists_accept_comma_separated_and_json(monkeypatch) -> None:
+    """Comma-separated env values (as in .env.example) must not crash settings load."""
+
+    monkeypatch.setenv("TELEGRAM_ALLOWED_USER_IDS", "123456789,987654321")
+    monkeypatch.setenv("KNOWLEDGE_FILE_ROOTS", "inbox, memory")
+    settings = Settings(_env_file=None)
+    assert settings.telegram_allowed_user_ids == [123456789, 987654321]
+    assert [str(p) for p in settings.knowledge_file_roots] == ["inbox", "memory"]
+
+    monkeypatch.setenv("TELEGRAM_ALLOWED_USER_IDS", "[1, 2]")
+    assert Settings(_env_file=None).telegram_allowed_user_ids == [1, 2]

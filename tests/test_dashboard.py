@@ -412,5 +412,8 @@ class _FakeDashboardAcademicService:
     def list_modules(self) -> list[SimpleNamespace]:
         return [SimpleNamespace(id="mod-1", name="NLP", code="NLP")]
 
+    def list_class_sessions(self) -> list[SimpleNamespace]:
+        return []
+
     def list_all_assignments(self, include_completed: bool = False) -> list[SimpleNamespace]:
         return [self.assignment]
