@@ -10,7 +10,6 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.config import Settings
 from app.bot import (
     AllowlistFilter,
     archive_note_command,
@@ -18,6 +17,7 @@ from app.bot import (
     natural_language_handler,
     pending_command,
 )
+from app.config import Settings
 from core.academic.service import AcademicService
 from core.knowledge.service import KnowledgeService
 from core.llm.client import OllamaClient, OllamaResponse

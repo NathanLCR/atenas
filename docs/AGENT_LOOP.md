@@ -179,6 +179,5 @@ Shipped tool-loop behavior:
    and egress toolsets are added per message by deterministic request-marker
    matching, never by the model.
 
-All defects identified by the 2026-06-11 audit are resolved as of 2026-06-13.
-See `docs/superpowers/specs/2026-06-12-v1-defect-and-governance-closure-spec.md`
-for the full record.
+All defects identified by the 2026-06-11 audit are resolved as of 2026-06-13;
+see CHANGELOG.md.

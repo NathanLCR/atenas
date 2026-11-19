@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from app.config import Settings
 from app.bot import (
     AllowlistFilter,
     _get_skills_text,
@@ -20,6 +19,7 @@ from app.bot import (
     status_command,
     unknown_command,
 )
+from app.config import Settings
 
 Callback = Callable[[SimpleNamespace, SimpleNamespace], Awaitable[None]]
 

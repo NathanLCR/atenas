@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from app.config import Settings
 from core.academic.importers import (
     import_assignments_csv,
     import_class_sessions_csv,

@@ -39,7 +39,7 @@ Follow [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) for the full Ollama 
 
 ```bash
 python3.11 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+.venv/bin/pip install -r requirements-dev.txt
 .venv/bin/pip install -e .
 cp .env.example .env
 # set TELEGRAM_BOT_TOKEN and TELEGRAM_ALLOWED_USER_IDS in .env
@@ -80,7 +80,7 @@ The test suite mocks LLM providers and uses isolated temporary databases, so it 
 .venv/bin/pytest -q
 ```
 
-Verified locally: 690 tests across 59 test files.
+Run the suite locally to see the current count.
 
 ## Local routes and docs
 

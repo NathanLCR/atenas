@@ -11,10 +11,11 @@ from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ValidationError
 
-from core.action_executor import ActionExecutor
 from core.academic.service import AcademicService
 from core.academic.validators import validate_status
+from core.action_executor import ActionExecutor
 from core.knowledge.service import KnowledgeService
+from core.llm.engine import OllamaEngine
 from core.memory_manager import MemoryManager
 from core.nl.tool_contracts import (
     AddAssignmentArgs,
@@ -37,22 +38,22 @@ from core.nl.tool_contracts import (
     ReadMemoryArgs,
     RetrieveSourcesArgs,
     SearchNotesArgs,
-    SetAssignmentStatusArgs,
     SetAssignmentHoursArgs,
+    SetAssignmentStatusArgs,
     StructuredToolResult,
     ToolCategory,
     ToolDefinition,
     ToolRun,
     UpdateMemoryArgs,
-    WriteMemoryArgs,
     WebSearchArgs,
+    WriteMemoryArgs,
     action_tool_result,
     action_tool_run,
     assignment_data,
     code_label,
     command_action_result,
-    confirm_delete_modules,
     confirm_deduplicate_modules,
+    confirm_delete_modules,
     done,
     module_data,
     safe_payload,
@@ -61,7 +62,6 @@ from core.nl.tool_contracts import (
     wrap_web_content,
 )
 from core.nl.toolsets import ToolsetName, tool_names_for_toolsets
-from core.llm.engine import OllamaEngine
 from core.retrieval.service import RetrievalService
 from core.schemas import (
     ActionCriticality,
@@ -148,7 +148,7 @@ class ToolRegistry:
 
         try:
             run = tool.handler(args, actor_user_id)
-        except Exception as exc:
+        except Exception:
             logger.exception(
                 "tool_handler_exception",
                 extra={
@@ -942,7 +942,7 @@ class ToolRegistry:
                 "status": "operational",
                 "services": {
                     "academic": "available",
-                    "knowledge": "available", 
+                    "knowledge": "available",
                     "memory": "available",
                     "retrieval": "available"
                 }
@@ -954,7 +954,7 @@ class ToolRegistry:
         overview = self._academic().get_today_overview()
         # Format similar to how NL router does it for consistency
         lines = [f"Today - {overview.date.strftime('%a %d %b')}", ""]
-        
+
         # Classes
         if overview.classes:
             lines.extend(["Classes", ""] + [
@@ -964,7 +964,7 @@ class ToolRegistry:
         else:
             lines.extend(["Classes", "- No classes today"])
         lines.append("")
-        
+
         # Work shifts
         if overview.work_shifts:
             lines.extend(["Work", ""] + [
@@ -974,7 +974,7 @@ class ToolRegistry:
         else:
             lines.extend(["Work", "- No work shifts today"])
         lines.append("")
-        
+
         # Study windows
         if overview.availability.study_windows:
             lines.extend(["Study windows", ""] + [
@@ -984,7 +984,7 @@ class ToolRegistry:
         else:
             lines.extend(["Study windows", "- No study windows available today"])
         lines.append("")
-        
+
         # Deadlines
         if overview.deadlines:
             lines.extend(["Deadlines", ""] + [
@@ -993,10 +993,10 @@ class ToolRegistry:
             ])
         else:
             lines.extend(["Deadlines", "- No open deadlines"])
-        
+
         lines.append("")
         lines.append(f"Total study time: {self._fmt_dur(overview.availability.total_study_minutes)}")
-        
+
         return done("\n".join(lines), data={
             "date": overview.date.isoformat(),
             "classes": [cls.model_dump() for cls in overview.classes],
@@ -1549,7 +1549,7 @@ class ToolRegistry:
         if len(data) >= 4 and data[0]:
             descriptions = data[2] if len(data) > 2 else ["" for _ in data[0]]
             links = data[3] if len(data) > 3 else ["" for _ in data[0]]
-            for title, desc, link in zip(data[1], descriptions, links):
+            for title, desc, link in zip(data[1], descriptions, links, strict=False):
                 results.append({"title": title, "url": link, "snippet": desc})
         wrapped = [
             {"title": r["title"], "content": wrap_web_content(r["url"], r["snippet"])}

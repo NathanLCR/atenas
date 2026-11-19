@@ -10,7 +10,6 @@ import logging
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
-from core.action_executor import ActionExecutor
 from core.academic.service import AcademicService
 from core.academic.validators import (
     CommandResult,
@@ -24,8 +23,9 @@ from core.academic.validators import (
     validate_status,
     validate_text_field,
 )
-from core.knowledge.validators import normalize_tags, validate_note_body, validate_note_title
+from core.action_executor import ActionExecutor
 from core.knowledge.service import KnowledgeService
+from core.knowledge.validators import normalize_tags, validate_note_body, validate_note_title
 from core.llm.service import LLMService
 from core.nl.intent import (
     INTENT_ADD_ASSIGNMENT,
@@ -46,9 +46,7 @@ from core.nl.intent import (
     INTENT_SET_STATUS,
     INTENT_STUDY,
     INTENT_TODAY,
-    INTENT_UNKNOWN,
     INTENT_WEEK,
-    READ_INTENTS,
     IntentMatch,
 )
 from core.notifications.service import NotificationService
@@ -271,7 +269,7 @@ class NLRouter:
         cmd = SLASH_COMMAND_SUGGESTIONS.get(match.intent)
         if cmd:
             return f"I'm not entirely sure what you mean. Try: {cmd}"
-        return f"I didn't understand that. You can try /ask_notes with your question, or use /status to see available commands."
+        return "I didn't understand that. You can try /ask_notes with your question, or use /status to see available commands."
 
     def _register_write_handlers(self) -> None:
         """Register NL write handlers on this router's policy executor."""

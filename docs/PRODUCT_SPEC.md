@@ -4,7 +4,7 @@
 Atenas
 
 ## Repository
-`study-agent-cd`
+`atenas`
 
 ## Status
 Target product contract as of 2026-05-20, with implementation status refreshed
@@ -59,7 +59,7 @@ content is untrusted data, never instructions.
 
 ## Target User
 
-**Primary:** Nathan — MSc student with part-time/full-time hospitality work.
+**Primary persona:** a postgraduate student working part-time hospitality shifts (the author's own situation).
 
 **Generalised target (future):**
 - MSc students
@@ -106,7 +106,7 @@ content is untrusted data, never instructions.
 
 ## Current Implementation Snapshot
 
-Verified on 2026-05-25:
+Last verified 2026-06-13 (the 2026-06-11 audit defects are resolved):
 
 - Telegram slash commands cover core status, schedule/planning, academic data,
   notes/files, retrieval, LLM note helpers, reminders, and confirmation
@@ -116,9 +116,8 @@ Verified on 2026-05-25:
 - `ToolRegistry` currently exposes v1 read, compute, act, system, and opt-in
   web tools for the main product areas listed above.
 - Confirm-first destructive/egress tools create pending Telegram confirmations;
-  auto-tier local writes are intended to execute through policy and audit
-  logging (the four `add_*` tools currently bypass that path — a recorded v1
-  gap, see below).
+  auto-tier local writes execute through the policy engine and audit logging,
+  including the four `add_*` tools.
 - The local dashboard and TUI exist as read-only support surfaces.
 - Retrieval uses registered, non-archived notes/files, incremental SQLite/FTS5
   indexing, and local Ollama for generated answers when available.
@@ -134,10 +133,6 @@ Verified on 2026-05-25:
 
 Remaining v1 follow-up:
 
-- Close the 2026-06-11 audit defects (tool crashes, policy/audit bypass on
-  `add_*` tools, local-only guard header trust, pending-action status
-  accuracy, `/confirm`, command logging) per
-  `docs/superpowers/specs/2026-06-12-v1-defect-and-governance-closure-spec.md`.
 - Keep release/deployment checks local-only before any packaged release.
 - Local zip backup/restore ships via `atenas backup` / `atenas restore`;
   richer export remains a post-v1 local-support goal unless a separate
@@ -209,4 +204,4 @@ Atenas v1 is complete when it can:
 16. Use local LLM by default for routine tasks.
 17. Log every command, tool call, LLM call, policy decision, and action result.
 18. Block unsafe or forbidden actions.
-19. Remain fully inspectable and debuggable by Nathan.
+19. Remain fully inspectable and debuggable by its owner.

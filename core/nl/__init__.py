@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from core.nl.classifier import NLClassifier
-from core.nl.intent import CONFIDENCE_THRESHOLD, IntentMatch, READ_INTENTS, WRITE_INTENTS
+from core.nl.intent import CONFIDENCE_THRESHOLD, READ_INTENTS, WRITE_INTENTS, IntentMatch
 from core.nl.router import NLRouter
 from core.nl.slots import extract_slots
 

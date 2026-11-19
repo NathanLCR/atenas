@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from core.llm.client import OllamaClient, OllamaModelUnavailable, OllamaResponse
+from core.llm.client import OllamaClient, OllamaModelUnavailable
 
 
 class TestOllamaClient:

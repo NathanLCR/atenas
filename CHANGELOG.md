@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- CI: removed documentation tests that required untracked local-only agent
+  notes; docs no longer link to files that are not in the repository.
+- Docs: `PRODUCT_SPEC.md`, `ARCHITECTURE.md`, and `docs/README.md` no longer
+  describe the resolved 2026-06-11 audit defects as open gaps.
+- `core/llm/client.py` and `tests/test_nl_agent_loop.py` used `Any` without
+  importing it; `app/config.py` referenced an undefined `core` name in a
+  return annotation.
+
+### Changed
+
+- Split dependencies: `requirements.txt` is runtime-only (pinned);
+  `requirements-dev.txt` adds pytest, pytest-asyncio, ruff, and pip-audit.
+  `pytest` moved from runtime to the `dev` extra in `pyproject.toml`.
+- Bumped FastAPI (0.165.0, Starlette 1.10.0), uvicorn, pytest, pytest-asyncio,
+  httpx, python-telegram-bot, pydantic, pydantic-settings, and others.
+- Added a `[tool.ruff]` configuration; the codebase passes `ruff check .`.
+- CI now runs ruff, pytest, and a `pip-audit` job.
+- Added Dependabot config, PR/issue templates, and a root `SECURITY.md`.
+
+### Security
+
+- Dependency upgrades clear all `pip-audit` advisories previously reported for
+  the runtime requirements (notably Starlette and pytest).
+
 ### Added
 
 - **WP1 — Reliable tool-decision parsing**: the decision call now passes

@@ -9,7 +9,6 @@ import pytest
 
 from core.db import connect, init_db
 
-
 # ---------------------------------------------------------------------------
 # WP4.2 — connect() closes the connection after the block
 # ---------------------------------------------------------------------------
@@ -22,7 +21,7 @@ def test_connect_closes_connection_after_block(tmp_path: Path) -> None:
     with connect(db_path) as conn:
         captured = conn
 
-    with pytest.raises(Exception):
+    with pytest.raises(sqlite3.ProgrammingError):
         captured.execute("SELECT 1")
 
 

@@ -168,7 +168,7 @@ def _load_status_counts(db_path: Path | str, timezone: str = "UTC") -> dict[str,
                 """,
                 (week_start.isoformat(), week_end.isoformat()),
             )
-    except sqlite3.Error as exc:
+    except sqlite3.Error:
         logger.exception(
             "status_counts_failed",
             extra={"event_type": "status_counts_failed", "db_path": str(db_path)},

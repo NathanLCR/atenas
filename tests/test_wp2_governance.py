@@ -25,7 +25,6 @@ from core.schemas import (
 )
 from core.skill_registry import SkillInfo, SkillRegistry
 
-
 # ---------------------------------------------------------------------------
 # Shared helpers
 # ---------------------------------------------------------------------------

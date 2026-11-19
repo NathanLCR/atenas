@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 import re
 import sqlite3
-from contextlib import contextmanager
 from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 logger = logging.getLogger(__name__)

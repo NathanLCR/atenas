@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+
 import pytest
 
-from core.action_executor import ActionExecutor
 from core.academic.validators import CommandResult
+from core.action_executor import ActionExecutor
 from core.nl.intent import (
     INTENT_ADD_ASSIGNMENT,
     INTENT_ADD_CLASS,

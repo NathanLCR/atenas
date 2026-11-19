@@ -11,11 +11,11 @@ from typing import Any, Literal
 from pydantic import Field, ValidationError
 
 from core.llm.audit import log_llm_call
-from core.nl.model_profiles import ModelProfile, CONSERVATIVE_PROFILE
+from core.nl.model_profiles import CONSERVATIVE_PROFILE, ModelProfile
 from core.nl.prompt_assembler import PromptAssembler
 from core.nl.tool_contracts import PendingToolAction
-from core.nl.toolsets import ToolsetName
 from core.nl.tools import ToolRegistry
+from core.nl.toolsets import ToolsetName
 from core.nl.traces import AgentTraceStore
 from core.schemas import StrictModel
 
@@ -142,7 +142,7 @@ class AgentLoop:
                 repair_prompt = _build_repair_prompt(prompt, response.text, parse_error)
                 try:
                     repair_response = self._generate_decision(repair_prompt)
-                except (ConnectionError, TimeoutError, OSError) as exc:
+                except (ConnectionError, TimeoutError, OSError):
                     decision = None
                 else:
                     decision, _ = _parse_decision_with_error(repair_response.text)

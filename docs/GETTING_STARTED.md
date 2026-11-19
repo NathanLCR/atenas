@@ -18,7 +18,7 @@ Estimated time: 15–20 minutes, most of it downloading local models.
 git clone https://github.com/nathanlcr/atenas.git
 cd atenas
 python3.11 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+.venv/bin/pip install -r requirements-dev.txt
 .venv/bin/pip install -e .        # installs the `atenas` CLI
 ```
 

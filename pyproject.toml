@@ -14,10 +14,16 @@ dependencies = [
     "python-telegram-bot>=21.6",
     "httpx>=0.27.2",
     "python-dotenv>=1.0.1",
-    "pytest>=8.3.3",
-    "pytest-asyncio>=0.24.0",
     "jinja2>=3.1.6",
     "click>=8.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.5.0",
+    "ruff>=0.17.5",
+    "pip-audit>=2.10.1",
 ]
 
 [project.scripts]
@@ -34,3 +40,24 @@ app = ["templates/*.html", "static/*"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+extend-exclude = [".venv", "data", "logs", "memory", "output", "inbox"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = [
+    "B008",  # FastAPI/click use calls in argument defaults
+    "E501",  # long strings/prompts; line length is advisory
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]
+# TODO: remove once the in-flight work on these files lands, then fix their findings.
+"app/bot.py" = ["ALL"]
+"app/cli.py" = ["ALL"]
+"app/dashboard.py" = ["ALL"]
+"core/retrieval/*" = ["ALL"]
+"core/knowledge/*" = ["ALL"]
