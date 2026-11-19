@@ -7,6 +7,7 @@ import logging
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from typing import Any
 
 logger = logging.getLogger(__name__)
 

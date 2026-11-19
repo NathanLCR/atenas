@@ -6,7 +6,7 @@ import json
 import logging
 import re
 from collections.abc import Iterable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +14,7 @@ from typing import Any
 def utc_now() -> str:
     """Return the current UTC time as an ISO 8601 string."""
 
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def ensure_runtime_directories(paths: Iterable[Path | str]) -> list[Path]:

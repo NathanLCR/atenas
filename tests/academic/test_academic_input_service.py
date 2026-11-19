@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
 
-from app.config import Settings
 from core.academic.service import AcademicService
 from core.db import init_db
 from core.schemas import FatigueLevel

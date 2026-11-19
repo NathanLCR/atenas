@@ -4,10 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
-import pytest
-
 from core.llm.client import OllamaClient, OllamaResponse
-from core.llm.conversational import ConversationalService, FALLBACK_GREETING
+from core.llm.conversational import FALLBACK_GREETING, ConversationalService
 
 
 def _mock_client(response_text: str) -> MagicMock:

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from pathlib import Path
@@ -10,9 +9,8 @@ from zoneinfo import ZoneInfo
 
 from core.knowledge.service import KnowledgeService
 from core.llm.client import OllamaClient
-from core.llm.models import LLMActionResult, LLM_ACTIONS, REWRITE_STYLES
+from core.llm.models import LLM_ACTIONS, REWRITE_STYLES, LLMActionResult
 from core.llm.prompts import build_prompt
-from core.utils import utc_now
 
 logger = logging.getLogger(__name__)
 

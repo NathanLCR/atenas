@@ -6,14 +6,10 @@ import logging
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from core.academic.service import AcademicService
 from core.llm.engine import EngineHealth
-from core.nl.tool_contracts import StructuredToolResult, ToolCategory
-from core.nl.tool_contracts import ToolDefinition, EmptyArgs
+from core.nl.tool_contracts import EmptyArgs, StructuredToolResult, ToolCategory, ToolDefinition
 from core.nl.tools import ToolRegistry
-
 
 # ---------------------------------------------------------------------------
 # WP1.1 — get_availability and generate_study_plan no longer crash
@@ -83,8 +79,7 @@ def test_run_tool_handler_exception_returns_failed_result(tmp_db: Path) -> None:
     def boom(args, actor_user_id):
         raise RuntimeError("boom")
 
-    from core.nl.tool_contracts import ToolCategory, ActionTier
-    from core.schemas import ActionTier as AT
+    from core.nl.tool_contracts import ToolCategory
     registry._tools["_test_boom"] = ToolDefinition(
         name="_test_boom",
         description="Raises unconditionally",

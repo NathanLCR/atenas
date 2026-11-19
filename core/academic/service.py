@@ -49,6 +49,7 @@ from core.academic.validators import (
     validate_text_field,
     validate_weight,
 )
+from core.schemas import FatigueLevel
 from core.time import (
     combine_local,
     ensure_local_datetime,
@@ -56,7 +57,6 @@ from core.time import (
     parse_hhmm,
     week_bounds,
 )
-from core.schemas import FatigueLevel
 
 
 class AcademicService:

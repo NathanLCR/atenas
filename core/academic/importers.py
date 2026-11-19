@@ -7,7 +7,6 @@ import json
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from core.academic.service import AcademicService
 from core.academic.validators import (
@@ -22,7 +21,6 @@ from core.academic.validators import (
     validate_text_field,
     validate_weight,
 )
-from core.time import parse_due_at
 
 
 @dataclass(frozen=True)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
@@ -19,7 +19,7 @@ class TimezoneSettings(Protocol):
 def utc_now_iso() -> str:
     """Return a timezone-aware UTC timestamp."""
 
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def app_timezone(settings: TimezoneSettings | None = None) -> ZoneInfo:

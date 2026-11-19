@@ -2,12 +2,15 @@
 
 from functools import lru_cache
 from pathlib import Path
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+if TYPE_CHECKING:
+    from core.nl.model_profiles import ModelProfile
 
 DEFAULT_OLLAMA_SMALL_MODEL = "llama3.2"
 DEFAULT_OLLAMA_MODEL = "llama3.1:8b"
@@ -267,7 +270,7 @@ class Settings(BaseSettings):
 
         return self.deadline_alert_hours
 
-    def get_model_profile(self) -> "core.nl.model_profiles.ModelProfile":
+    def get_model_profile(self) -> "ModelProfile":
         """Return the effective model profile, merged with overrides."""
         from core.nl.model_profiles import get_profile
 

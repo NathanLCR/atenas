@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import patch
 
 from click.testing import CliRunner
@@ -80,8 +79,8 @@ def test_doctor_succeeds_with_mocked_ollama(settings) -> None:
 
 def test_doctor_warns_empty_allowlist(tmp_path, monkeypatch) -> None:
     """doctor should warn when Telegram token present but allowlist empty."""
-    from app.config import Settings
     from app.cli import main
+    from app.config import Settings
 
     settings = Settings(
         _env_file=None,
@@ -110,8 +109,8 @@ def test_doctor_warns_empty_allowlist(tmp_path, monkeypatch) -> None:
 
 def test_traces_handles_empty_db(tmp_path) -> None:
     """traces should handle empty database gracefully."""
-    from app.config import Settings
     from app.cli import main
+    from app.config import Settings
     from core.db import init_db
 
     settings = Settings(

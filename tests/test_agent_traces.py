@@ -153,7 +153,7 @@ def test_record_step_long_args_summarized(tmp_path: Path) -> None:
         pending=False,
     )
 
-    rows = store.list_recent()
+    store.list_recent()
     # We need to also check step data - we can access via raw query
     from core.db import get_connection
     with get_connection(db_path) as conn:

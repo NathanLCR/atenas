@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from core.db import init_db
-from core.memory_manager import MemoryManager, MemoryItemRecord
+from core.memory_manager import MemoryManager
 from core.schemas import Importance, MemoryDomain
 
 

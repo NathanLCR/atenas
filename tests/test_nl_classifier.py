@@ -3,13 +3,18 @@
 from __future__ import annotations
 
 import json
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from core.llm.client import OllamaClient, OllamaResponse
 from core.nl.classifier import NLClassifier
-from core.nl.intent import INTENT_ASK_NOTES, INTENT_TODAY, INTENT_ADD_ASSIGNMENT, INTENT_UNKNOWN, INTENT_GREETING, INTENT_CONVERSATIONAL, CONFIDENCE_THRESHOLD
+from core.nl.intent import (
+    INTENT_ADD_ASSIGNMENT,
+    INTENT_ASK_NOTES,
+    INTENT_CONVERSATIONAL,
+    INTENT_GREETING,
+    INTENT_TODAY,
+    INTENT_UNKNOWN,
+)
 
 
 def _make_classifier() -> NLClassifier:

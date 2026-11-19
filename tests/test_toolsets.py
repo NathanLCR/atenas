@@ -5,13 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from core.nl.tool_contracts import ToolCategory
+from core.nl.tools import ToolRegistry
 from core.nl.toolsets import (
     ToolsetName,
     all_toolset_tool_names,
     tool_names_for_toolsets,
     toolsets_for_telegram_message,
 )
-from core.nl.tools import ToolRegistry
 
 
 def test_every_registered_tool_belongs_to_at_least_one_toolset(tmp_db: Path) -> None:

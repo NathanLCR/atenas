@@ -186,8 +186,8 @@ def test_traces_route_shows_stored_traces(settings: Settings) -> None:
     """Dashboard traces should display stored trace records."""
     from app.main import create_app
     from core.db import get_connection
-    from core.skill_registry import SkillRegistry
     from core.schemas import new_id
+    from core.skill_registry import SkillRegistry
 
     app = create_app(settings=settings, registry=SkillRegistry())
 

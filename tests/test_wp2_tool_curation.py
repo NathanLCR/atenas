@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
-import pytest
 
-from core.academic.models import StudyModule, Assignment, ClassSession, WorkShift
+from core.academic.models import Assignment, ClassSession, StudyModule, WorkShift
 from core.knowledge.models import Note
 from core.nl.tools import ToolRegistry
 

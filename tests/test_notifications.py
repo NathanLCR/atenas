@@ -3,12 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 from zoneinfo import ZoneInfo
-
-import pytest
 
 from core.academic.models import AssignmentStatus
 from core.notifications.models import DeadlineAlert, OverdueAlert, StudyBlockReminder

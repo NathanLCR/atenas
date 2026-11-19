@@ -8,10 +8,11 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
+from pydantic import Field
+
 from core.db import connect
 from core.schemas import Importance, MemoryDomain, MemoryItem, StrictModel
 from core.time import utc_now_iso
-from pydantic import Field
 
 logger = logging.getLogger(__name__)
 

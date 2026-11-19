@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 from core.academic.models import AssignmentStatus
@@ -12,8 +13,8 @@ from core.academic.service import AcademicService
 from core.llm.client import OllamaResponse
 from core.nl.agent import AgentLoop
 from core.nl.tool_contracts import ToolCategory
-from core.nl.toolsets import ToolsetName
 from core.nl.tools import ToolRegistry
+from core.nl.toolsets import ToolsetName
 from core.schemas import FatigueLevel
 
 
