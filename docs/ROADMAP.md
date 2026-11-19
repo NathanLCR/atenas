@@ -15,7 +15,7 @@ The product around that core was weaker than the code. The review found:
 
 | # | Finding | Impact | Status |
 |---|---|---|---|
-| 1 | `main` was red: `docs/superpowers/` was untracked but 3 tests and 21 doc links still depended on it | CI badge on the README showed failing | In progress |
+| 1 | `main` was red: local-only planning notes were untracked but 3 tests and 21 doc links still depended on them | CI badge on the README showed failing | In progress |
 | 2 | Docker quickstart returned 403 on every request (bridge-gateway peer rejected by the local-only guard) and could not reach host Ollama | Documented install path did not work | In progress (`TRUSTED_CLIENT_NETWORKS`, fixed compose subnet, `host.docker.internal`) |
 | 3 | `/start` and `/help` were not registered; no Telegram command menu | A new user's first message got "Unknown command" | In progress |
 | 4 | No typing indicator during 10–60 s local-model turns | Bot looks dead | In progress |
