@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Demo mode**: `atenas demo` seeds a synthetic study week (fictional modules,
+  recurring classes, work shifts incl. a late high-fatigue close, assignments due
+  relative to today, three notes) through the core services so the dashboard and
+  planner can be explored without Telegram or Ollama. Refuses on a database that
+  already has modules unless `--force`; `--db PATH` targets another database.
+- **`TRUSTED_CLIENT_NETWORKS`**: narrow allowlist of private/loopback CIDRs the
+  local-only guard accepts (still subject to the `X-Forwarded-For` check).
+  Invalid, public, and any-address CIDRs are rejected at config load.
+- **`DASHBOARD_STAMP_LINE1` / `DASHBOARD_STAMP_LINE2`** replace the hardcoded
+  school stamp in the dashboard header.
+
 - **WP1 — Reliable tool-decision parsing**: the decision call now passes
   `format="json"` to the Ollama client (backends that ignore the field degrade
   gracefully). On a parse/validation failure the loop makes exactly one bounded
@@ -26,6 +37,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `total` and `truncated` in `data`, and the message signals pagination
   (e.g., "Showing 1–10 of 23. Use offset=10 to see more."). Invalid
   pagination arguments return a steering error, not a crash.
+
+### Changed
+
+- **Docker quickstart now works**: compose uses a fixed-subnet network and trusts
+  only its gateway, reaches host Ollama via `host.docker.internal`, adds an
+  optional `ollama` profile, and the image installs the `atenas` CLI and has a
+  `/health` healthcheck. `.dockerignore` also excludes `.env.*`, SQLite files, tests.
+- Default `TIMEZONE` is now `UTC`, matching `.env.example` (set `TIMEZONE`
+  explicitly to keep a local zone such as `Europe/Dublin`).
+- Dashboard truthfulness: next focus names its day when it is not today, classes
+  show per-class times instead of a min-max span, the header reads "free to
+  study", and the Study Plan card shows planned minutes (it previously showed
+  work + classes + free study time labelled "committed"). Unused reads removed.
+
+### Fixed
+
+- Comma-separated `TELEGRAM_ALLOWED_USER_IDS` and `KNOWLEDGE_FILE_ROOTS` in the
+  environment (as in `.env.example`) no longer crash settings load.
 
 ## [0.1.0] - 2026-06-16
 
