@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     notifications_chat_id: int | None = None
     deadline_alert_hours: int = Field(default=72, ge=1, le=336)
     notifications_enabled: bool = True
+    telegram_max_upload_mb: int = Field(default=20, ge=1, le=20)
 
     data_dir: Path = Path("data")
     memory_dir: Path = Path("memory")
