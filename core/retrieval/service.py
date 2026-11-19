@@ -12,6 +12,7 @@ from core.llm.client import OllamaClient
 from core.path_policy import PathPolicy, PathPolicyError
 from core.retrieval.chunking import chunk_text
 from core.retrieval.embeddings import query_terms
+from core.retrieval.extractors import PDF_SUFFIX, extract_pdf_text
 from core.retrieval.models import (
     NO_SOURCE_FALLBACK,
     RetrievalAnswer,
@@ -307,12 +308,15 @@ class RetrievalService:
         ]
 
     def _read_registered_text_file(self, file_record: FileRecord) -> str | None:
-        if not _is_text_file_record(file_record):
+        is_pdf = _is_pdf_file_record(file_record)
+        if not is_pdf and not _is_text_file_record(file_record):
             return None
         try:
             path = self._path_policy.validate_registered_file(file_record.path)
         except PathPolicyError:
             return None
+        if is_pdf:
+            return extract_pdf_text(path, max_chars=MAX_FILE_CHARS)
         try:
             with path.open("r", encoding="utf-8") as handle:
                 return handle.read(MAX_FILE_CHARS)
@@ -324,6 +328,21 @@ class RetrievalService:
                 return None
         except OSError:
             return None
+
+    def index_file(self, file_id: int) -> tuple[bool, int]:
+        """Index one registered file now.
+
+        Returns (searchable, chunk_count). searchable is False when the file
+        type is unsupported or no text could be extracted.
+        """
+
+        file_record = self.repository.get_file(file_id)
+        if file_record is None:
+            return False, 0
+        chunks = self._chunks_for_file(file_record)
+        if not chunks:
+            return False, 0
+        return True, self.store.replace_source(chunks)
 
     def _validate_question(self, question: str) -> str | None:
         if len(question) < 2:
@@ -349,3 +368,25 @@ def _is_text_file_record(file_record: FileRecord) -> bool:
     if suffix in TEXT_SUFFIXES:
         return True
     return mime_type.startswith("text/")
+
+
+def _is_pdf_file_record(file_record: FileRecord) -> bool:
+    suffix = Path(file_record.path).suffix.lower()
+    return suffix == PDF_SUFFIX or (file_record.mime_type or "").lower() == "application/pdf"
+
+
+def is_searchable_suffix(path: Path | str) -> bool:
+    """Return whether a file with this name can be indexed for retrieval."""
+
+    suffix = Path(path).suffix.lower()
+    return suffix == PDF_SUFFIX or suffix in TEXT_SUFFIXES
+
+
+def describe_index_result(searchable: bool, chunk_count: int, filename: str) -> str:
+    """Return a short user-facing line about retrieval indexing for a file."""
+
+    if searchable:
+        return f"Indexed for search: {chunk_count} chunks."
+    if is_searchable_suffix(filename):
+        return "Registered, but no readable text was found (scanned, encrypted, or empty), so it is not searchable."
+    return "Registered but not searchable: this file type cannot be indexed yet. Use PDF, Markdown, or text for search."
