@@ -161,7 +161,7 @@
       {% for item in deadlines %}
       <div class="dlrow">
         <div class="dl-stamp">
-          <span class="dl-mod">{{ item.module_name or 'CORE' }}</span>
+          <span class="dl-mod">{{ module_labels.get(item.module_id) or 'CORE' }}</span>
         </div>
         <div>
           <span class="dl-due">{{ item.due_at.strftime('%Y-%m-%d') }}</span>

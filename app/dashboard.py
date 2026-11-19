@@ -77,6 +77,9 @@ async def home(request: Request) -> HTMLResponse:
             "week_number": now.isocalendar()[1],
             "week_days": week_days,
             "grid_data": _build_grid_data(week_overview),
+            "module_labels": {
+                m.id: (m.code or m.name) for m in academic_service.list_modules()
+            },
             "modules_activity": _build_modules_activity(academic_service, week_days),
             "planned_minutes": study_plan.summary.total_planned_minutes,
             "format_minutes": _format_minutes,
@@ -497,15 +500,15 @@ def _build_modules_activity(service: AcademicService, week_days: list[datetime])
     """Map module activity across the week for the grid dots."""
     modules = service.list_modules()
     assignments = service.list_all_assignments(include_completed=True)
-
-    # For a high-density "routine-plan" look, we just need dots.
-    # In a real system, this would look at sessions and study blocks.
+    sessions = service.list_class_sessions()
     activity = []
     for m in modules:
         days_active = []
         for day in week_days:
-            # Simple heuristic: module is active if it has a deadline or class that day
-            is_active = any(a.module_id == m.id and a.due_at.date() == day.date() for a in assignments)
+            # Active if the module has a deadline or a weekly class that day.
+            is_active = any(
+                a.module_id == m.id and a.due_at.date() == day.date() for a in assignments
+            ) or any(c.module_id == m.id and c.weekday == day.weekday() for c in sessions)
             days_active.append(is_active)
         activity.append({
             "name": m.name,

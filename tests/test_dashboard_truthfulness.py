@@ -50,3 +50,10 @@ def test_day_label_names_non_today_blocks() -> None:
 
 def test_minutes_until_ignores_non_datetimes() -> None:
     assert _minutes_until("not-a-datetime", "UTC") is None
+
+
+def test_deadlines_show_module_code_not_core(settings: Settings) -> None:
+    with _client(settings) as client:
+        text = client.get("/dashboard/").text
+    assert "QNT101" in text
+    assert "CORE" not in text
