@@ -196,3 +196,39 @@ def _run_traces(limit: int) -> None:
         if final:
             click.echo(f"  Reply: {final[:80]}")
         click.echo()
+
+
+@main.command()
+@click.option("--force", is_flag=True, help="Seed even if the database already has modules.")
+@click.option(
+    "--db",
+    "db_path",
+    type=click.Path(dir_okay=False, path_type=Path),
+    default=None,
+    help="SQLite database path (defaults to the configured data dir).",
+)
+def demo(force: bool, db_path: Path | None) -> None:
+    """Seed a synthetic study week so the dashboard and planner can be explored."""
+    from core.demo import DemoSeedError, seed_demo_data
+
+    settings = get_settings()
+    target = db_path or settings.db_path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    ensure_runtime_directories(settings.runtime_directories)
+    try:
+        summary = seed_demo_data(
+            target,
+            settings.timezone,
+            force=force,
+            allowed_file_roots=settings.knowledge_file_roots,
+        )
+    except DemoSeedError as exc:
+        raise click.ClickException(str(exc)) from exc
+    click.echo(f"Demo data seeded into {target} (timezone {settings.timezone}):")
+    click.echo(
+        f"  {summary.modules} modules, {summary.classes} weekly classes, "
+        f"{summary.shifts} work shifts, {summary.assignments} assignments, "
+        f"{summary.notes} notes"
+    )
+    click.echo("Start the app:   uvicorn app.main:app")
+    click.echo("Then open:       http://127.0.0.1:8000/dashboard/")
