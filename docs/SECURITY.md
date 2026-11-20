@@ -264,9 +264,7 @@ Verified on 2026-05-25, re-audited on 2026-06-11:
   `docs/COMMAND_TOOL_PARITY.md`, including command-only support surfaces.
 
 All non-compliance items identified in the 2026-06-11 audit are resolved as
-of 2026-06-13 (WP1–WP6 of the closure spec). See
-`docs/superpowers/specs/2026-06-12-v1-defect-and-governance-closure-spec.md`
-for the full record.
+of 2026-06-13.
 
 Remaining security follow-up:
 

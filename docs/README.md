@@ -66,53 +66,8 @@ Verified on 2026-05-25:
 - Slash-command parity is audited in `docs/COMMAND_TOOL_PARITY.md` and guarded
   by `tests/test_command_tool_parity.py`.
 
-A full read-only audit on 2026-06-11 found a set of implementation defects and
-governance gaps behind the contracts above (tool crashes, policy/audit bypass
-on auto-tier `add_*` tools, a spoofable local-only guard decision, and
-pending-action status accuracy). The canonical docs now record those gaps
-where they contradict previous claims, and the fixes are specified in
-`docs/superpowers/specs/2026-06-12-v1-defect-and-governance-closure-spec.md`.
-
-## Current gap specs
-
-The defect and governance closure spec (current priority) lives at
-`docs/superpowers/specs/2026-06-12-v1-defect-and-governance-closure-spec.md`.
-
-The earlier implementation gap and packaging spec lives at
-`docs/superpowers/specs/2026-05-24-atenas-v1-gap-and-packaging-spec.md`.
-It records that the 2026-05-25 verification closed planning acceptance
-coverage, fatigue/write-path input, slash-command parity audit, documentation
-drift, and packaging checks. Post-v1 backup/export work remains separate from
-the v1 operational SQLite source-of-truth contract.
-
-## Superpowers roadmap
-
-Superpowers implementation status is summarized in
-`docs/superpowers/README.md`. Use that roadmap to distinguish live phase work
-from archival implementation plans before starting new hardening or refactor
-work.
-
-## Local-model agent hardening
-
-The local-model agent runtime hardening spec lives at
-`docs/superpowers/specs/2026-05-24-local-model-agent-runtime-state-spec.md`,
-with an implementation breakdown and starter prompt in
-`docs/superpowers/plans/2026-05-24-local-model-agent-runtime-state.md`.
-It captures the framework patterns worth borrowing for Atenas: durable pending
-actions, model profiles, context-budgeted prompt assembly, deterministic tool
-selection, richer pending-action review, and trace replay.
-
-The Hermes-inspired hardening spec lives at
-`docs/superpowers/specs/2026-05-24-hermes-inspired-agent-hardening-spec.md`,
-with implementation phases and a starter prompt in
-`docs/superpowers/plans/2026-05-24-hermes-inspired-agent-hardening.md`.
-It covers the safe Hermes patterns for Atenas: toolsets, approved skill memory,
-backup/restore, local model profile config, session search, and a future
-channel adapter boundary.
-
 When any doc describes agent behavior, `AGENT_LOOP.md` is authoritative. All
-contributors — including Codex, Claude Code, and OpenCode — follow it to keep
-the implementation from diverging again.
+contributors follow it to keep the implementation from diverging again.
 
 ## How to read
 

@@ -291,8 +291,7 @@ Remaining v1 architecture work:
 2. Close the 2026-06-11 audit defects — policy/audit bypass on auto-tier
    add tools, the spoofable `X-Forwarded-For` allow decision in the
    local-only guard, pending-action status accuracy, the missing `/confirm`
-   command, command audit logging, and the agent-tool crash/format bugs —
-   per `docs/superpowers/specs/2026-06-12-v1-defect-and-governance-closure-spec.md`.
+   command, command audit logging, and the agent-tool crash/format bugs.
 3. Remove or absorb the dead duplicate `app/telegram_*` helper modules and
    the docstring-only stubs (`core/embedding_manager.py`,
    `core/graph_manager.py`, `core/retrieval_engine.py`, `app/scheduler.py`)

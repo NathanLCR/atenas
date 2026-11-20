@@ -5,42 +5,35 @@ from __future__ import annotations
 from pathlib import Path
 
 
-SUPERPOWERS_README = Path("docs/superpowers/README.md")
-DOCS_README = Path("docs/README.md")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+DOCS_DIR = REPO_ROOT / "docs"
+DOCS_README = DOCS_DIR / "README.md"
+CANONICAL_DOCS = (
+    "GETTING_STARTED.md",
+    "AGENT_LOOP.md",
+    "PRODUCT_SPEC.md",
+    "ARCHITECTURE.md",
+    "AGENT_POLICY.md",
+    "SECURITY.md",
+    "REQUIREMENTS.md",
+    "DATA_MODEL.md",
+    "SCHEMAS.md",
+    "CONTEXT_MANAGEMENT.md",
+    "DECISIONS.md",
+    "COMMAND_TOOL_PARITY.md",
+)
 
 
-def test_historical_superpowers_plans_have_status_notice() -> None:
-    plan_paths = sorted(Path("docs/superpowers/plans").glob("*.md"))
-
-    assert plan_paths
-    for path in plan_paths:
-        text = path.read_text(encoding="utf-8")
-        assert "## Historical Plan Status" in text, path
-        assert "archival" in text.lower(), path
-
-
-def test_superpowers_readme_is_live_roadmap() -> None:
-    text = SUPERPOWERS_README.read_text(encoding="utf-8")
-    lower = text.lower()
-
-    assert "# atenas superpowers roadmap" in lower
-    assert "live roadmap" in lower
-    assert "pending-action ux" in lower
-    assert "`/pending`" in text
-    assert "`/cancel_pending`" in text
+def test_canonical_docs_listed_in_readme_exist_and_are_non_empty() -> None:
+    readme_text = DOCS_README.read_text(encoding="utf-8")
+    for filename in CANONICAL_DOCS:
+        assert filename in readme_text, filename
+        doc_path = DOCS_DIR / filename
+        assert doc_path.is_file(), doc_path
+        assert doc_path.read_text(encoding="utf-8").strip(), doc_path
 
 
-def test_superpowers_readme_names_archival_plans() -> None:
-    text = SUPERPOWERS_README.read_text(encoding="utf-8")
-    lower = text.lower()
-
-    assert "archival" in lower
-    for path in sorted(Path("docs/superpowers/plans").glob("*.md")):
-        assert f"`{path.as_posix()}`" in text
-
-
-def test_canonical_docs_index_points_to_superpowers_roadmap() -> None:
-    text = DOCS_README.read_text(encoding="utf-8")
-
-    assert "## Superpowers roadmap" in text
-    assert "`docs/superpowers/README.md`" in text
+def test_tracked_docs_do_not_reference_ignored_superpowers_dir() -> None:
+    for doc_path in sorted(DOCS_DIR.glob("*.md")):
+        content = doc_path.read_text(encoding="utf-8")
+        assert "docs/superpowers/" not in content, doc_path

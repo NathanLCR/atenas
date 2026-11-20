@@ -136,8 +136,7 @@ Remaining v1 follow-up:
 
 - Close the 2026-06-11 audit defects (tool crashes, policy/audit bypass on
   `add_*` tools, local-only guard header trust, pending-action status
-  accuracy, `/confirm`, command logging) per
-  `docs/superpowers/specs/2026-06-12-v1-defect-and-governance-closure-spec.md`.
+  accuracy, `/confirm`, command logging).
 - Keep release/deployment checks local-only before any packaged release.
 - Local zip backup/restore ships via `atenas backup` / `atenas restore`;
   richer export remains a post-v1 local-support goal unless a separate
